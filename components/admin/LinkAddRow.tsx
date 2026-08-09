@@ -190,7 +190,10 @@ export function LinkAddRow({ children }: { children?: ReactNode }) {
           className={`${FIELD} min-w-[180px] flex-[1_1_200px]`}
         />
 
-        <button type="submit" disabled={busy} className={BUTTON}>
+        {/* 파비콘을 구하는 동안(최대 8초) 이 버튼이 유일한 신호다 — 눈에는 흐려진 모습으로,
+            보조기기에는 `aria-busy` 로 알린다(InlineEdit 의 저장 버튼과 같은 계약).
+            라벨은 바꾸지 않는다: 스펙이 정한 문장이고, 글자 길이가 바뀌면 flex-wrap 줄이 흔들린다. */}
+        <button type="submit" disabled={busy} aria-busy={busy} className={BUTTON}>
           ‘{category.name}’에 추가
         </button>
       </form>

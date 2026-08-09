@@ -271,9 +271,16 @@ describe('LinkAddRow — 등록', () => {
     await click(addButton());
 
     expect(createBookmark).toHaveBeenCalledTimes(1);
+    // 파비콘 수집까지 최대 8초가 걸릴 수 있는 자리다 — 보내는 중임이 보조기기에도 닿아야 한다.
+    expect(addButton()).toBeDisabled();
+    expect(addButton()).toHaveAttribute('aria-busy', 'true');
+
     await act(async () => {
       release();
     });
+
+    expect(addButton()).not.toBeDisabled();
+    expect(addButton()).toHaveAttribute('aria-busy', 'false');
   });
 });
 
