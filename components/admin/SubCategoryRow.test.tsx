@@ -7,6 +7,9 @@
  * 돌려주는지(깊이 차단 · 링크 상위 재배속)는 `lib/mutations.test.ts` 가 고정한다 — 이 파일은
  * **UI 쪽 절반**만 본다.
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -246,6 +249,26 @@ describe('SubCategoryRow — 하위 추가', () => {
     expect(button('하위 카테고리 추가')).not.toBeDisabled();
     vi.mocked(console.error).mockRestore();
   });
+
+  it('요청이 나가 있는 동안 버튼이 잠기고 aria-busy 로도 알린다', async () => {
+    const pending = deferred();
+    vi.mocked(createSubCategory).mockReturnValue(pending.promise);
+    renderRow();
+
+    fireEvent.change(addField(), { target: { value: '코딩 보조' } });
+    await click(button('하위 카테고리 추가'));
+
+    // 흐려지는 모습만으로는 화면을 볼 수 없는 사용자에게 아무 일도 일어나지 않은 것과 같다
+    // (I3 LinkAddRow·J2 InlineEdit 의 제출 버튼과 같은 짝).
+    expect(button('하위 카테고리 추가')).toBeDisabled();
+    expect(button('하위 카테고리 추가')).toHaveAttribute('aria-busy', 'true');
+
+    await act(async () => {
+      pending.settle({ ok: true });
+    });
+
+    expect(button('하위 카테고리 추가')).toHaveAttribute('aria-busy', 'false');
+  });
 });
 
 describe('SubCategoryRow — 이름 수정', () => {
@@ -377,6 +400,23 @@ describe('SubCategoryRow — 이름 수정', () => {
 describe('SubCategoryRow — 이중 제출', () => {
   setupToastTimers();
 
+  it('같은 틱에 두 번 제출해도 추가 요청은 한 번만 나간다', async () => {
+    renderRow();
+
+    fireEvent.change(addField(), { target: { value: '코딩 보조' } });
+    const form = addField().closest('form') as HTMLFormElement;
+    // 상태(`adding`)만으로는 이 창을 못 막는다 — 두 제출 사이에 렌더가 끼지 않아 값도 `disabled`
+    // 도 아직 그대로다. 두 번째가 나가면 서버가 같은 이름을 거절하고, 그 거절 토스트가 방금의
+    // 성공 토스트를 덮어 **만들어 놓고 실패를 말하는** 화면이 된다.
+    await act(async () => {
+      fireEvent.submit(form);
+      fireEvent.submit(form);
+    });
+
+    expect(createSubCategory).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('status')).toHaveTextContent('AI 도구 모음 → 코딩 보조 하위 카테고리 추가');
+  });
+
   it('같은 틱에 두 번 제출해도 이름 수정 요청은 한 번만 나간다', async () => {
     renderRow();
 
@@ -446,6 +486,26 @@ describe('SubCategoryRow — 이중 제출', () => {
     expect(button('이미지 생성 삭제')).not.toBeDisabled();
   });
 
+  it('왕복 중임을 aria-busy 로도 알린다 (InlineEdit·DeleteConfirm 과 같은 짝)', async () => {
+    const pending = deferred();
+    vi.mocked(renameSubCategory).mockReturnValue(pending.promise);
+    renderRow();
+
+    await startRename('대화형', '챗봇');
+    await click(saveButton('대화형'));
+
+    expect(saveButton('대화형')).toHaveAttribute('aria-busy', 'true');
+    // 이 줄의 `busy` 는 칩 하나가 아니라 **줄 전체**의 왕복이다 — 잠그는 자리면 함께 알린다.
+    expect(button('이미지 생성 이름 수정')).toHaveAttribute('aria-busy', 'true');
+    expect(button('대화형 이름 수정 취소')).toHaveAttribute('aria-busy', 'true');
+
+    await act(async () => {
+      pending.settle({ ok: true });
+    });
+
+    expect(button('이미지 생성 이름 수정')).toHaveAttribute('aria-busy', 'false');
+  });
+
   it('성공한 뒤에도 줄은 이어서 쓸 수 있다', async () => {
     renderRow();
 
@@ -456,6 +516,35 @@ describe('SubCategoryRow — 이중 제출', () => {
     await click(saveButton('이미지 생성'));
 
     expect(renameSubCategory).toHaveBeenNthCalledWith(2, 'sub-img', '그림');
+  });
+});
+
+/**
+ * 위 묶음의 JSDoc 이 말한 **구조**를 소스에서 직접 센다.
+ *
+ * jsdom 에는 트랜지션이 기다릴 새 데이터가 없어 두 커밋이 한 번에 끝난다 — `setBusy(false)` 를
+ * `startTransition` **밖**으로 빼내도 이 파일의 나머지가 전부 통과한다(실측). 화면으로 관측할 수
+ * 없는 계약은 소스로 못박는다(`lib/mutations.test.ts`·`lib/favicon-collect.test.ts` 와 같은 방식).
+ */
+describe('SubCategoryRow — 잠금 해제는 닫힘과 같은 커밋이다 (소스)', () => {
+  /**
+   * cwd 기준으로 읽는다 — jsdom 환경에서는 `import.meta.url` 이 file: 스킴이 아니라
+   * `new URL(...)` 로는 열 수 없다(app/not-found.test.tsx 와 같은 방식).
+   */
+  const source = readFileSync(join(process.cwd(), 'components/admin/SubCategoryRow.tsx'), 'utf8');
+  /** 주석은 걷어낸다 — 규칙을 설명하는 주석 자체가 통과 근거가 되면 안 된다. */
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+  it('성공 경로의 setBusy(false) 와 setActive(null) 은 한 트랜지션 안에 함께 있다', () => {
+    const paired = code.match(
+      /startTransition\(\(\) => \{\s*setBusy\(false\);\s*setActive\(null\);\s*\}\)/g,
+    );
+
+    // 이름 수정 · 삭제 두 곳. 먼저 풀면 닫힘이 커밋되기 전 한 프레임 동안 '잠기지 않은 채 열린
+    // 폼'이 생기고, 그 창으로 같은 요청이 한 번 더 나간다.
+    expect(paired).toHaveLength(2);
+    // 트랜지션은 그 둘뿐이다 — 다른 모양이 하나라도 늘면 위 셈이 새는지부터 다시 본다.
+    expect(code.match(/startTransition\(/g)).toHaveLength(2);
   });
 });
 
@@ -527,7 +616,7 @@ describe('SubCategoryRow — 하위 삭제', () => {
     expect(button('대화형 삭제')).not.toBeDisabled();
   });
 
-  it('요청 자체가 거부돼도 잠긴 채로 남지 않는다', async () => {
+  it('요청 자체가 거부되면 확인 줄을 그대로 두고 잠금만 푼다', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.mocked(deleteSubCategory).mockRejectedValue(new Error('Failed to fetch'));
     renderRow();
@@ -536,7 +625,14 @@ describe('SubCategoryRow — 하위 삭제', () => {
     await click(confirmButton('대화형'));
 
     expect(screen.getByRole('status')).toHaveTextContent('저장하지 못했습니다. 잠시 후 다시 시도해 주세요.');
-    expect(button('대화형 삭제')).not.toBeDisabled();
+    // 위 실패와 갈리는 곳이다 — 요청이 **닿지도 않았다.** 서버가 판단한 결과가 아니므로 확인
+    // 줄을 걷지 않고 같은 자리에서 그대로 다시 누르게 둔다(I1 CategoryHeader 와 같은 갈래).
+    expect(confirmButton('대화형')).not.toBeDisabled();
+
+    await click(confirmButton('대화형'));
+
+    // 잠금이 실제로 풀렸다는 증거 — 두 번째 시도가 서버까지 나간다.
+    expect(deleteSubCategory).toHaveBeenCalledTimes(2);
     vi.mocked(console.error).mockRestore();
   });
 
@@ -626,9 +722,30 @@ describe('SubCategoryRow — 포커스', () => {
     renderRow();
 
     await click(button('대화형 삭제'));
-    await click(confirmButton('대화형'));
+    // 실브라우저의 클릭은 누른 버튼으로 포커스를 옮긴다 — `fireEvent.click` 은 옮기지 않아
+    // 포커스가 `취소`(확인 줄이 열릴 때 받은 자리)에 남는다. 그대로 두면 이 테스트가 보려는
+    // '눌러서 사라진 버튼에서 떨어진 포커스'가 만들어지지 않아 저절로 통과한다.
+    const confirm = confirmButton('대화형');
+    confirm.focus();
+    await click(confirm);
 
     expect(button('대화형 삭제')).toHaveFocus();
+  });
+
+  it('확인 갈래와 보기 갈래는 DOM 노드를 나눠 쓰지 않는다 (프래그먼트 키)', async () => {
+    renderRow();
+
+    const removeButton = button('대화형 삭제');
+    const renameButton = button('대화형 이름 수정');
+
+    await click(removeButton);
+
+    // 키가 없으면 React 는 같은 자리의 자식들을 순서로 맞춰 host 노드를 재사용한다 — `취소` 가
+    // 곧 옛 `×` 노드, `삭제 확인` 이 곧 옛 `수정` 노드가 된다. 그러면 갈래가 바뀌어도 포커스가
+    // 그 노드에 얹힌 채라 위 두 테스트가 저절로 통과하고, 실브라우저에서는 삭제가 실패했을 때
+    // 포커스가 **이름 수정** 버튼에 남는다.
+    expect(button('대화형 삭제 취소')).not.toBe(removeButton);
+    expect(button('대화형 삭제 확인')).not.toBe(renameButton);
   });
 
   it('다른 칩을 열어 닫힌 경우에는 포커스를 뺏지 않는다', async () => {

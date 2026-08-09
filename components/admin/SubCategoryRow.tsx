@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  Fragment,
   startTransition,
   useEffect,
   useRef,
@@ -11,6 +12,7 @@ import {
 
 import { useSelectedCategory, type AdminCategory } from '@/components/admin/CategoryPanel';
 import { toast } from '@/components/Toast';
+import { REQUEST_FAILED } from '@/lib/constants';
 import {
   createSubCategory,
   deleteSubCategory,
@@ -43,15 +45,6 @@ export type SubCategoryMap = Readonly<Record<string, readonly AdminSubCategory[]
 
 /** 하위가 없는 상위에서 매 렌더 새 배열을 만들지 않기 위한 자리. */
 const NO_SUBS: readonly AdminSubCategory[] = [];
-
-/**
- * 요청 자체가 **거부됐을 때** 보여 줄 문구.
- *
- * `lib/mutations.ts` 의 `RETRY_LATER` 와 같은 문장을 일부러 한 벌 더 적었다. 그 파일은
- * `'use server'` 라 상수를 내보낼 수 없다(export 는 전부 async 함수여야 한다). 저쪽 문구를
- * 고치면 여기도 함께 고쳐라 — `components/card/InlineEdit.tsx` 도 같은 사정으로 한 벌 갖고 있다.
- */
-const REQUEST_FAILED = '저장하지 못했습니다. 잠시 후 다시 시도해 주세요.';
 
 /** 줄 — 프로토타입 원문 `display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:12px 16px; background:#faf9f7`. */
 const ROW = 'flex flex-wrap items-center gap-[8px] bg-toolbar px-[16px] py-[12px]';
@@ -128,19 +121,31 @@ type ChipMode = 'rename' | 'confirm';
 type Active = { id: string; kind: ChipMode } | null;
 
 /**
+ * 액션 한 번 부르기의 결과. `ActionResult` 에 **접힌 자국**(`rejected`)이 하나 붙는다 —
+ * 요청이 서버까지 닿아 거절당한 것인지, 아예 닿지도 못한 것인지를 아래 `remove` 가 갈라 쓴다.
+ */
+type Outcome = { ok: true } | { ok: false; error: string; rejected: boolean };
+
+/**
  * 액션 한 번 부르기 — **거부로 끝난 프라미스**를 실패 결과로 접는다.
  *
  * 네트워크가 끊겼거나 배포로 액션 id 가 바뀌면 `await` 가 거부로 끝난다. 잡지 않으면 호출한
  * 핸들러가 거기서 멈춰 빗장(`adding`·`busy`)이 선 채 남고, 그 줄은 새로고침 말고는 나갈 길이
  * 없어진다. 진단은 로그로만 남기고(사용자에게 보일 문장이 아니다) 다시 누를 수 있게 돌려준다.
+ *
+ * 접되 **접힌 자국은 남긴다.** 화면에 띄울 문장은 둘이 같지만(다시 해 보라는 말뿐이다), 확인
+ * 줄을 걷을지 말지는 갈린다 — 서버가 판단한 결과가 아니면 같은 자리에 그대로 두는 것이 맞다
+ * (I1 `CategoryHeader.remove` 와 같은 판단).
  */
-async function run(call: () => Promise<ActionResult>, what: string): Promise<ActionResult> {
+async function run(call: () => Promise<ActionResult>, what: string): Promise<Outcome> {
   try {
-    return await call();
+    const result = await call();
+
+    return result.ok ? result : { ...result, rejected: false };
   } catch (error) {
     console.error(`[SubCategoryRow] ${what} 요청이 거부됐다`, error);
 
-    return { ok: false, error: REQUEST_FAILED };
+    return { ok: false, error: REQUEST_FAILED, rejected: true };
   }
 }
 
@@ -180,15 +185,23 @@ function Row({ parent, subs }: { parent: AdminCategory; subs: readonly AdminSubC
 
   async function handleAdd(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
-    if (adding) return;
+    // `adding` 만으로는 **같은 틱**의 두 번째 제출을 못 막는다 — 그 틱에는 상태가 아직 false 고
+    // 버튼도 다시 그려지기 전이라 `disabled` 조차 걸리지 않았다(아래 `sending` JSDoc). 그 사이로
+    // 같은 이름이 한 번 더 나가면 두 번째가 "같은 이름의 하위 카테고리가 이미 있습니다."로
+    // 돌아와, **방금 만들어 놓고 거절을 말하는** 화면이 된다(성공 토스트를 그 거절이 덮는다).
+    if (adding || sending.current) return;
 
     // 빈 입력은 서버까지 가지 않는다(프로토타입 `if (!n) return`) — 아무것도 적지 않고 누른
     // 사람에게는 오류가 아니라 "아직 아무 일도 없음"이 맞다.
     const cleanName = newName.trim();
     if (cleanName === '') return;
 
+    sending.current = true;
     setAdding(true);
     const result = await run(() => createSubCategory(parent.id, cleanName), '하위 카테고리 추가');
+    // 빗장과 잠긴 모습을 여기서 함께 되돌린다 — 아래 두 종료 경로(실패·성공)가 모두 이 줄을
+    // 지난다. `run` 은 던지지 않으므로 빠져나가는 길이 이 아래로만 남는다.
+    sending.current = false;
     setAdding(false);
 
     if (!result.ok) {
@@ -274,12 +287,18 @@ function Row({ parent, subs }: { parent: AdminCategory; subs: readonly AdminSubC
     const result = await run(() => deleteSubCategory(sub.id), '하위 카테고리 삭제');
 
     if (!result.ok) {
-      // 실패해도 확인 줄은 **곧바로** 걷는다. 실패는 대개 화면이 옛 목록을 들고 있어서 나므로,
-      // 같은 자리에서 다시 누르게 두면 같은 거절만 반복된다(CategoryHeader 와 같은 판단).
-      // 여기는 기다릴 새 데이터가 없으니 트랜지션도 없다 — 칩은 그대로 남는다.
+      // 다시 누를 수 있게 빗장과 잠긴 모습을 되돌린다. 여기는 기다릴 새 데이터가 없으니
+      // 트랜지션도 없다 — 칩은 그대로 남는다.
       sending.current = false;
       setBusy(false);
-      setActive(null);
+
+      // 확인 줄을 걷을지는 **누가 거절했는지**에 갈린다(I1 CategoryHeader 와 같은 판단).
+      // - 서버가 준 실패라면 걷는다. 그 실패는 대개 화면이 옛 목록을 들고 있어서 나므로,
+      //   같은 자리에서 다시 누르게 두면 같은 거절만 반복된다.
+      // - 요청이 **닿지도 못한** 거부(네트워크 단절·배포로 바뀐 액션 id)라면 남긴다. 서버가
+      //   판단한 결과가 아니라 아직 아무 일도 일어나지 않은 것이라, 같은 자리에서 그대로
+      //   다시 누르는 것이 맞다.
+      if (!result.rejected) setActive(null);
       toast(result.error);
 
       return;
@@ -332,8 +351,17 @@ function Row({ parent, subs }: { parent: AdminCategory; subs: readonly AdminSubC
           className={ADD_FIELD}
         />
         {/* 한 화면에 '추가' 버튼이 둘이다(좌측 패널에도 있다). 눈에는 자리로 구분되지만 이름만
-            듣는 사람에게는 같은 버튼이라 접근성 이름에 무엇을 추가하는지 담는다. */}
-        <button type="submit" disabled={adding} aria-label="하위 카테고리 추가" className={ADD_BUTTON}>
+            듣는 사람에게는 같은 버튼이라 접근성 이름에 무엇을 추가하는지 담는다.
+            `aria-busy` 는 '눌렀고 지금 처리 중'을 보조 기술에도 알린다 — 흐려지는 모습만으로는
+            화면을 볼 수 없는 사용자에게 아무 일도 일어나지 않은 것과 같다(I3 LinkAddRow·J2
+            InlineEdit·J3 DeleteConfirm 과 같은 짝). */}
+        <button
+          type="submit"
+          disabled={adding}
+          aria-busy={adding}
+          aria-label="하위 카테고리 추가"
+          className={ADD_BUTTON}
+        >
           추가
         </button>
       </form>
@@ -389,8 +417,10 @@ function Chip({
    * InlineEdit·DeleteConfirm 은 연 순간의 `document.activeElement` 를 붙들었다가 언마운트
    * cleanup 에서 그 노드로 돌려준다. 거기서는 트리거(연필·휴지통)가 폼이 떠 있는 **동안에도 카드에
    * 그대로 남아** 있어 붙든 노드가 여전히 유효하다. 이 칩은 반대다 — 갈래를 열면 트리거 버튼 자체가
-   * DOM 에서 빠지고, 닫히면서 React 가 **새 버튼을 만든다.** 그 방식으로는 붙든 노드가 닫힐 때
-   * `isConnected === false` 인 떨어져 나간 노드라 `focus()` 가 조용히 아무 일도 하지 않는다.
+   * DOM 에서 빠지고, 닫히면서 React 가 **새 버튼을 만든다** — `rename` 은 다른 컴포넌트가 들어서서,
+   * `confirm` 은 아래 두 갈래에 붙인 **프래그먼트 키** 때문에 그렇다(키가 없으면 React 가 같은
+   * 자리의 host 노드를 재사용해 `취소` 버튼이 그대로 `×` 버튼이 된다). 그 방식으로는 붙든 노드가
+   * 닫힐 때 `isConnected === false` 인 떨어져 나간 노드라 `focus()` 가 조용히 아무 일도 하지 않는다.
    * 그래서 노드가 아니라 **자리**를 ref 로 가리켜 다시 그려진 버튼을 잡는다.
    *
    * ## 이미 다른 곳에 가 있는 포커스는 뺏지 않는다
@@ -436,8 +466,14 @@ function Chip({
     <span className={CHIP}>
       <span className="text-[12px] font-semibold text-ink">{sub.name}</span>
 
+      {/* 두 갈래에 **안정된 키**가 붙어 있다. 없으면 React 는 같은 자리의 자식들을 순서로 맞춰
+          host 노드를 재사용한다 — 확인 줄의 `삭제`·`취소` 가 보기 줄의 `수정`·`×` 와 같은 DOM
+          노드가 되어(실측: `취소` 노드 === `×` 노드), 갈래가 바뀌어도 포커스가 그 노드에 그대로
+          얹혀 있다. 그러면 `삭제 확인` 을 누른 뒤 실패로 확인 줄이 걷힐 때 포커스가 **이름 수정**
+          버튼에 남고, 위 effect 의 '떨어진 포커스를 돌려준다' 갈래는 아예 돌지 않는다.
+          키를 주면 갈래가 바뀔 때 한쪽이 통째로 언마운트되어 그 계약이 실제로 선다. */}
       {mode === 'confirm' ? (
-        <>
+        <Fragment key="confirm">
           {/* 누른 뒤에 나타나는 안내라 스크린 리더가 그 자리에서 읽어야 한다.
               링크가 사라지는 것이 아니라 상위로 올라간다는 것을 **누르기 전에** 알린다 —
               프로토타입은 지운 뒤 토스트로만 알리지만(784행), 이 자리의 × 는 '수정' 옆
@@ -450,11 +486,16 @@ function Chip({
           </span>
           {/* 펼친 칩의 버튼들도 이름을 앞에 단다 — 글자만 보면 '삭제'·'취소'는 헤더 줄(I1)·링크
               표(I4)에도 있어, 이름만 듣는 사람에게는 한 화면에 같은 버튼이 여럿이 된다.
-              '× (`${sub.name} 삭제`)'와도 갈라 두어야 무엇을 누르는지가 분명하다. */}
+              '× (`${sub.name} 삭제`)'와도 갈라 두어야 무엇을 누르는지가 분명하다.
+              잠기는 자리마다 `aria-busy` 가 따라붙는다 — 흐려지는 모습만으로는 화면을 볼 수 없는
+              사용자에게 아무 일도 일어나지 않은 것과 같다(J2 InlineEdit·J3 DeleteConfirm·I3
+              LinkAddRow·I4 LinkTable·A2 LoginForm 과 같은 짝). 이 줄의 `busy` 는 칩 하나가 아니라
+              **줄 전체**의 왕복이라, 그 왕복이 잠그는 버튼이면 함께 알린다. */}
           <button
             type="button"
             aria-label={`${sub.name} 삭제 확인`}
             disabled={busy}
+            aria-busy={busy}
             onClick={onRemove}
             className={`${CHIP_BUTTON} font-semibold text-danger`}
           >
@@ -465,14 +506,15 @@ function Chip({
             type="button"
             aria-label={`${sub.name} 삭제 취소`}
             disabled={busy}
+            aria-busy={busy}
             onClick={onClose}
             className={`${CHIP_BUTTON} text-faint hover:text-ink`}
           >
             취소
           </button>
-        </>
+        </Fragment>
       ) : (
-        <>
+        <Fragment key="view">
           <span className="text-[11px] text-fainter">{sub.linkCount}개</span>
           {/* 칩마다 같은 글자가 반복되므로 이름을 접근성 이름에 담는다 — 카드의
               `${title} 삭제` 와 같은 방식이다.
@@ -484,6 +526,7 @@ function Chip({
             type="button"
             aria-label={`${sub.name} 이름 수정`}
             disabled={busy}
+            aria-busy={busy}
             onClick={() => onOpen('rename')}
             className={`${CHIP_BUTTON} text-faint hover:text-ink`}
           >
@@ -494,12 +537,13 @@ function Chip({
             type="button"
             aria-label={`${sub.name} 삭제`}
             disabled={busy}
+            aria-busy={busy}
             onClick={() => onOpen('confirm')}
             className={`${CHIP_BUTTON} text-ghost hover:text-danger`}
           >
             ×
           </button>
-        </>
+        </Fragment>
       )}
     </span>
   );
@@ -558,11 +602,13 @@ function RenameChip({
         onChange={(event) => setDraft(event.target.value)}
         className={NAME_FIELD}
       />
-      {/* 이름을 앞에 다는 이유는 확인 줄의 버튼들과 같다 — 한 화면에 '저장'·'취소'가 여럿이다. */}
+      {/* 이름을 앞에 다는 이유는 확인 줄의 버튼들과 같다 — 한 화면에 '저장'·'취소'가 여럿이다.
+          `aria-busy` 를 함께 다는 이유는 확인 줄과 같다(위 Chip 주석). */}
       <button
         type="submit"
         aria-label={`${sub.name} 이름 저장`}
         disabled={busy}
+        aria-busy={busy}
         className={`${CHIP_BUTTON} font-semibold text-ink`}
       >
         저장
@@ -572,6 +618,7 @@ function RenameChip({
         type="button"
         aria-label={`${sub.name} 이름 수정 취소`}
         disabled={busy}
+        aria-busy={busy}
         onClick={onCancel}
         className={`${CHIP_BUTTON} text-faint hover:text-ink`}
       >
