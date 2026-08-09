@@ -280,6 +280,8 @@ Body : { bookmarkId: uuid, visitorId: uuid, isBulk?: boolean }
 
 폰트: Pretendard CDN(`cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css`), `font-variant-numeric: tabular-nums`, antialiased. 그림자·라운드·브레이크포인트(820px)는 DESIGN_SPEC 1장 값을 코드에서 그대로 쓴다.
 
+A2 품질 리뷰 반영 결정(2026-08-09): Tailwind 기본 색 팔레트는 `--color-*: initial`로 제거 — 색은 위 24종 + `--color-white`(#ffffff, 검은 버튼의 흰 글자용)만 존재하며 무채색 제약이 컴파일 수준에서 강제된다. `:root { color-scheme: light }`. 보조 구분선 `#eeece8`·오버레이 `rgba(20,21,22,.36)`는 의도적으로 토큰화하지 않음(사용처 각 1곳, 직접 사용). 폰트 dynamic-subset 전환·자가호스팅 여부는 O1 게이트에서 사내망 jsdelivr 도달성 확인 후 결정.
+
 ### 2.6 상수 (lib/constants.ts)
 
 ```ts
@@ -385,7 +387,7 @@ graph LR
   - 내용: `npx create-next-app@latest . --typescript --tailwind --eslint --app --no-src-dir` (기존 docs/는 유지). Vitest + @testing-library/react + jsdom 설정. `npm test`, `npm run build` 스크립트 확인. **공유 계약 파일 생성**: `lib/types.ts`(§2.2 그대로), `lib/constants.ts`(§2.6 그대로) — 이후 타입·상수를 쓰는 모든 스토리의 선행물.
   - 완료 기준: 샘플 테스트 1개 통과, `npm run dev` 기동, `npm run build` 성공, types·constants 파일 존재.
 
-- [ ] **A2. 디자인 토큰·전역 스타일** `S` — 의존: A1 · 병렬: A3, B1, B3, E1, F1과 동시 가능
+- [x] **A2. 디자인 토큰·전역 스타일** `S` — 의존: A1 ✅ 2026-08-09 완료 (046b5ba + fixup ef41544, 스펙·품질 리뷰 통과. 기본 팔레트 제거 — 색 클래스는 토큰 25종+white·transparent·current만 컴파일됨)
   - 파일: `app/globals.css`, `app/layout.tsx`(폰트 링크), `README.md`, `public/*.svg`
   - 내용: §2.5 토큰 전부를 `@theme`으로 정의. Pretendard CDN `<link>`, `tabular-nums`, antialiased, 본문 배경 `--color-surface`. **스캐폴드 잔재 정리**(A1 품질 리뷰 M-5): Geist 폰트 제거, metadata 제목·설명을 실제 값으로, `lang="ko"`, 보일러플레이트 svg·README 교체, globals.css 다크 모드 블록 제거(스펙은 라이트 전용).
   - 완료 기준: 데모 페이지에서 토큰 색·폰트 적용 확인(스크린샷), 커밋.
@@ -397,8 +399,8 @@ graph LR
 ### EPIC B: 데이터
 
 - [ ] **B1. Supabase 프로젝트 + 클라이언트 헬퍼** `S` — 의존: A1 · **사용자 게이트**: 프로젝트 생성(계정 필요) 후 URL·anon key·service role key 전달
-  - 파일: `lib/supabase/server.ts`, `client.ts`, `admin.ts`, `.env.local`, `.env.example`
-  - 내용: `@supabase/supabase-js` + `@supabase/ssr` 설치. 서버/브라우저/service-role 3종 헬퍼. `.env.example`에 키 목록 문서화.
+  - 파일: `lib/supabase/server.ts`, `client.ts`, `admin.ts`, `scripts/lib/service-client.ts`, `.env.local`, `.env.example`
+  - 내용: `@supabase/supabase-js` + `@supabase/ssr` 설치. 서버/브라우저/service-role 3종 헬퍼. `.env.example`에 키 목록 문서화. **`admin.ts`는 `server-only`(RSC 레이어 전용 — plain Node에서 import하면 throw), B4·B5 스크립트는 `scripts/lib/service-client.ts`(dotenv+createClient) 사용** (2026-08-09 확정 — server-only의 exports 맵이 react-server 조건 밖에서 즉시 throw하기 때문).
   - 완료 기준: 서버 컴포넌트에서 `select 1` 상당 호출 성공.
 
 - [ ] **B2. 스키마 마이그레이션 + RLS + 트리거** `M` — 의존: B1 · 병렬: C 트랙과 동시 가능
@@ -406,14 +408,14 @@ graph LR
   - 내용: supabase CLI(`supabase link` → `supabase db push`)로 적용. CLI가 어려우면 SQL 에디터에 붙여넣기(파일이 원본).
   - 완료 기준: ① 익명 키로 `categories/bookmarks` select 성공 ② 익명 키로 `bookmarks` insert가 **거부**됨 ③ 익명 키로 `clicks` select·insert가 **거부**됨 ④ 13번째 `is_pinned=true` update가 `PIN_LIMIT` 예외 ⑤ 익명 키로 `bookmark_click_counts` select **성공**(definer 뷰+grant 확인) ⑥ 동명 상위 카테고리 insert **거부**(`nulls not distinct` 확인) — 6개 검증 쿼리를 스토리에서 실제 실행해 기록.
 
-- [ ] **B3. 시드 매퍼 (순수 함수)** `M` — 의존: A1 (**DB 불필요 — B1·B2와 병렬 가능**)
+- [x] **B3. 시드 매퍼 (순수 함수)** `M` — 의존: A1 (**DB 불필요 — B1·B2와 병렬 가능**) ✅ 2026-08-09 완료 (f5160a1 + fixup 5a40e65, 스펙·품질 리뷰 통과. B4·B5 주의: buildSeed 결과 공유 필수, insert 전 toBookmarkRow 필수)
   - 파일: `scripts/seed-mapper.ts`, `scripts/seed-mapper.test.ts`
-  - 내용: §2.7 규칙. `buildSeed(raw: RawLink[]): { categories, bookmarks }` — uuid는 매퍼가 생성해 관계를 미리 연결, `iconFile: string | null`(보유 여부)을 북마크에 부착.
+  - 내용: §2.7 규칙. `buildSeed(raw: RawLink[], availableIconIds: ReadonlySet<number>): { categories, bookmarks }` — fs 접근은 호출측 주입. uuid는 매퍼가 생성해 관계를 미리 연결(**호출마다 uuid가 달라지므로 B4·B5는 하나의 buildSeed 결과를 공유해야 한다**), `iconFile: string | null`(보유 여부)·`legacyId`를 북마크에 부착. DB insert 시에는 `toBookmarkRow()`로 seed 전용 필드를 벗겨낸다.
   - 완료 기준(테스트로 강제): 상위 10·하위 12 생성 / bookmarks 290 / pinned 12 / sub가 비어 있지 않은 165건은 하위 id·`""`인 125건은 상위 직속 / `desc`→`description` 매핑 / sort_order = 인덱스 / created_at = added×1000 / `현재 운영 중인 사이트` 16건 / **`참고자료` 상위 카테고리 1개만 생성**되고 sort_order가 `구글 서비스`보다 앞(비연속 등장 사례).
 
 - [ ] **B4. 파비콘 수집·업로드** `M` — 의존: B1, B3 · 병렬: C 트랙과 동시 가능
   - 파일: `scripts/collect-favicons.ts`
-  - 내용: Storage 버킷 `favicons`(public) 생성. 보유 72개는 `docs/data/icons/<id>.png` 업로드, 없는 218개는 `https://www.google.com/s2/favicons?domain=<host>&sz=64` 다운로드 후 업로드(재시도 2회, 요청 간 150ms). 결과는 `bookmark uuid → public URL` 맵으로 반환, 실패 목록 리포트 출력.
+  - 내용: Storage 버킷 `favicons`(public) 생성. 보유 72개는 `docs/data/icons/<id>.png` 업로드, 없는 218개는 `https://www.google.com/s2/favicons?domain=<host>&sz=64` 다운로드 후 업로드(재시도 2회, 요청 간 150ms). 결과는 `bookmark uuid → public URL` 맵으로 반환, 실패 목록 리포트 출력. **후속(A2 이월)**: 수집한 itconnect.dev(id 275) 파비콘으로 `app/icon.png` 생성, 기본 `app/favicon.ico` 삭제.
   - 완료 기준: 업로드 성공 수 ≥ 280 (실패분은 null 허용), 실패 목록이 출력에 남는다.
 
 - [ ] **B5. 시드 실행** `S` — 의존: B2, B3, B4
@@ -425,7 +427,7 @@ graph LR
 
 - [ ] **C1. 셸 레이아웃** `S` — 의존: A2 · 병렬: C2, C5와 동시 가능
   - 파일: `app/layout.tsx` (**이 파일의 단독 소유자 — C3·C4 완성 후 배선도 C1 담당자가 수행**)
-  - 내용: DESIGN_SPEC 2장 — 좌 사이드바 240px(자리) + 우측(헤더 60px + 스크롤 콘텐츠). 프로토타입의 회색 주소창은 만들지 않는다. C3·C4 완성 시 자리를 실제 컴포넌트로 치환하는 배선까지 이 스토리 소유.
+  - 내용: DESIGN_SPEC 2장 — 좌 사이드바 240px(자리) + 우측(헤더 60px + 스크롤 콘텐츠). 프로토타입의 회색 주소창은 만들지 않는다. C3·C4 완성 시 자리를 실제 컴포넌트로 치환하는 배선 + **`<Toaster />` 마운트(C5 산출물, 셸 형제로)** + SidebarContainer(favCount 공급 클라 래퍼)까지 이 스토리 소유 — 배선은 D1 완료 후 수행.
   - 완료 기준: 뼈대가 1440px에서 스펙 배치와 일치.
 
 - [ ] **C2. ★ 링크 카드** `L` — 의존: A2 · 병렬: C1, C3~C5와 동시 가능 (이 스토리가 1단계 UI의 심장)
@@ -433,33 +435,33 @@ graph LR
   - 내용: §2.3 계약 + DESIGN_SPEC 2-1장 수치 전부(테두리 3상태, 호버 scale 1.05, 상단 줄 아이콘 규칙, 본문 2줄 말줄임, 하단 눈+숫자). 아이콘 SVG 5종은 스펙 path 복사. 연필·휴지통·인라인 편집·삭제 확인은 **3단계 스토리(J2·J3)에서 채울 자리만** 계약에 남긴다(`isAdmin` prop은 지금 정의, 렌더는 J1에서).
   - 완료 기준(테스트로 강제): 이름·설명·주소·클릭 수 렌더 / 클릭 수 0 → `0` 표기 / 핀 클릭 시 `onToggleFav` 호출되고 **새 탭 열림 없음** / `showPin=false`면 핀 미렌더 / 본문 클릭 시 `window.open(url, '_blank')` + 클릭 기록 콜백.
 
-- [ ] **C3. 사이드바** `M` — 의존: C1, A1(타입) · 병렬: C2, C4와 동시 가능 (**컴포넌트 파일만 — layout.tsx 배선은 C1 소유자**)
+- [x] **C3. 사이드바** `M` — 의존: C1, A1(타입) ✅ 2026-08-09 완료 (0ae04b0 + fixup a2812a3·818491b, 스펙·품질 통과. 행 전체 stretched-link, 활성 가지 자동 펼침, 분류에서 운영중 제외. D3 필수: `/category/<하위id>` 해석)
   - 파일: `components/Sidebar.tsx`
-  - 내용: DESIGN_SPEC 2장 — "내 링크"+총 개수, 빠른 접근 4항목(홈 `/`, 내 즐겨찾기 `/favorites`, 매일 `/daily`, 운영 중 `/category/<운영중id>`), 분류 10개(+하위 접기/펼치기 `+`/`–`), 행 34px, 활성 3px 마커, 개수 우측 정렬. 개수(하위 합산 롤업)는 **props로 수신** — 계산은 D1의 롤업 함수 책임, 여기서 중복 구현하지 않는다.
+  - 내용: DESIGN_SPEC 2장 — "내 링크"+총 개수(클릭 시 홈 — 프로토타입 goHome 동작 따름), 빠른 접근 4항목(홈 `/`, 내 즐겨찾기 `/favorites`, 매일 `/daily`, 운영 중 `/category/<운영중id>`), 분류 목록(+하위 접기/펼치기 `+`/`–`), 행 34px, 활성 3px 마커, 개수 우측 정렬. **해석 확정(2026-08-09)**: 분류 목록에서 '현재 운영 중인 사이트'는 **제외**(빠른 접근에 이미 있음 — 프로토타입이 명시적으로 filter하고 스크린샷 03-shot도 분류 첫 항목이 AI 도구 모음. 스펙의 "10개"는 데이터 기준 표현). 필터링은 Sidebar가 operatingCategoryId로 수행. 개수(하위 합산 롤업)는 **props로 수신** — 계산은 D1의 롤업 함수 책임, 여기서 중복 구현하지 않는다.
   - 완료 기준: 테스트 — 트리 렌더·펼침 토글·활성 표시. usePathname 기반 활성.
 
-- [ ] **C4. 헤더** `S` — 의존: C1 · 병렬: C2, C3과 동시 가능 (**컴포넌트 파일만 — layout.tsx 배선은 C1 소유자**)
+- [x] **C4. 헤더** `S` — 의존: C1 ✅ 2026-08-09 완료 (5d53293 + fixup e9f9a51·4cdaae6·0c547f6, 스펙·품질 리뷰 통과. G5 주의: onSearchClick·onAiClick required 승격 + isSearchOpen→aria-expanded 스레딩 + Ctrl+K 병행 처리)
   - 파일: `components/Header.tsx`
   - 내용: 검색창(620px·38px·`⌘K` 배지·플레이스홀더 "이름·설명·태그·주소로 바로 찾기"), "AI 검색" 검은 버튼, 우측 "290개 · 파비콘 N개 내장"(N은 favicon_url 보유 실측). 검색창·버튼의 **동작 연결은 2단계 G5** — 지금은 렌더만.
   - 완료 기준: 1440px 렌더 일치. 카운트는 props 수신(계산은 D1 책임) — 실측 검증은 D2 조립 시점에.
 
-- [ ] **C5. 보조 컴포넌트** `S` — 의존: A2 · 병렬: C1~C4와 동시 가능
+- [x] **C5. 보조 컴포넌트** `S` — 의존: A2 ✅ 2026-08-09 완료 (f3de291 + fixup 47871c7·a06d8fb, 스펙·품질 통과. D2 주의: 하단 안내는 EmptyBox 재사용 금지 — 라운드 9·패딩 14×16·lh1.7 별도 요소. 소비자 테스트: toast 잔류 상태는 afterEach 타이머 소진 필요)
   - 파일: `components/CardGrid.tsx`, `SectionHeader.tsx`, `EmptyBox.tsx`, `Toast.tsx`
   - 내용: 그리드 `repeat(auto-fill, minmax(158px,1fr))` gap 10px(모바일 8px·2열은 D5), 섹션 헤더(제목+보조문+검은 열기 버튼 30px — 열기 동작은 2단계 G4, 지금은 버튼 렌더+개수만), 점선 EmptyBox, 토스트(하단 중앙, rise .18s, 2초).
   - 완료 기준: 각 컴포넌트 렌더 테스트.
 
 ### EPIC E: 개인 즐겨찾기
 
-- [ ] **E1. useFavorites 훅** `S` — 의존: A1 (**A2조차 불필요 — 최우선 병렬 후보**)
+- [x] **E1. useFavorites 훅** `S` — 의존: A1 ✅ 2026-08-09 완료 (741a379 + fixup 16f33bc. favs는 ReadonlySet — 뷰 레벨 1회 호출 규칙 준수)
   - 파일: `lib/favorites.ts`, `lib/favorites.test.ts`
-  - 내용: `FAVS_KEY`에 `string[]` 저장. `{ favs: Set<string>, toggle(id), isFaved(id) }`. SSR 안전(초기 렌더 빈 값 → 마운트 후 로드), `storage` 이벤트로 탭 간 동기화.
+  - 내용: `FAVS_KEY`에 `string[]` 저장. `{ favs: ReadonlySet<string>, toggle(id), isFaved(id) }` — favs는 **읽기 전용**(변형은 toggle로만. SSR 공유 스냅샷 오염 방지 — E1 품질 리뷰 반영). SSR 안전(초기 렌더 빈 값 → 마운트 후 로드), `storage` 이벤트로 탭 간 동기화. **소비 규칙: 뷰 레벨(HomeView/ListView)에서 한 번 호출하고 isFaved/toggle을 props로 내려보낼 것 — 카드 안에서 직접 호출 금지.**
   - 완료 기준: 테스트 — 토글·중복 방지·localStorage 왕복·SSR 가드.
 
 > 핀 토글의 화면 배선은 뷰 파일(HomeView·ListView)을 수정하므로 **D6**으로 이동했다 (화면 조립 후 수행).
 
 ### EPIC F: 클릭 집계
 
-- [ ] **F1. 방문자 ID** `S` — 의존: A1 · 병렬: E1과 동시 가능
+- [x] **F1. 방문자 ID** `S` — 의존: A1 ✅ 2026-08-09 완료 (5ecbe33 + fixup 16f33bc. 서버 호출 금지 — F2는 클라이언트에서만 호출, 저장값 UUID 검증 자가 치유 포함)
   - 파일: `lib/visitor.ts`, `lib/visitor.test.ts`
   - 내용: `VISITOR_KEY`에 `crypto.randomUUID()` 1회 생성·유지.
   - 완료 기준: 테스트 — 최초 생성, 재호출 시 동일 값.
@@ -478,7 +480,7 @@ graph LR
 
 - [ ] **D1. 데이터 로딩 계층** `M` — 의존: B2 (실검증은 B5) · 병렬: C 트랙과 동시 가능
   - 파일: `lib/queries.ts`, `lib/queries.test.ts`(롤업 순수 함수)
-  - 내용: `getAllData(): Promise<SiteData>` — categories·bookmarks·click counts를 한 번에 (290건 규모라 전체 로드가 단순·충분). `export const revalidate = 60`. 카테고리별 카운트 롤업(하위→상위 합산) 순수 함수.
+  - 내용: `getAllData(): Promise<SiteData>` — categories·bookmarks·click counts를 한 번에 (290건 규모라 전체 로드가 단순·충분). **캐싱: dynamic 렌더링 수용 — `revalidate` 선언 금지** (2026-08-09 확정: 서버 클라이언트가 cookies()를 읽어 어차피 dynamic이고, 3단계 J1의 세션 확인이 이를 영구화한다. 항상 최신 클릭 수는 이득). 카테고리별 카운트 롤업(하위→상위 합산) 순수 함수.
   - 완료 기준: 롤업 테스트(AI 도구 모음 = 하위 합 118), 시드 후 실측 일치.
 
 - [ ] **D2. 홈** `M` — 의존: C2, C5, D1, E1
@@ -488,7 +490,7 @@ graph LR
 
 - [ ] **D3. 공용 목록 화면(ListView) + 카테고리 페이지** `M` — 의존: C2, C5, D1 · 병렬: D2와 동시 가능
   - 파일: `components/ListView.tsx`, `app/category/[id]/page.tsx`
-  - 내용: DESIGN_SPEC 4장 — 제목+개수+설명, 하위 탭 칩(`전체` + 하위별), **홈과 같은 카드 그리드**(행 목록 금지), 핀 노출, 빈 상태. 툴바(전체/선택 열기)와 체크는 **2단계 G4에서 활성** — 자리만 계약에 둔다. 존재하지 않는 id는 404. **Next 16: `params`는 Promise — `await` 필요.**
+  - 내용: DESIGN_SPEC 4장 — 제목+개수+설명, 하위 탭 칩(`전체` + 하위별), **홈과 같은 카드 그리드**(행 목록 금지), 핀 노출, 빈 상태. 툴바(전체/선택 열기)와 체크는 **2단계 G4에서 활성** — 자리만 계약에 둔다. 존재하지 않는 id는 404. **Next 16: `params`는 Promise — `await` 필요.** **라우팅 계약(C3 연동, 2026-08-09 확정)**: `/category/<id>`의 id가 **하위 카테고리면 상위 페이지를 렌더하되 해당 하위 탭을 선택 상태로** 연다(사이드바 하위 링크가 이 형태로 옴 — 404 금지).
   - 완료 기준: 테스트 — 탭 필터링(하위 선택 시 해당 링크만), 상위 선택 시 하위 포함 전체.
 
 - [ ] **D4. 내 즐겨찾기·매일 페이지** `S` — 의존: D3, E1 · 병렬: D2와 동시 가능
@@ -503,7 +505,7 @@ graph LR
 
 - [ ] **D5. 반응형 (<820px)** `M` — 의존: D2, D3, D4, D6, C3, C4
   - 파일: `components/MobileChips.tsx` + 각 화면 미디어 처리
-  - 내용: DESIGN_SPEC 1장 브레이크포인트 — 사이드바 숨김, 상단 칩 줄(홈·내 즐겨찾기·매일 + 카테고리 10), 카드 2열 고정, 본문 패딩 축소, 터치 영역 44px 이상.
+  - 내용: DESIGN_SPEC 1장 브레이크포인트 — 사이드바 숨김, 상단 칩 줄(홈·내 즐겨찾기·매일 + 카테고리 10), 카드 2열 고정, 본문 패딩 축소(셸의 한 줄 수정 — C1 ba9eb0c 주석 참조), 터치 영역 44px 이상. **추가(C4 품질 리뷰 이월)**: `globals.css`에 전역 `:focus-visible` 링 스타일 1규칙(현재 UA 기본 링에 의존 중 — 무채색 토큰으로 명시). 토스트 `whitespace-nowrap` 좁은 화면 검증(C5 이월). `prefers-reduced-motion` 가드(토스트 rise·카드 hover scale — C5 품질 리뷰 이월). **터치 조정(C2 스펙 리뷰 이월)**: v4의 `hover:`는 `@media (hover:hover)`라 터치에서 카드 호버 미발동(수용 여부 판정), 스펙 21×21 액션 버튼 vs 터치 44px 요구의 조정(히트 영역 확장 패턴 — C3 방식 참고).
   - 완료 기준: 375px 뷰포트 수동 검증 기록(스크린샷), 가로 스크롤 없음.
 
 ### 1단계 게이트 — **O1. 검수** (§6 체크리스트 실행 후 사용자 확인)
