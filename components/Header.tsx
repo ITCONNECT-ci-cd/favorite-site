@@ -72,7 +72,7 @@ export function Header({
       <button
         type="button"
         onClick={onAiClick}
-        className="flex h-[38px] flex-none cursor-pointer items-center rounded-[7px] border border-ink bg-ink px-[14px] text-[13px] font-semibold whitespace-nowrap text-white hover:border-ink-hover hover:bg-ink-hover"
+        className="flex h-[38px] flex-none cursor-pointer items-center rounded-[7px] border border-ink bg-ink px-[14px] text-[13px] font-semibold whitespace-nowrap text-white hover:bg-ink-hover"
       >
         AI 검색
       </button>

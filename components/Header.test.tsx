@@ -79,6 +79,9 @@ describe('Header', () => {
       'font-semibold',
       'rounded-[7px]',
     );
+    // 호버는 배경만 #33352f로 바꾼다 — 테두리까지 같이 바꾸면 1px 외곽선이 사라진다.
+    expect(button).toHaveClass('border-ink', 'hover:bg-ink-hover');
+    expect(button.className).not.toMatch(/hover:border-/);
 
     fireEvent.click(button);
 
