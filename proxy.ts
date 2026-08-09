@@ -12,6 +12,16 @@ import { updateSession } from '@/lib/supabase/proxy';
  * (`node_modules/next/dist/build/index.js` 의 E900). 그러니 세션 가드를 추가하고 싶어도
  * `middleware.ts` 를 새로 만들지 말고 이 파일을 고쳐라.
  * 참고: `node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/proxy.md`
+ *
+ * ## ⚠️ env 가 비면 공개 화면까지 500 이다 (의도된 fail-loud)
+ *
+ * `updateSession` 은 `requireEnv` 를 지나므로 `NEXT_PUBLIC_SUPABASE_URL`·ANON_KEY 가
+ * 비면 던진다. 이 파일은 matcher 상 **거의 모든 경로**를 타므로, 그 순간 관리 화면뿐
+ * 아니라 공개 화면까지 통째로 500 이 된다. env 누락이 조용히 "로그아웃 상태"로 둔갑해
+ * 원인 모를 인증 버그로 번지는 것보다, 배포 즉시 크게 실패하는 편이 낫다고 보고 그대로 둔다.
+ *
+ * 대신 이 실패는 **우아한 오류 화면으로 감쌀 수 없다** — 프록시는 layout·error 경계보다
+ * 앞단이라 `app/error.tsx` 가 잡지 못한다. 배포 전 env 확인이 유일한 방어선이다.
  */
 export async function proxy(request: NextRequest) {
   return updateSession(request);

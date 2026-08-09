@@ -17,11 +17,13 @@ type CookieToSet = { name: string; value: string; options?: Record<string, unkno
  * `emit` 을 주면 supabase-js 가 토큰을 갱신해 쿠키를 써 내려가는 상황을 흉내 낸다 —
  * 실제 구현도 `getUser()` 안에서 `setAll` 을 부른다.
  */
-function stubClient(emit: CookieToSet[] = []) {
-  let adapter: { getAll: () => unknown; setAll: (c: CookieToSet[]) => void } | undefined;
+function stubClient(emit: CookieToSet[] = [], headers: Record<string, string> = {}) {
+  let adapter:
+    | { getAll: () => unknown; setAll: (c: CookieToSet[], h: Record<string, string>) => void }
+    | undefined;
 
   const getUser = vi.fn(async () => {
-    if (emit.length > 0) adapter?.setAll(emit);
+    if (emit.length > 0) adapter?.setAll(emit, headers);
     return { data: { user: null }, error: null };
   });
 
@@ -89,6 +91,24 @@ describe('updateSession', () => {
     await updateSession(req);
 
     expect(req.cookies.get('sb-access-token')?.value).toBe('refreshed');
+  });
+
+  it('세션 쿠키와 함께 온 캐시 방지 헤더를 응답에 붙인다', async () => {
+    // 이걸 버리면 CDN·리버스 프록시가 Set-Cookie 로 세션 토큰이 실린 응답을 캐시해
+    // 다른 사용자에게 그대로 내줄 수 있다. supabase-js 가 넘겨 주는 값을 그대로 반영한다.
+    stubClient([{ name: 'sb-access-token', value: 'refreshed' }], {
+      'Cache-Control': 'private, no-cache, no-store, must-revalidate, max-age=0',
+      Expires: '0',
+      Pragma: 'no-cache',
+    });
+
+    const response = await updateSession(request());
+
+    expect(response.headers.get('cache-control')).toBe(
+      'private, no-cache, no-store, must-revalidate, max-age=0',
+    );
+    expect(response.headers.get('expires')).toBe('0');
+    expect(response.headers.get('pragma')).toBe('no-cache');
   });
 
   it('anon 키로 붙는다 — service role 키가 프록시로 새면 안 된다', async () => {

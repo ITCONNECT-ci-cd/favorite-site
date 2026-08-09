@@ -41,7 +41,7 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     {
       cookies: {
         getAll: () => request.cookies.getAll(),
-        setAll: (cookiesToSet) => {
+        setAll: (cookiesToSet, headers) => {
           // 두 곳에 써야 한다. 요청 쿠키는 이번 요청을 이어서 처리할 서버 컴포넌트가 읽고,
           // 응답 쿠키는 브라우저가 받아 다음 요청에 쓴다. 한쪽만 쓰면 둘이 어긋난다.
           for (const { name, value } of cookiesToSet) {
@@ -52,6 +52,14 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
 
           for (const { name, value, options } of cookiesToSet) {
             response.cookies.set(name, value, options);
+          }
+
+          // 두 번째 인자를 반드시 반영해야 한다. auth 쿠키를 실어 보낼 때 supabase-js 가
+          // `Cache-Control: private, no-cache, no-store, must-revalidate, max-age=0` ·
+          // `Expires: 0` · `Pragma: no-cache` 를 넘긴다. 이걸 버리면 CDN·리버스 프록시가
+          // **세션 토큰이 담긴 응답을 캐시해 다른 사용자에게 그대로 내줄 수 있다.**
+          for (const [key, value] of Object.entries(headers)) {
+            response.headers.set(key, value);
           }
         },
       },
