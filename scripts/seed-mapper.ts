@@ -39,10 +39,14 @@ export type Seed = {
 };
 
 /**
- * 원시 링크 배열을 DB insert 용 rows 로 바꾸는 순수 변환.
+ * 원시 링크 배열을 DB insert 용 rows 로 바꾼다.
  *
- * 파일시스템에는 접근하지 않는다 — 파비콘 파일 존재 여부는 `availableIconIds` 로 주입받는다
- * (실제 디렉터리 스캔은 호출측 몫).
+ * 보장: I/O 없음(파일시스템·네트워크 접근 없음) · 입력 불변(`raw` 와 그 요소를 변경하지 않음).
+ * 파비콘 파일 존재 여부는 `availableIconIds` 로 주입받는다 — 실제 디렉터리 스캔은 호출측 몫.
+ *
+ * ⚠️ 결정적(deterministic) 함수가 **아니다**: uuid 를 호출마다 새로 생성한다.
+ * 따라서 B4(파비콘 업로드)와 B5(시드 실행)는 **반드시 하나의 `buildSeed` 결과를 공유**해야 한다.
+ * 각자 따로 호출하면 북마크 id 가 서로 어긋나 favicon_url 이 전부 null 로 조용히 틀어진다.
  *
  * @param raw docs/data/links.json 을 파싱한 배열. 이 배열과 그 요소는 변경하지 않는다.
  * @param availableIconIds `docs/data/icons/<id>.png` 가 실제로 존재하는 원본 id 집합.
@@ -113,4 +117,18 @@ export function buildSeed(
   }));
 
   return { categories, bookmarks };
+}
+
+/**
+ * seed 전용 필드를 떼고 bookmarks 테이블에 실제로 있는 컬럼만 남긴다.
+ *
+ * `BookmarkSeed` 는 intersection 타입이라 `BookmarkSeed` 를 그대로 insert 해도 TS 의
+ * excess property check 에 걸리지 않는다 — 컴파일은 통과하고 런타임에
+ * `column "iconFile" does not exist` 로 터진다. insert 직전에 반드시 이걸 통과시켜라.
+ */
+export function toBookmarkRow(seed: BookmarkSeed): Bookmark {
+  // iconFile/legacyId 를 뽑아내는 것 자체가 목적이라 쓰지 않는다(rest 로 나머지만 남긴다).
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { iconFile, legacyId, ...row } = seed;
+  return row;
 }

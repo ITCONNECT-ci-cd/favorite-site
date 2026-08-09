@@ -1,22 +1,29 @@
+// @vitest-environment node
+// 순수 변환 + fs fixture 만 쓰므로 DOM 이 필요 없다. node 환경이라야 import.meta.url 이
+// 실제 파일 URL 로 남아(jsdom 은 페이지 URL 로 치환한다) cwd 에 기대지 않고 경로를 잡을 수 있다.
 import { readdirSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
+import type { Bookmark } from '@/lib/types';
 import { OPERATING_CATEGORY_NAME } from '@/lib/constants';
-import { buildSeed, type BookmarkSeed, type CategorySeed, type RawLink } from './seed-mapper';
-
-// jsdom 환경에서는 import.meta.url 이 페이지 URL 로 치환되므로 vitest root(= cwd) 기준으로 잡는다.
-const REPO_ROOT = process.cwd();
+import {
+  buildSeed,
+  toBookmarkRow,
+  type BookmarkSeed,
+  type CategorySeed,
+  type RawLink,
+} from './seed-mapper';
 
 /** 실제 docs/data/links.json 을 fixture 로 사용한다 (읽기 전용). */
-const LINKS_PATH = resolve(REPO_ROOT, 'docs/data/links.json');
+const LINKS_PATH = fileURLToPath(new URL('../docs/data/links.json', import.meta.url));
 const RAW: RawLink[] = JSON.parse(readFileSync(LINKS_PATH, 'utf8')) as RawLink[];
 
 /**
  * docs/data/icons 에 실제로 있는 `<id>.png` 목록 = 72개.
  * 실제 스캔은 호출측(B5) 몫이라 여기서만 fs 를 만진다 — buildSeed 는 집합만 받는다.
  */
-const ICONS_DIR = resolve(REPO_ROOT, 'docs/data/icons');
+const ICONS_DIR = fileURLToPath(new URL('../docs/data/icons/', import.meta.url));
 const ICON_IDS_FROM_DISK: ReadonlySet<number> = new Set(
   readdirSync(ICONS_DIR)
     .filter((file) => file.endsWith('.png'))
@@ -100,6 +107,19 @@ describe('buildSeed — 카테고리 생성', () => {
     expect(ref).toHaveLength(1);
     expect(google).toHaveLength(1);
     expect(ref[0].sort_order).toBeLessThan(google[0].sort_order);
+  });
+
+  it('비연속 등장 최소 재현: A·B·A 는 상위 2개만 만들고 1·3번째가 같은 카테고리를 쓴다', () => {
+    const input: RawLink[] = [
+      makeRaw({ id: 1, group: 'A', sub: '' }),
+      makeRaw({ id: 2, group: 'B', sub: '' }),
+      makeRaw({ id: 3, group: 'A', sub: '' }),
+    ];
+    const { categories, bookmarks } = buildSeed(input, NO_ICONS);
+
+    expect(categories.map((c) => [c.name, c.sort_order])).toEqual([['A', 0], ['B', 1]]);
+    expect(bookmarks[0].category_id).toBe(bookmarks[2].category_id);
+    expect(bookmarks[1].category_id).not.toBe(bookmarks[0].category_id);
   });
 
   it('하위 카테고리는 상위 id 를 parent_id 로 갖고 그룹 내 등장 순서를 sort_order 로 갖는다', () => {
@@ -246,6 +266,44 @@ describe('buildSeed — 파비콘 파일 부착', () => {
         expect(bookmark.iconFile).toBe(`${bookmark.legacyId}.png`);
       }
     }
+  });
+});
+
+describe('toBookmarkRow', () => {
+  it('seed 전용 필드만 떼고 DB 컬럼은 전부 보존한다', () => {
+    const { bookmarks } = buildSeed(RAW, ICON_IDS_FROM_DISK);
+    const seed = bookmarks.find((b) => b.iconFile !== null) as BookmarkSeed;
+    const row = toBookmarkRow(seed);
+
+    expect(Object.keys(row).sort()).toEqual([
+      'category_id', 'created_at', 'description', 'favicon_url', 'id',
+      'is_pinned', 'sort_order', 'tags', 'title', 'url',
+    ]);
+    expect('iconFile' in row).toBe(false);
+    expect('legacyId' in row).toBe(false);
+
+    // 남은 값은 seed 와 동일해야 한다.
+    const expected: Bookmark = {
+      id: seed.id,
+      category_id: seed.category_id,
+      title: seed.title,
+      url: seed.url,
+      description: seed.description,
+      tags: seed.tags,
+      favicon_url: seed.favicon_url,
+      is_pinned: seed.is_pinned,
+      sort_order: seed.sort_order,
+      created_at: seed.created_at,
+    };
+    expect(row).toEqual(expected);
+  });
+
+  it('원본 seed 객체는 그대로 둔다', () => {
+    const { bookmarks } = buildSeed(RAW, ICON_IDS_FROM_DISK);
+    const seed = bookmarks.find((b) => b.iconFile !== null) as BookmarkSeed;
+    toBookmarkRow(seed);
+    expect(seed.iconFile).toBe(`${seed.legacyId}.png`);
+    expect(seed.legacyId).toBeTypeOf('number');
   });
 });
 
