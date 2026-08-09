@@ -69,7 +69,9 @@ export function LinkCard({
 
   function open() {
     onOpen?.(id);
-    window.open(url, '_blank');
+    // noopener면 반환값이 항상 null이라 팝업 차단을 감지할 수 없지만, 카드 단건 열기는
+    // 감지가 필요 없고 여러 개를 여는 2단계 G4는 어차피 무조건 안내 토스트(V4)를 띄운다.
+    window.open(url, '_blank', 'noopener,noreferrer');
   }
 
   // 체크는 즐겨찾기보다 앞선다 — 선택한 카드를 한눈에 구분하는 쪽이 우선이다.

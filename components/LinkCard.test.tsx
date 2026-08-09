@@ -38,6 +38,12 @@ const bodyButton = () => screen.getByRole('button', { name: /AI 대화·문서 �
 const pinButton = () => screen.getByRole('button', { name: 'ChatGPT 즐겨찾기' });
 const checkButton = () => screen.getByRole('button', { name: 'ChatGPT 선택' });
 
+/**
+ * 열린 탭이 window.opener를 잡지 못하게 막는다(reverse tabnabbing).
+ * window.open은 <a target="_blank">와 달리 noopener가 암묵 적용되지 않아 직접 넘겨야 한다.
+ */
+const OPEN_ARGS = ['https://chat.openai.com/', '_blank', 'noopener,noreferrer'] as const;
+
 /** jsdom의 window.open은 "not implemented"를 던지므로 매 테스트에서 갈아 끼운다. */
 function spyOnOpen() {
   return vi.spyOn(window, 'open').mockReturnValue(null);
@@ -107,7 +113,7 @@ describe('LinkCard 열기', () => {
 
     fireEvent.click(bodyButton());
 
-    expect(open).toHaveBeenCalledWith('https://chat.openai.com/', '_blank');
+    expect(open).toHaveBeenCalledWith(...OPEN_ARGS);
     expect(onOpen).toHaveBeenCalledWith('bm-1');
   });
 
@@ -117,8 +123,16 @@ describe('LinkCard 열기', () => {
 
     fireEvent.click(faviconButton());
 
-    expect(open).toHaveBeenCalledWith('https://chat.openai.com/', '_blank');
+    expect(open).toHaveBeenCalledWith(...OPEN_ARGS);
     expect(onOpen).toHaveBeenCalledWith('bm-1');
+  });
+
+  it('noopener·noreferrer로 열어 열린 탭이 opener를 잡지 못하게 한다', () => {
+    renderCard();
+
+    fireEvent.click(bodyButton());
+
+    expect(open.mock.calls[0]?.[2]).toBe('noopener,noreferrer');
   });
 
   it('onOpen은 새 탭을 열기 직전에 부른다 (F3이 클릭 기록에 배선)', () => {
@@ -135,7 +149,7 @@ describe('LinkCard 열기', () => {
 
     fireEvent.click(bodyButton());
 
-    expect(open).toHaveBeenCalledWith('https://chat.openai.com/', '_blank');
+    expect(open).toHaveBeenCalledWith(...OPEN_ARGS);
   });
 
   it('카드 바탕을 눌러도 열리지 않는다 (열기 영역은 파비콘과 본문뿐)', () => {
