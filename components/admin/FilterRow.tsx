@@ -208,7 +208,19 @@ export function visibleLinks(
   });
 }
 
-/** 줄 — 프로토타입 원문 `display:flex; align-items:center; gap:10px; height:44px; padding:0 16px; background:#fff; border-bottom:1px solid #e3dfd9`. 높이만 밑값이다(아래 JSDoc). */
+/**
+ * 줄 — 프로토타입 원문 `display:flex; align-items:center; gap:10px; height:44px; padding:0 16px;
+ * background:#fff; border-bottom:1px solid #e3dfd9`.
+ *
+ * **높이만 고정이 아니라 밑값이다.** 칩은 하위 수만큼 늘어난다 — 실제 데이터의 첫 카테고리는
+ * 하위가 10개라 칩이 12개고(전체 + 10 + 하위 미지정), 한 줄에 들어가지 않는다. 44px 로 못 박으면
+ * 넘친 칩이 그냥 **사라진다**: 이 줄을 담은 상자가 `overflow-hidden` 이라(LinkAddRow) 잘린 부분이
+ * 화면 밖으로도 나가지 못한다. 좁은 화면(<820px 에서 관리자 2단이 1단으로 접힌다 — DESIGN_SPEC
+ * 1장)에서는 줄 자체도 감싼다.
+ *
+ * 위아래 7px 는 **한 줄일 때 정확히 44px 이 되게** 고른 값이다(가장 높은 항목인 검색 칸·select 가
+ * 30px + 7 + 7). 줄이 늘면 그만큼 아래로 자란다.
+ */
 const ROW =
   'flex flex-wrap items-center gap-x-[10px] gap-y-[10px] min-h-[44px] px-[16px] py-[7px] bg-card border-b border-border';
 
