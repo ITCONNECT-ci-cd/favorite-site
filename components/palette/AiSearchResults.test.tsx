@@ -264,3 +264,13 @@ describe('HTTP·네트워크 오류 (비200)', () => {
     expect(screen.getByText('AI 검색을 실행하지 못했습니다')).toBeInTheDocument();
   });
 });
+
+describe('접근성 — AI 영역 라이브 (I-2)', () => {
+  it('AI 영역을 role="status" aria-live="polite" 로 감싸 전환을 SR 에 낭독한다', () => {
+    // 로딩 내용의 가장 가까운 조상이 폴라이트 라이브 영역이어야 로딩→결과/오류가 무음이 아니다.
+    // (형제로 붙은 Toaster 의 role="status" 와 헷갈리지 않게 로딩 요소에서 위로 짚는다.)
+    renderResults({ status: 'loading' });
+
+    expect(screen.getByTestId('ai-loading').closest('[role="status"]')).toHaveAttribute('aria-live', 'polite');
+  });
+});

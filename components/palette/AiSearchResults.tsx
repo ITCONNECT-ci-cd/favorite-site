@@ -222,7 +222,19 @@ export type AiSearchResultsProps = {
   onClose: () => void;
 };
 
-export function AiSearchResults({ state, data, onClose }: AiSearchResultsProps) {
+export function AiSearchResults(props: AiSearchResultsProps) {
+  // I-2(N3 접근성). AI 영역 한 덩어리를 하나의 라이브 영역으로 감싼다 — 로딩 "…찾는 중"·"N건"·오류
+  // 전환이 스크린리더에 낭독되게(그 전엔 무음이었다). 팔레트 입력줄의 키워드 카운트 role="status"
+  // (CommandPalette)와는 서로 다른 영역이라 중복 낭독이 없다. 이 래퍼는 loading→settled 사이 내내
+  // 마운트돼 있어(호스트가 idle 에서만 슬롯을 접는다) 로딩→결과/오류 전환을 안정적으로 알린다.
+  return (
+    <div role="status" aria-live="polite">
+      <AiSearchBody {...props} />
+    </div>
+  );
+}
+
+function AiSearchBody({ state, data, onClose }: AiSearchResultsProps) {
   if (state.status === 'loading') return <Loading />;
 
   const { query, result } = state;
