@@ -235,10 +235,12 @@ export function AiSearchResults({ state, data, onClose }: AiSearchResultsProps) 
   const items = Array.isArray(results) ? results : [];
   const byId = new Map(data.bookmarks.map((bookmark) => [bookmark.id, bookmark]));
   const categoryNames = new Map(data.categories.map((category) => [category.id, category.name]));
+  // 한 번만 잇는다 — "N건" 라벨·빈 판정·행 렌더가 모두 이 실존 링크 목록을 기준으로 삼는다.
+  const rows = resolve(items, byId);
 
   if (source === 'ai') {
     // 빈 AI 결과는 폴백이 아니라 "의미상 못 찾음"이다(reason:'ok', results:[]).
-    if (items.length === 0) {
+    if (rows.length === 0) {
       return (
         <Notice
           title="AI가 의미상 맞는 링크를 찾지 못했습니다"
@@ -249,10 +251,10 @@ export function AiSearchResults({ state, data, onClose }: AiSearchResultsProps) 
 
     return (
       <Hits
-        title={`AI가 의미로 찾은 링크 ${resolve(items, byId).length}건`}
+        title={`AI가 의미로 찾은 링크 ${rows.length}건`}
         note="이름이 안 겹쳐도 하는 일이 맞으면 가져옵니다"
         tookMs={tookMs}
-        rows={resolve(items, byId)}
+        rows={rows}
         categoryNames={categoryNames}
         onClose={onClose}
         useReason
@@ -271,7 +273,6 @@ export function AiSearchResults({ state, data, onClose }: AiSearchResultsProps) 
   }
 
   const detail = REASON_DETAIL[reason];
-  const rows = resolve(items, byId);
 
   if (rows.length === 0) {
     return <Notice title={detail} sub="이름 검색 결과도 없습니다" />;
