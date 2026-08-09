@@ -58,6 +58,22 @@ function renderForm(over: Partial<BookmarkWithCount> = {}) {
   );
 }
 
+/**
+ * 실제 배치와 같은 그림 — 폼은 **카드의 본문 자리**에 들어앉고(LinkCard 의 `editSlot`), 그 폼을
+ * 연 연필은 같은 카드의 상단 줄에 있다. 포커스가 "누가 눌렀는가"를 가릴 때 보는 것이 이
+ * 부모-자식 관계라, 포커스를 다루는 묶음은 폼만 띄우지 않고 이 카드로 감싼다.
+ *
+ * jsdom 의 클릭은 포커스를 옮기지 않으므로 '누른 자리'는 테스트가 손으로 짚는다.
+ */
+function Card({ open, label }: { open: boolean; label: string }) {
+  return (
+    <div>
+      <button type="button">{label}</button>
+      {open && <InlineEdit bookmark={BOOKMARK} onDone={onDone} />}
+    </div>
+  );
+}
+
 const titleField = () => screen.getByRole('textbox', { name: '이름' });
 const descField = () => screen.getByRole('textbox', { name: '한 줄 설명' });
 const saveButton = () => screen.getByRole('button', { name: '저장' });
@@ -606,20 +622,86 @@ describe('InlineEdit — 포커스', () => {
   });
 
   it('닫힐 때 폼을 열어 준 자리로 돌려준다', () => {
-    // 폼은 연필의 ref 를 모르므로(그 버튼은 LinkCard 의 것이다) 마운트 순간의 activeElement 를
-    // 붙드는 것이 최선이다. jsdom 의 클릭은 포커스를 옮기지 않아 여기서는 손으로 맞춰 둔다 —
-    // 클릭이 버튼에 포커스를 주지 않는 환경(macOS Safari 기본값)에서도 같은 그림이 된다.
-    const trigger = document.createElement('button');
-    document.body.append(trigger);
-    trigger.focus();
+    // 폼은 연필의 ref 를 모르므로(그 버튼은 LinkCard 의 것이다) 렌더 시점의 activeElement 를
+    // 붙드는 것이 최선이다. jsdom 의 클릭은 포커스를 옮기지 않아 여기서는 손으로 맞춰 둔다.
+    const { rerender } = render(<Card open={false} label="연필" />);
+    const pencil = screen.getByRole('button', { name: '연필' });
+    pencil.focus();
 
-    const view = render(<InlineEdit bookmark={BOOKMARK} onDone={onDone} />);
-
+    rerender(<Card open label="연필" />);
     expect(titleField()).toHaveFocus();
 
-    view.unmount();
+    rerender(<Card open={false} label="연필" />);
 
-    expect(trigger).toHaveFocus();
-    trigger.remove();
+    expect(pencil).toHaveFocus();
+  });
+});
+
+/**
+ * **어느 연필이 이 폼을 열었는가** — 트리거를 `useEffect` 가 아니라 **렌더 시점**에 붙드는 이유가
+ * 여기 둘 다 있다 (J3 DeleteConfirm 의 같은 묶음과 짝이다).
+ */
+describe('InlineEdit — 폼을 연 자리', () => {
+  /** 카드 둘이 나란히 있고, 폼은 화면이 든 `editingId` 하나를 따라 그중 한 자리에만 열린다. */
+  function Cards({ open }: { open: 'a' | 'b' | null }) {
+    return (
+      <>
+        <Card open={open === 'a'} label="A 수정" />
+        <Card open={open === 'b'} label="B 수정" />
+      </>
+    );
+  }
+
+  /** 같은 링크가 홈의 두 섹션에 놓인 경우 — 폼이 **두 벌 함께** 열린다. */
+  function Both({ open }: { open: boolean }) {
+    return (
+      <>
+        <Card open={open} label="위 수정" />
+        <Card open={open} label="아래 수정" />
+      </>
+    );
+  }
+
+  it('앞 폼이 닫히며 되돌린 포커스를 새 폼이 트리거로 붙들지 않는다', () => {
+    const { rerender } = render(<Cards open={null} />);
+    const pencilA = screen.getByRole('button', { name: 'A 수정' });
+    const pencilB = screen.getByRole('button', { name: 'B 수정' });
+
+    pencilA.focus();
+    rerender(<Cards open="a" />);
+
+    pencilB.focus();
+    // 화면의 `editingId` 가 한 번에 바뀌어 **한 커밋에서** A 가 사라지고 B 가 열린다. React 는
+    // 사라지는 쪽의 cleanup 을 먼저 돌리므로 그 순간 activeElement 는 A 가 되돌려 놓은 A 의
+    // 연필이다 — effect 에서 읽는 구현은 B 가 남의 트리거를 붙든다.
+    rerender(<Cards open="b" />);
+
+    rerender(<Cards open={null} />);
+
+    expect(pencilB).toHaveFocus();
+  });
+
+  it('두 벌이 함께 열려도 눌린 카드의 폼만 포커스를 데려간다', () => {
+    const { rerender } = render(<Both open={false} />);
+    screen.getByRole('button', { name: '위 수정' }).focus();
+
+    rerender(<Both open />);
+
+    // 둘 다 데려오면 나중에 마운트된 아래쪽이 이겨, 누르지도 않은 카드로 포커스가 간다.
+    const [top, bottom] = screen.getAllByRole('textbox', { name: '이름' });
+    expect(top).toHaveFocus();
+    expect(bottom).not.toHaveFocus();
+  });
+
+  it('클릭이 포커스를 옮기지 않는 환경에서는 가리지 않고 데려온다 — 종전 그대로', () => {
+    // 붙들 것이 `<body>` 뿐이면(macOS Safari 기본값 · jsdom) 누가 눌렀는지 알 길이 없다.
+    // 폼이 열렸는데 포커스가 카드 밖에 남는 쪽이 더 나쁘므로 그때는 데려온다.
+    const { rerender } = render(<Both open={false} />);
+    expect(document.activeElement).toBe(document.body);
+
+    rerender(<Both open />);
+
+    const fields = screen.getAllByRole('textbox', { name: '이름' });
+    expect(fields[fields.length - 1]).toHaveFocus();
   });
 });

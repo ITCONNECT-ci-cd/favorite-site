@@ -123,7 +123,24 @@ export function InlineEdit({ bookmark, onDone }: InlineEditProps) {
    * 쓰기 대상 id 도 여기서 가져온다 — 무엇과 비교했는지와 어디에 쓰는지가 갈라지면 안 된다.
    */
   const [baseline] = useState(bookmark);
+  const formRef = useRef<HTMLFormElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
+  /**
+   * 이 폼을 **연 자리** — 렌더 시점의 `document.activeElement` 다. 정상 경로에서는 방금 누른
+   * 연필이고(클릭이 포커스를 옮긴 직후에 이 렌더가 일어난다), 아래 두 가지의 근거가 된다:
+   * 닫힐 때 돌려줄 곳, 그리고 "이 카드가 눌린 카드인가"(`owned`).
+   *
+   * **effect 에서 읽으면 늦는다.** 카드 A 의 폼이 열려 있는데 카드 B 의 연필을 누르면 화면의
+   * `editingId` 가 한 번에 바뀌어 **한 커밋에서** A 가 사라지고 B 가 뜬다. React 는 사라지는 쪽의
+   * cleanup 을 새로 뜨는 쪽의 effect 보다 먼저 돌리므로, 그 순간 `activeElement` 는 A 가 되돌려
+   * 놓은 **A 의 연필**이다 — effect 에서 읽은 B 는 남의 트리거를 붙들고, 닫힐 때 포커스를 엉뚱한
+   * 카드로 보낸다. 렌더는 그 cleanup 보다 앞서 일어나므로 여기서 잡는다(J3 DeleteConfirm 과 같은
+   * 처리).
+   *
+   * 렌더 중에 `document` 를 읽어도 되는 것은 이 폼이 **서버에서 렌더되지 않기** 때문이다 —
+   * 화면의 `editingId` 는 null 로 시작하므로 SSR·하이드레이션 첫 렌더에는 이 컴포넌트가 없다.
+   */
+  const [trigger] = useState<Element | null>(() => document.activeElement);
 
   /**
    * 뜨는 순간 이름 입력으로 포커스를 데려오고, 닫힐 때 열어 준 자리로 돌려준다
@@ -133,28 +150,33 @@ export function InlineEdit({ bookmark, onDone }: InlineEditProps) {
    * 듣는 것이라(아래 `handleKeyDown`), 연필에 포커스가 있는 채로 Esc 를 누르면 아무 일도
    * 일어나지 않는다 — 키보드 사용자에게는 나가는 길이 막힌 것과 같다.
    *
-   * 돌려줄 자리는 **마운트 순간의 `document.activeElement`** 다. 정상 경로에서 그것이 곧 방금 누른
-   * 연필이지만, 폼은 연필의 ref 를 모른다(그 버튼은 LinkCard 의 것이고 J1b 의 병렬 계약상 이 트랙이
-   * 건드리지 않는다). 그래서 한계가 둘 남는다.
+   * 돌려줄 자리는 위 `trigger` 다. 폼은 연필의 ref 를 모르므로(그 버튼은 LinkCard 의 것이고 J1b 의
+   * 병렬 계약상 이 트랙이 건드리지 않는다) 붙들어 둔 것으로 가늠한다. 그래서 한계가 둘 남는다.
    *
    * - 클릭으로 버튼에 포커스가 가지 않는 환경(macOS Safari 기본값 · jsdom)에서는 붙들 것이
    *   `<body>` 라 되돌릴 것도 없다. 포커스는 폼이 사라진 자리, 즉 `<body>` 에 남는다.
    * - 되돌릴 때 `isConnected` 를 본다 — 그 사이 카드가 사라졌다면(다른 창의 삭제 등) 떨어져 나간
    *   노드에 `focus()` 를 불러 봐야 포커스는 `<body>` 로 간다.
    *
-   * ⚠️ 같은 링크가 홈의 두 섹션에 놓여 폼이 두 벌 열리면 이 데려오기도 두 번 일어나 **나중에
-   * 마운트된 쪽이 이긴다** — 사용자가 누른 연필이 위쪽 섹션이어도 포커스는 아래쪽 폼에 가 있다.
-   * 두 벌이 열리는 것 자체가 화면의 성질이라(위 draft 소유권) 폼 안에서는 고를 방법이 없다.
+   * ⚠️ 같은 링크가 홈의 두 섹션에 놓이면 폼도 두 벌 열린다(위 draft 소유권). 그때 이름 입력을
+   * 데려가는 것은 **연필이 눌린 카드의 폼 하나**다 — 트리거를 렌더 시점에 붙들어 두었으므로
+   * "그 연필이 내 카드 안에 있는가"로 가릴 수 있다. 기준 상자는 폼의 부모, 곧 카드다(LinkCard 는
+   * 본문 블록 자리에 `editSlot` 을 끼우고 연필은 같은 카드의 상단 줄에 있다). 붙든 것이 `<body>`
+   * 뿐이면 누가 눌렀는지 알 길이 없으므로 가리지 않고 데려온다 — 그때는 종전대로 나중에 마운트된
+   * 쪽이 이긴다.
    */
   useEffect(() => {
-    const trigger = document.activeElement;
+    const card = formRef.current?.parentElement;
+    const owned = trigger instanceof HTMLElement && card?.contains(trigger) === true;
+    const orphan = !(trigger instanceof HTMLElement) || trigger === document.body;
 
-    titleRef.current?.focus();
+    if (owned || orphan) titleRef.current?.focus({ preventScroll: true });
 
     return () => {
-      if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus();
+      if (trigger instanceof HTMLElement && trigger.isConnected)
+        trigger.focus({ preventScroll: true });
     };
-  }, []);
+  }, [trigger]);
 
   /**
    * **바뀐 키만** 담는다. `updateBookmark` 는 준 키만 쓰므로(BookmarkPatch), 건드리지 않은
@@ -259,6 +281,7 @@ export function InlineEdit({ bookmark, onDone }: InlineEditProps) {
 
   return (
     <form
+      ref={formRef}
       // 카드마다 폼이 하나씩 열릴 수 있으므로 어느 링크의 폼인지 이름에 담는다
       // (카드 액션 버튼의 `${title} 수정`·`${title} 삭제` 와 같은 방식).
       //

@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
+import { startTransition, useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 
 import { toast } from '@/components/Toast';
 import { useFavorites } from '@/lib/favorites';
-import { deleteBookmark } from '@/lib/mutations';
+import { deleteBookmark, type ActionResult } from '@/lib/mutations';
 import type { BookmarkWithCount } from '@/lib/types';
 
 export type DeleteConfirmProps = {
@@ -13,14 +13,28 @@ export type DeleteConfirmProps = {
   /**
    * 오버레이를 닫는다 — 화면이 든 `deletingId` 를 비우는 일이다(삭제 성공 · 취소 · Esc).
    *
+   * **부르는 쪽은 반드시 이 오버레이를 언마운트한다.** 삭제 성공 경로는 빗장(`sending`)도 잠긴
+   * 모습(`deleting`)도 되돌리지 않으므로(아래 `confirm`), 이것을 부르고도 오버레이를 남겨 두면
+   * 두 버튼과 Esc 가 모두 잠긴 확인창이 카드 위에 남는다 — 나갈 길은 새로고침뿐이다
+   * (InlineEdit 의 `onDone` 과 같은 계약).
+   *
    * **실패하면 부르지 않는다.** 문구만 토스트로 알리고 오버레이는 그대로 남겨, 다시 누르거나
-   * 취소로 나가게 한다(InlineEdit 의 `onDone` 과 같은 규약).
+   * 취소로 나가게 한다.
    *
    * 성공했을 때 카드가 사라지는 것은 이 콜백이 하는 일이 아니다 — 액션의
    * `revalidatePath('/', 'layout')` 가 목록을 다시 그린다.
    */
   onDone: () => void;
 };
+
+/**
+ * 요청 자체가 **거부됐을 때** 보여 줄 문구 — 아래 `confirm` 의 catch.
+ *
+ * `lib/mutations.ts` 의 `RETRY_LATER` 와 같은 문장을 일부러 한 벌 더 적었다. 그 파일은
+ * `'use server'` 라 **상수를 내보낼 수 없다**(export 는 전부 async 함수여야 한다 — 파일 상단 규약).
+ * 저쪽 문구를 고치면 여기도 함께 고쳐라 (J2 InlineEdit 의 같은 상수와도 짝이다).
+ */
+const REQUEST_FAILED = '저장하지 못했습니다. 잠시 후 다시 시도해 주세요.';
 
 /**
  * 카드를 덮는 오버레이 (DESIGN_SPEC 2-1 "삭제 확인" · 프로토타입 150행).
@@ -31,6 +45,10 @@ export type DeleteConfirmProps = {
  * 프로토타입이 함께 적은 `border-radius:10px` 은 옮기지 않았다. 카드가
  * `rounded-[10px] overflow-hidden` 이라 모서리는 이미 잘리고, 같은 값을 두 곳에 적으면 카드의
  * 라운드를 바꿀 때 여기만 남는다.
+ *
+ * 배경 `rgba(251,250,248,.97)` 은 본문 배경 토큰 `--color-surface`(#fbfaf8)를 97% 로 깐 값이다
+ * (프로토타입 150행 원값) — 남은 3% 로 지우려는 링크가 뒤에 비쳐 보인다. 토큰을 그대로 쓰지
+ * 못하는 것은 알파가 붙어서다.
  */
 const OVERLAY =
   'absolute inset-0 z-[6] flex flex-col items-center justify-center gap-[7px] p-[8px] bg-[rgba(251,250,248,.97)]';
@@ -85,8 +103,13 @@ const FOCUSABLE = 'button:not([disabled])';
  * 상태가 링크 id 하나라서다(프로토타입 `st.confirmId === b.id` 와 같다). 인스턴스가 둘이어도
  * 잃을 것은 없다: 이 컴포넌트가 드는 상태는 `deleting` 빗장 하나뿐이고 사용자가 쳐 둔 값이
  * 없다. (J2 인라인 편집은 사정이 다르다 — 두 폼에 서로 다른 값을 치고 한쪽을 저장하면 다른
- * 쪽 입력이 조용히 사라진다.) 게다가 어느 쪽에서 확인하든 지우는 링크가 같고, 한쪽이
- * 성공하면 화면이 `deletingId` 를 비워 두 자리가 함께 닫히므로 액션이 두 번 갈 길도 없다.
+ * 쪽 입력이 조용히 사라진다.) 어느 쪽에서 확인하든 지우는 링크도 같다.
+ *
+ * 다만 **빗장(`sending`)은 인스턴스마다 따로다** — 두 자리의 `삭제` 를 각각 누르면 두 번째
+ * 요청도 나갈 수 있다. 첫 요청이 돌아와 화면이 `deletingId` 를 비우기 전에 다른 자리의 버튼까지
+ * 눌러야 하니 현실적으로는 어렵고, 일어나더라도 두 번째는 이미 지워진 행을 찾다가
+ * "링크를 찾을 수 없습니다." 토스트로 끝난다(지운 결과 자체는 멀쩡하다). 한쪽이 성공하면
+ * 화면이 `deletingId` 를 비워 두 자리가 함께 닫힌다.
  */
 export function DeleteConfirm({ bookmark, onDone }: DeleteConfirmProps) {
   /** 서버 왕복 중 — 두 버튼을 잠그고 Esc 를 막는 **보이는** 상태다. */
@@ -104,6 +127,22 @@ export function DeleteConfirm({ bookmark, onDone }: DeleteConfirmProps) {
   const messageId = useId();
 
   /**
+   * 이 확인창을 **연 자리** — 렌더 시점의 `document.activeElement` 다. 정상 경로에서는 방금 누른
+   * 휴지통이고(클릭이 포커스를 옮긴 직후에 이 렌더가 일어난다), 아래 두 가지의 근거가 된다:
+   * 닫힐 때 돌려줄 곳, 그리고 "이 카드가 눌린 카드인가"(`owned`).
+   *
+   * **effect 에서 읽으면 늦는다.** 확인창 A 가 떠 있는데 다른 카드의 휴지통 B 를 누르면 화면의
+   * `deletingId` 가 한 번에 바뀌어 **한 커밋에서** A 가 사라지고 B 가 뜬다. React 는 사라지는
+   * 쪽의 cleanup 을 새로 뜨는 쪽의 effect 보다 먼저 돌리므로, 그 순간 `activeElement` 는 A 가
+   * 되돌려 놓은 **A 의 휴지통**이다 — effect 에서 읽은 B 는 남의 트리거를 붙들고, 닫힐 때
+   * 포커스를 엉뚱한 카드로 보낸다. 렌더는 그 cleanup 보다 앞서 일어나므로 여기서 잡는다.
+   *
+   * 렌더 중에 `document` 를 읽어도 되는 것은 이 오버레이가 **서버에서 렌더되지 않기** 때문이다 —
+   * 화면의 `deletingId` 는 null 로 시작하므로 SSR·하이드레이션 첫 렌더에는 이 컴포넌트가 없다.
+   */
+  const [trigger] = useState<Element | null>(() => document.activeElement);
+
+  /**
    * 지운 링크를 **이 브라우저의 즐겨찾기에서도 뺀다** (아래 `confirm`).
    *
    * E1 의 사용 규칙("카드 안에서 부르지 말고 뷰에서 한 번만")을 어기는 것처럼 보이지만 아니다 —
@@ -114,6 +153,24 @@ export function DeleteConfirm({ bookmark, onDone }: DeleteConfirmProps) {
    * 때문이다. "그 링크는 이제 없다"를 아는 시점은 액션의 응답을 받은 여기 한 곳뿐이다.
    */
   const { favs, toggle } = useFavorites();
+  /**
+   * 위 `favs` 의 **지금 값**. 아래 `confirm` 은 서버 왕복 뒤에 이 집합을 보는데, 렌더 클로저가 든
+   * 스냅샷은 그 사이에 낡을 수 있다 — 다른 탭이 이 링크의 즐겨찾기를 풀면 구독(storage 이벤트)으로
+   * 새 값이 내려오지만 이미 떠난 `confirm` 은 옛 집합을 계속 본다. 그 옛 값으로 판정하면
+   * `toggle` 이 **없는 id 를 담아** 방금 지운 링크를 즐겨찾기에 되살린다(lib/favorites.ts:14-19 —
+   * `toggle` 은 없으면 담는 함수라 부르는 쪽이 방향을 책임진다).
+   *
+   * `remove(id)` 가 있으면 이런 판정 자체가 필요 없지만 `lib/**` 는 이 트랙의 파일이 아니다 —
+   * 스윕으로 이월한다.
+   *
+   * 렌더 중에 대입하지 않고 effect 로 미루는 것은 규칙(react-hooks/refs: 렌더 중 ref 접근 금지)
+   * 때문이고, 늦지도 않는다 — 읽는 자리가 서버 왕복 **뒤**라 커밋이 이미 끝나 있다.
+   */
+  const favsRef = useRef(favs);
+
+  useEffect(() => {
+    favsRef.current = favs;
+  }, [favs]);
 
   /**
    * 뜨는 순간 포커스를 데려오고, 닫힐 때 열어 준 곳(휴지통)으로 돌려준다.
@@ -122,26 +179,52 @@ export function DeleteConfirm({ bookmark, onDone }: DeleteConfirmProps) {
    * (WAI-ARIA APG alertdialog). 휴지통을 누른 직후의 Enter 한 번이 그대로 삭제가 되면 확인을
    * 거치게 한 의미가 없다.
    *
+   * **데려오는 것은 눌린 카드의 확인창뿐이다.** 같은 링크가 홈의 두 섹션에 놓이면 오버레이도 두
+   * 자리에 뜨는데(위 JSDoc), 둘 다 데려오면 나중에 마운트된 쪽이 이겨 사용자가 누르지도 않은
+   * 아래쪽 카드로 포커스가 간다. 트리거를 렌더 시점에 붙들어 두었으므로 "그 휴지통이 내 카드
+   * 안에 있는가"로 가릴 수 있다 — 기준 상자는 오버레이의 부모, 곧 카드다(LinkCard 의 `deleteSlot`
+   * 은 오버레이를 카드 컨테이너의 마지막 자식으로 놓는다).
+   *
+   * 붙든 것이 `<body>` 뿐이면(클릭이 버튼에 포커스를 주지 않는 환경 — macOS Safari 기본값 · jsdom)
+   * 누가 눌렀는지 알 길이 없으므로 가리지 않고 데려온다. 확인창이 떠 있는데 포커스가 카드 밖에
+   * 남는 쪽이 더 나쁘다.
+   *
    * 돌려줄 때 `isConnected` 를 보는 것은 삭제 성공 경로 때문이다 — 그때는 카드가 통째로 사라져
    * 휴지통도 문서에 없다. 떨어져 나간 노드에 `focus()` 를 불러 봐야 포커스는 `<body>` 로 간다.
    */
   useEffect(() => {
-    const trigger = document.activeElement;
+    const card = overlayRef.current?.parentElement;
+    const owned = trigger instanceof HTMLElement && card?.contains(trigger) === true;
+    const orphan = !(trigger instanceof HTMLElement) || trigger === document.body;
 
-    cancelRef.current?.focus();
+    if (owned || orphan) cancelRef.current?.focus({ preventScroll: true });
 
     return () => {
-      if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus();
+      if (trigger instanceof HTMLElement && trigger.isConnected)
+        trigger.focus({ preventScroll: true });
     };
-  }, []);
+  }, [trigger]);
 
   /**
    * 삭제 중에는 두 버튼이 잠기는데, 브라우저는 **잠긴 요소에서 포커스를 떼어** `<body>` 로 보낸다.
    * 그대로 두면 그 구간의 Tab 이 아래 `handleKeyDown` 에 닿지도 못하고 카드 뒤로 새어 나가므로
    * 오버레이 자신이 받아 둔다(그래서 뿌리가 `tabIndex={-1}` 이다).
+   *
+   * 잠금이 풀리는 길은 하나뿐이다 — 실패. 그때 받아 둔 포커스를 `취소` 로 돌려준다. 컨테이너에
+   * 남겨 두면 다시 시도하려는 사용자가 Tab 부터 눌러야 하고, 그 Tab 이 새지 않도록 `trapTab` 이
+   * 경계 처리를 한 번 더 해야 한다.
    */
   useEffect(() => {
-    if (deleting) overlayRef.current?.focus();
+    const overlay = overlayRef.current;
+    if (overlay === null) return;
+
+    if (deleting) {
+      overlay.focus({ preventScroll: true });
+
+      return;
+    }
+
+    if (document.activeElement === overlay) cancelRef.current?.focus({ preventScroll: true });
   }, [deleting]);
 
   /**
@@ -153,7 +236,23 @@ export function DeleteConfirm({ bookmark, onDone }: DeleteConfirmProps) {
 
     sending.current = true;
     setDeleting(true);
-    const result = await deleteBookmark(bookmark.id);
+
+    let result: ActionResult;
+    try {
+      result = await deleteBookmark(bookmark.id);
+    } catch (error) {
+      // 액션이 **거부로 끝난** 경우다 — 네트워크 단절로 fetch 자체가 실패했거나, 배포로 액션 id 가
+      // 바뀌어 요청이 더는 닿지 않는 상황. 잡지 않으면 이 함수가 거부로 끝나 빗장도 `deleting` 도
+      // 선 채로 남는다: 두 버튼과 Esc 가 전부 잠겨 새로고침 말고는 확인창을 닫을 길이 없다.
+      // 진단은 로그로만 남기고(사용자에게 보일 문장이 아니다) 다시 시도할 수 있게 빗장을 푼다
+      // (J2 InlineEdit 의 같은 처리).
+      console.error('[DeleteConfirm] 링크 삭제 요청이 거부됐다', error);
+      sending.current = false;
+      setDeleting(false);
+      toast(REQUEST_FAILED);
+
+      return;
+    }
 
     // 성공하면 오버레이가 사라지므로 빗장을 되돌리지 않는다. 목록 갱신은 액션의
     // revalidatePath('/', 'layout') 가 하고, 이 오버레이는 닫히기만 한다.
@@ -162,11 +261,21 @@ export function DeleteConfirm({ bookmark, onDone }: DeleteConfirmProps) {
       // 실존 링크만 골라 센다(`pickFavorites`). 지운 링크의 id 를 남겨 두면 그 순간부터 두 숫자가
       // 갈라지므로, 어긋남을 표시 단계에서 가리는 대신 **원인이 생기는 자리에서** 지운다.
       //
-      // `toggle` 은 없으면 담는 함수라 반드시 담긴 것을 확인하고 부른다. `favs` 는 구독으로
-      // 받은 지금 값이다(useSyncExternalStore).
-      if (favs.has(bookmark.id)) toggle(bookmark.id);
+      // `toggle` 은 없으면 담는 함수라 반드시 담긴 것을 확인하고 부른다. 보는 것은 렌더 클로저의
+      // `favs` 가 아니라 **지금 값**이다 (위 `favsRef`).
+      if (favsRef.current.has(bookmark.id)) toggle(bookmark.id);
 
-      onDone();
+      // 확인창이 닫히는 것과 카드가 사라지는 것을 **한 커밋으로 묶는다.** `await` 뒤의 상태
+      // 갱신은 저절로 트랜지션에 들어가지 않는다(React 의 알려진 한계 — Next
+      // `interactive-apps.md` Step 6 이 이 우회를 권한다). 그냥 부르면 오버레이가 먼저 걷히고,
+      // 액션의 revalidatePath 로 새 목록이 도착하기 전까지 **이미 지운 카드가 되살아난 것처럼
+      // 남는다** — 그 창에서 휴지통을 다시 누를 수 있다.
+      //
+      // 그때까지 빗장(`sending`)도 잠긴 모습(`deleting`)도 그대로 둔다. 되돌리지 않아도 되는
+      // 이유는 `onDone` 이 이 오버레이를 언마운트하기 때문이다(`onDone` JSDoc 의 계약).
+      startTransition(() => {
+        onDone();
+      });
 
       return;
     }
@@ -180,6 +289,11 @@ export function DeleteConfirm({ bookmark, onDone }: DeleteConfirmProps) {
   /**
    * Tab 가둠 — 경계(첫·끝)에서만 반대편으로 돌리고 가운데는 브라우저 순서에 맡긴다
    * (CommandPalette 의 `trapTab` 과 같은 규칙). 지금 버튼이 둘이라 모든 Tab 이 경계다.
+   *
+   * **컨테이너 자신도 경계다.** 삭제 중에는 오버레이가 포커스를 받아 두는데(위 effect), 잠금이
+   * 풀린 뒤에도 포커스가 거기 남아 있으면 `overlay.contains(active)` 가 참이라(자기 자신을
+   * 포함한다) 그냥 통과시키게 된다 — 그 ⇧Tab 은 브라우저 기본 순서를 타고 **카드 뒤 본문
+   * 링크로 새어 나간다.** 그래서 `active === overlay` 는 가운데가 아니라 경계로 친다.
    */
   function trapTab(event: KeyboardEvent<HTMLDivElement>): void {
     const overlay = overlayRef.current;
@@ -200,7 +314,7 @@ export function DeleteConfirm({ bookmark, onDone }: DeleteConfirmProps) {
     const active = document.activeElement;
     const edge = event.shiftKey ? first : last;
 
-    if (active !== edge && overlay.contains(active)) return;
+    if (active !== overlay && active !== edge && overlay.contains(active)) return;
 
     event.preventDefault();
     (event.shiftKey ? last : first).focus();
@@ -248,7 +362,16 @@ export function DeleteConfirm({ bookmark, onDone }: DeleteConfirmProps) {
       </span>
 
       <span className="flex flex-wrap justify-center gap-[5px]">
-        <button type="button" disabled={deleting} onClick={() => void confirm()} className={DELETE}>
+        {/* `aria-busy` 는 '눌렀고 지금 처리 중'을 보조 기술에도 알린다 — 흐려지는 모습만으로는
+            화면을 볼 수 없는 사용자에게 아무 일도 일어나지 않은 것과 같다(InlineEdit·LoginForm 과
+            같은 짝). */}
+        <button
+          type="button"
+          disabled={deleting}
+          aria-busy={deleting}
+          onClick={() => void confirm()}
+          className={DELETE}
+        >
           삭제
         </button>
         <button
