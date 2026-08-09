@@ -11,9 +11,11 @@ import { getAdminSession } from '@/lib/supabase/server';
  * 하는 것**(H3). 그래서 안내 한 줄만 둔다 — 스펙에 없는 문구지만, 빈 화면은 고장과
  * 구분되지 않는다.
  *
- * 첫 줄의 세션 확인을 지우지 마라: 레이아웃이 children 을 렌더하지 않아도 Next 는 이 page 를
- * 렌더해 미인증 응답의 RSC 페이로드에 실어 보낸다(H2 실측). M2 가 여기에 링크 목록을 붙이는
- * 순간 그게 로그인 없이 새어 나간다. `app/admin/page.test.tsx` 가 소스에서 강제한다.
+ * **첫 줄의 세션 확인을 지우지 마라** — M2 가 여기에 링크 목록을 붙이는 순간 그게 미인증
+ * 응답에 실려 나간다. 근거는 `app/admin/layout.tsx` 주석에 한 번만 적어 뒀다(`page.test.tsx` 가 강제).
+ *
+ * 탭 제목은 지금 레이아웃의 `metadata.title`('관리자') 하나뿐이다 — 화면별 제목이 필요해지면
+ * M2 가 이 파일에 자기 `metadata` 를 붙인다(레이아웃 것을 고치지 마라. 형제 화면까지 바뀐다).
  */
 export default async function AdminCleanupPage() {
   if ((await getAdminSession()) === null) return null;

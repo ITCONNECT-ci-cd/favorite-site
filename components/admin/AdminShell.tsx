@@ -6,6 +6,11 @@ import { usePathname } from 'next/navigation';
 
 import { ADMIN_CLEANUP_PATH, ADMIN_PATH, ADMIN_STATS_PATH } from '@/lib/routes';
 
+/**
+ * 셸이 받는 것은 이 둘뿐이다 — **세션은 여기 없고, 앞으로도 더하지 마라.** 미인증 판정은
+ * `app/admin/layout.tsx` 와 각 page 의 첫 줄이 나눠 진다(아래 AdminShell JSDoc "화면과의 계약").
+ * 세션이 흘러들 통로를 타입에 여는 순간 판정 지점이 셋이 되고, 셋은 서로 어긋난다.
+ */
 export type AdminShellProps = {
   /**
    * 로그아웃 서버 액션(`app/admin/actions.ts` 의 signOutAction). form 에 그대로 걸린다.
@@ -99,22 +104,30 @@ export function AdminShell({ signOutAction, children }: AdminShellProps) {
             셸이 h1 을 들면 화면마다 제목이 둘이 된다. */}
         <span className="flex-none text-[15px] font-bold tracking-[-0.02em] text-ink">관리자</span>
 
-        <nav aria-label="관리 메뉴" className="ml-[8px] flex gap-[6px]">
-          {TABS.map((tab) => {
-            const active = isActive(pathname, tab.href);
+        {/* 나란한 항목 묶음이라 목록으로 낸다 — 사이드바·칩 줄과 같은 관례다. 스크린 리더가
+            "목록, 항목 3개" 를 먼저 알려 주므로 탭이 몇 개인지 훑기 전에 알 수 있다.
+            가로 배치(flex)와 6px 간격은 ul 이 갖는다: nav 는 헤더 flex 의 한 칸으로 남고
+            ul 이 그 칸을 꽉 채우므로 상자 크기는 그대로다(preflight 가 ul 의 기본
+            margin·padding·list-style 을 이미 지운다). */}
+        <nav aria-label="관리 메뉴" className="ml-[8px]">
+          <ul className="flex gap-[6px]">
+            {TABS.map((tab) => {
+              const active = isActive(pathname, tab.href);
 
-            return (
-              <Link
-                key={tab.href}
-                href={tab.href}
-                /* 색만으로는 선택을 알릴 수 없다 — 스크린 리더는 배경색을 읽지 않는다. */
-                aria-current={active ? 'page' : undefined}
-                className={`${TAB} ${active ? TAB_ON : TAB_OFF}`}
-              >
-                {tab.name}
-              </Link>
-            );
-          })}
+              return (
+                <li key={tab.href}>
+                  <Link
+                    href={tab.href}
+                    /* 색만으로는 선택을 알릴 수 없다 — 스크린 리더는 배경색을 읽지 않는다. */
+                    aria-current={active ? 'page' : undefined}
+                    className={`${TAB} ${active ? TAB_ON : TAB_OFF}`}
+                  >
+                    {tab.name}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
         </nav>
 
         {/* 여기서부터 우측 — `ml-auto` 가 프로토타입의 `margin-left:auto` 다.
