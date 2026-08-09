@@ -104,7 +104,7 @@ const chipRow = () => screen.getByRole('group', { name: '하위 분류' });
 const openAllButton = () => screen.getByRole('button', { name: /^전체 \d+개 열기$/ });
 const openCheckedButton = () => screen.getByRole('button', { name: /^선택 \d+개 열기$/ });
 const clearButton = () => screen.getByRole('button', { name: '선택 해제' });
-const toolbarNote = '체크한 것만 열거나, 전체를 크롬 탭 그룹으로 묶어 엽니다';
+const toolbarNote = '체크한 것만 열거나, 전체를 새 탭으로 한 번에 엽니다';
 
 /** 카드의 체크 버튼 — 접근성 이름은 `<제목> 선택` 이다 (C2 LinkCard). */
 const check = (title: string) => screen.getByLabelText(`${title} 선택`);
@@ -596,7 +596,7 @@ describe('ListView — 한 번에 열기 (G4)', () => {
 
     expect(
       screen.getByText(
-        '4개를 새 탭으로 엽니다 · 크롬 탭 그룹 "AI 도구 모음"으로 묶임 · 열리지 않으면 팝업 차단을 확인하세요',
+        '4개를 새 탭으로 엽니다 · 크롬에서 "AI 도구 모음" 탭 그룹으로 묶어 두면 좋습니다 · 열리지 않으면 팝업 차단을 확인하세요',
       ),
     ).toBeInTheDocument();
   });
@@ -614,7 +614,7 @@ describe('ListView — 한 번에 열기 (G4)', () => {
     ]);
     expect(
       screen.getByText(
-        '2개를 새 탭으로 엽니다 · 크롬 탭 그룹 "AI 도구 모음 · 대화·검색"으로 묶임 · 열리지 않으면 팝업 차단을 확인하세요',
+        '2개를 새 탭으로 엽니다 · 크롬에서 "AI 도구 모음 · 대화·검색" 탭 그룹으로 묶어 두면 좋습니다 · 열리지 않으면 팝업 차단을 확인하세요',
       ),
     ).toBeInTheDocument();
   });
@@ -638,7 +638,7 @@ describe('ListView — 한 번에 열기 (G4)', () => {
     ]);
     expect(
       screen.getByText(
-        '2개를 새 탭으로 엽니다 · 크롬 탭 그룹 "AI 도구 모음"으로 묶임 · 열리지 않으면 팝업 차단을 확인하세요',
+        '2개를 새 탭으로 엽니다 · 크롬에서 "AI 도구 모음" 탭 그룹으로 묶어 두면 좋습니다 · 열리지 않으면 팝업 차단을 확인하세요',
       ),
     ).toBeInTheDocument();
   });

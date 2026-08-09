@@ -497,7 +497,7 @@ describe('HomeView — 섹션 한 번에 열기 (G4)', () => {
     expectOpened(FAV_ITEMS);
     expect(
       screen.getByText(
-        '3개를 새 탭으로 엽니다 · 크롬 탭 그룹 "내 즐겨찾기"으로 묶임 · 열리지 않으면 팝업 차단을 확인하세요',
+        '3개를 새 탭으로 엽니다 · 크롬에서 "내 즐겨찾기" 탭 그룹으로 묶어 두면 좋습니다 · 열리지 않으면 팝업 차단을 확인하세요',
       ),
     ).toBeInTheDocument();
   });
@@ -510,7 +510,7 @@ describe('HomeView — 섹션 한 번에 열기 (G4)', () => {
     expectOpened(DAILY);
     expect(
       screen.getByText(
-        '12개를 새 탭으로 엽니다 · 크롬 탭 그룹 "매일 사용하는 사이트"으로 묶임 · 열리지 않으면 팝업 차단을 확인하세요',
+        '12개를 새 탭으로 엽니다 · 크롬에서 "매일 사용하는 사이트" 탭 그룹으로 묶어 두면 좋습니다 · 열리지 않으면 팝업 차단을 확인하세요',
       ),
     ).toBeInTheDocument();
   });
@@ -523,7 +523,7 @@ describe('HomeView — 섹션 한 번에 열기 (G4)', () => {
     expectOpened(OPERATING);
     expect(
       screen.getByText(
-        '16개를 새 탭으로 엽니다 · 크롬 탭 그룹 "현재 운영 중인 사이트"으로 묶임 · 열리지 않으면 팝업 차단을 확인하세요',
+        '16개를 새 탭으로 엽니다 · 크롬에서 "현재 운영 중인 사이트" 탭 그룹으로 묶어 두면 좋습니다 · 열리지 않으면 팝업 차단을 확인하세요',
       ),
     ).toBeInTheDocument();
   });

@@ -48,8 +48,12 @@ const OPEN_CHECKED = `${TOOL_BUTTON} border border-border-strong bg-card hover:b
 /** `선택 해제` — 버튼 모양 없이 글자만. */
 const CLEAR_CHECKED = 'cursor-pointer text-[11.5px] text-faint hover:text-ink';
 
-/** 툴바 우측 안내문 — 프로토타입 원문. */
-const TOOLBAR_NOTE = '체크한 것만 열거나, 전체를 크롬 탭 그룹으로 묶어 엽니다';
+/**
+ * 툴바 우측 안내문. 프로토타입 원문(`체크한 것만 열거나, 전체를 크롬 탭 그룹으로 묶어 엽니다`)의
+ * 뒷부분을 실제 동작에 맞춘다 — 이 버튼이 하는 일은 새 탭 여러 개를 여는 것까지다
+ * (계획서 V7 편차. 근거는 lib/clicks 의 `bulkOpenToastText` JSDoc).
+ */
+const TOOLBAR_NOTE = '체크한 것만 열거나, 전체를 새 탭으로 한 번에 엽니다';
 
 /**
  * 카테고리 · 내 즐겨찾기 · 매일 사용하는 사이트가 공유하는 목록 화면 (DESIGN_SPEC 4장).

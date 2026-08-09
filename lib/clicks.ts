@@ -62,8 +62,9 @@ export function openToastText(title: string): string {
 }
 
 /**
- * '한 번에 열기'(G4)로 연 뒤 띄울 토스트 문구. 프로토타입 `openMany` 의 원문에 팝업 차단
- * 안내(계획서 V4)를 덧붙인 것이다 (docs/prototype/링크 대시보드 v2.dc.html 824~828행):
+ * '한 번에 열기'(G4)로 연 뒤 띄울 토스트 문구. 프로토타입 `openMany` 를 바탕에 두되 탭 그룹
+ * 부분을 **권유형으로** 고쳐 적었다 (계획서 V7 편차 — 스펙 리뷰 확정).
+ * 원문은 docs/prototype/링크 대시보드 v2.dc.html 825~829행이다:
  *
  * ```js
  * openMany(list, label) {
@@ -73,16 +74,19 @@ export function openToastText(title: string): string {
  * }
  * ```
  *
- * **탭 그룹 명칭 안내는 스펙 7장이 요구하는 문구라 그대로 둔다.** 실제로 크롬 탭 그룹을 만드는
- * 것은 웹 권한 밖이라(PRD '범위 밖') 이 앱은 탭을 여러 개 열 뿐이며, 사용자가 그 탭들을 어떤
- * 이름으로 묶어 볼지 알려 주는 안내로 읽힌다.
+ * **원문의 `"..."으로 묶임` 을 그대로 쓰지 않는 이유**: 스펙 7장이 요구하는 것은 *탭 그룹 명칭
+ * 안내*이지 묶기가 끝났다는 *단정*이 아니다. 그리고 저 문장이 참인 프로토타입은 애초에 탭을 열지
+ * 않는다 — `openMany` 에 `window.open` 이 없고 `bump`(집계)와 `say`(토스트)만 있는 목업 카피다.
+ * 실물은 탭을 진짜로 열지만 그룹으로 묶지는 못하므로(크롬 확장 권한 밖 — PRD '범위 밖'),
+ * 명칭은 그대로 안내하되 묶는 일은 사용자 몫이라고 말한다.
  *
  * **팝업 차단 안내는 개수와 무관하게 언제나 붙는다.** `noopener` 로 연 창은 규격상 `window.open`
  * 이 참조 대신 null 을 돌려주므로 차단 여부를 알아낼 방법이 없다 — 감지해서 알릴 수 없으니 미리
  * 알린다(승인된 결정).
  *
- * 0개 분기를 이 함수가 함께 들고 있는 것은 부르는 쪽(HomeView·ListView)이 문구를 나눠 갖지 않게
- * 하기 위해서다. 여는 반복문은 빈 목록에서 저절로 아무 일도 하지 않으므로 호출부에 가드가 없다.
+ * 0개 분기는 프로토타입 원문 그대로다. 이 함수가 함께 들고 있는 것은 부르는 쪽(HomeView·ListView)이
+ * 문구를 나눠 갖지 않게 하기 위해서다 — 여는 반복문은 빈 목록에서 저절로 아무 일도 하지 않으므로
+ * 호출부에 가드가 없다.
  *
  * @param count 실제로 연 링크 수
  * @param groupLabel 탭 그룹 명칭 — 홈은 섹션 이름, 목록 화면은 분류 이름(하위 탭이면 `상위 · 하위`)
@@ -90,5 +94,5 @@ export function openToastText(title: string): string {
 export function bulkOpenToastText(count: number, groupLabel: string): string {
   if (count === 0) return '열 링크를 먼저 선택하세요';
 
-  return `${count}개를 새 탭으로 엽니다 · 크롬 탭 그룹 "${groupLabel}"으로 묶임 · 열리지 않으면 팝업 차단을 확인하세요`;
+  return `${count}개를 새 탭으로 엽니다 · 크롬에서 "${groupLabel}" 탭 그룹으로 묶어 두면 좋습니다 · 열리지 않으면 팝업 차단을 확인하세요`;
 }
