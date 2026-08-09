@@ -36,6 +36,30 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  {
+    // 반대 방향의 같은 계약(lib/favicon-collect.ts 상단 "이중 방어 계약").
+    // 이 모듈은 service role 을 **정당하게** 쓴다 — favicons 버킷에 storage 정책이 없어
+    // 업로드가 그 키를 요구한다. 그래서 여기서는 supabase/admin 을 막지 않는다. 대신 그 키가
+    // 닿는 범위를 Storage 하나로 묶어 두는 것이 위 mutations 규칙과 짝을 이루는 두 번째 벽이라,
+    // 테이블 쓰기로 건너갈 수 있는 유일한 통로인 쓰기 액션 모듈을 막는다.
+    // ESLint 가 보는 것은 **정적 import 뿐**이다(H4 교훈) — 동적 import()·require() 우회는
+    // lib/favicon-collect.test.ts 의 소스 스캔이 맡는다. 둘이 한 벌이다.
+    files: ["lib/favicon-collect.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/lib/mutations", "@/lib/mutations"],
+              message:
+                "이 모듈은 Storage 업로드 전용 — 테이블 쓰기는 createBookmark(쿠키 클라이언트)의 몫이다. service role 로 테이블을 쓰면 이중 방어가 무너진다.",
+            },
+          ],
+        },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;

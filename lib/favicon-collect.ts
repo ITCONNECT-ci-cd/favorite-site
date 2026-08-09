@@ -23,18 +23,37 @@
  * 을 요구한다. 그 키는 RLS 를 통째로 우회하므로 **이 모듈은 테이블에 절대 손대지 않는다** —
  * 행을 만드는 일은 로그인 사용자 자격(anon 키 + 쿠키)으로 나가는 `lib/mutations.ts` 의 몫이고,
  * 그것이 첫 줄 관문(`getAdminSession`)에 구멍이 생겼을 때 남는 두 번째 벽이다.
- * 이 금지는 주석만이 아니라 `lib/favicon-collect.test.ts` 가 소스와 런타임 양쪽으로 잠근다
- * (`.from(` 은 전부 `.storage` 를 거치고, insert·update·delete·rpc 는 소스에 없다).
+ * 이 금지는 주석만이 아니라 세 겹으로 잠근다:
+ *
+ * - `lib/favicon-collect.test.ts` — 런타임(`from` 스파이가 한 번도 불리지 않는다)과 소스
+ *   (`.from(` 은 전부 `.storage` 를 거치고, insert·update·delete·rpc 는 없으며, `@/lib/mutations`
+ *   를 정적·동적 어느 형태로도 끌어오지 않는다) 양쪽.
+ * - `eslint.config.mjs` — 이 파일에 한해 `@/lib/mutations` import 를 error 로 막는다.
+ *   ESLint 는 정적 import 만 보므로 동적 `import()`·`require()` 는 위 정규식이 맡는다(H4 교훈).
+ *
+ * 뒤집어 말하면 **`@/lib/supabase/admin` import 는 이 파일에서만 정당하다** — `lib/mutations.ts`
+ * 쪽은 같은 config 가 그것을 금지한다. 여기서 허용되는 근거는 오직 위의 "Storage 정책이 없어
+ * 업로드가 service role 을 요구한다" 하나이고, 그래서 그 키가 닿는 곳이 `.storage` 로 끝나는지를
+ * 테스트가 매번 다시 센다.
  *
  * ## 수집 사슬의 출처
  *
  * 폴백 순서·바이트 판정·사설망 회피는 **B4 `scripts/collect-favicons.ts` 에서 옮겨 적었다**
- * (그 파일은 `node:fs`·tsx 전제라 앱에서 import 할 수 없다). 옮기면서 달라진 두 가지:
+ * (그 파일은 `node:fs`·tsx 전제라 앱에서 import 할 수 없다).
  *
- * 1. **사이트 HTML 의 `<link rel="icon">` 추적은 뺐다.** B4 는 290건을 한 번에 훑는 배치라
- *    왕복 예산이 넉넉하지만, 여기서는 사람이 등록 버튼을 누른 채 기다린다.
- * 2. **총 예산(8초)을 둔다.** 한 사이트가 응답하지 않아도 그 안에서 끝나고, 못 구하면 회색
- *    타일로 등록된다. 요청 간격(throttle)은 없앴다 — 한 번에 한 사이트뿐이라 쏟아 낼 것이 없다.
+ * 옮기면서 달라진 것은 **네 가지**이고, 넷 다 이유가 하나다 — B4 는 290건을 밤새 훑는 배치지만
+ * 여기서는 사람이 등록 버튼을 누른 채 기다린다. 그래서 전부 "덜 끈질기게, 더 빨리 포기하게" 다.
+ *
+ * 1. **사이트 HTML 의 `<link rel="icon">` 추적은 뺐다.** B4 는 `/favicon.ico` 가 없으면 홈
+ *    HTML 을 받아 선언된 아이콘을 따라가지만(B4 `fetchDeclaredIcon`), 그 한 갈래가 왕복을
+ *    둘 더 부른다.
+ * 2. **재시도가 줄었다** — `MAX_ATTEMPTS` 3 → 2(최초 1회 + 재시도 1회).
+ * 3. **한 요청의 상한이 줄었다** — `REQUEST_TIMEOUT_MS` 10초 → 4초.
+ * 4. **요청 간격(throttle)을 없앴다.** B4 는 구글에 초당 몇 건씩 쏟아 내지 않으려 사이를
+ *    띄우지만, 여기는 한 번에 한 사이트뿐이라 쏟아 낼 것이 없다.
+ *
+ * 대신 B4 에 없던 것을 하나 두었다: **총 예산 8초**(`TOTAL_BUDGET_MS`). 한 사이트가 응답하지
+ * 않아도 그 안에서 끝나고, 못 구하면 회색 타일로 등록된다.
  */
 
 import { createAdminSupabaseClient } from '@/lib/supabase/admin';
@@ -188,6 +207,9 @@ async function fetchImage(
     try {
       const response = await fetch(endpoint, {
         signal: AbortSignal.timeout(remaining),
+        // 구글도 사이트도 아이콘을 리다이렉트로 넘기는 일이 흔해 따라간다. 대신 사설망 판정
+        // (`isPublicHost`)은 **최초 URL 에만** 걸린다는 뜻이기도 하다 — 그 잔여 위험과 승격
+        // 조건은 `isPublicHost` JSDoc 에 적어 두었다.
         redirect: 'follow',
         headers: userAgent === undefined ? undefined : { 'user-agent': userAgent },
       });
@@ -267,7 +289,34 @@ function parentDomains(host: string): string[] {
   return parents;
 }
 
-/** 루프백·사설망·내부 이름이면 false — 직접 접속 대상에서 뺀다(B4 `isPublicHost`). */
+/**
+ * 루프백·사설망·내부 이름이면 false — 직접 접속 대상에서 뺀다(B4 `isPublicHost`).
+ *
+ * ## 남은 구멍 (알고 두는 것이다 — 백로그)
+ *
+ * 이 체는 **B4 의 것을 그대로** 옮겼고, 촘촘하지 않다. 지금 이대로 두는 근거는 **누가 부를 수
+ * 있는가** 하나다: 이 액션의 첫 줄이 `getAdminSession()` 이라, 주소를 고를 수 있는 사람은 이미
+ * 관리자 — 즉 서버에 들어와 있는 사람뿐이다. 그 사람이 내부 주소를 찔러 보고 싶다면 이 액션이
+ * 아니어도 길은 많다. 그래서 지금은 Low 로 둔다.
+ *
+ * **승격 조건 — 로그인 없이(또는 관리자가 아닌 사람이) 이 수집을 걸 수 있게 되는 순간 즉시
+ * Critical 이다.** 예: 공개 화면의 "링크 제보", 크론이 사용자 입력 URL 을 다시 훑는 배치.
+ * 그때는 아래를 먼저 메워라:
+ *
+ * - **주소 대역이 빈다.** `169.254.0.0/16`(클라우드 메타데이터 `169.254.169.254` 가 여기다 —
+ *   SSRF 로 자격 증명을 긁어 가는 고전 경로), `0.0.0.0`, `100.64.0.0/10`(CGNAT), IPv6 유니크
+ *   로컬(`fc00::/7`)·링크 로컬(`fe80::/10`) 이 전부 통과한다.
+ * - **이름은 주소가 아니다.** 여기서 보는 것은 host **문자열**이라, 사설 IP 로 해석되는 공개
+ *   도메인(`*.nip.io` 류)이나 DNS 리바인딩은 걸러지지 않는다. 제대로 하려면 해석된 IP 를 보고
+ *   연결해야 한다(Node fetch 로는 `lookup` 훅이 필요하다).
+ * - **`redirect: 'follow'` 는 최초 URL 만 검사한다.** 공개 주소가 302 로 `127.0.0.1` 이나
+ *   메타데이터 주소를 가리키면 그대로 따라간다 — 여기서 막을 방법은 `redirect: 'manual'` 로
+ *   받아 `Location` 을 매 홉마다 다시 이 함수에 통과시키는 것뿐이다.
+ *
+ * 그때까지의 완충: 응답은 **바이트 매직 넘버로 이미지인지 확인해야만** 쓰이고(`sniff`),
+ * 사용자에게 돌아가는 것은 사유 없는 한 문장뿐이라(`NOT_FOUND`) 내부 응답 본문이 밖으로
+ * 새지는 않는다. 다만 "붙었는가/안 붙었는가"는 응답 시간으로 여전히 읽힌다.
+ */
 function isPublicHost(host: string): boolean {
   if (host === 'localhost' || host.endsWith('.local') || host.endsWith('.localhost')) return false;
   if (/^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host)) return false;

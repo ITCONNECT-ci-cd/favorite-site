@@ -338,7 +338,18 @@ describe('service role 의 사용 범위 — Storage 뿐 (테이블 금지)', ()
   it('행을 쓰는 호출이 소스에 없다', () => {
     expect(code).not.toMatch(/\.(insert|update|upsert|delete|rpc)\s*\(/);
     // 쓰기 액션을 끌어와 우회하는 길도 막는다 — 그건 화면이 따로 부른다.
-    expect(code).not.toMatch(/from\s*['"]@\/lib\/mutations['"]/);
+    //
+    // 형태는 H4(`lib/mutations.test.ts` 의 service role 스캔)와 같다. `from '…'` 하나만 보면
+    // 동적 `import('@/lib/mutations')` 와 `require('…')` 가 통째로 빠져나가는데, ESLint 의
+    // no-restricted-imports 는 **정적 import 만** 본다(H4 교훈). 그 구멍은 이 정규식 몫이다.
+    // 경로 앞을 `[^'"]*` 로 연 것은 `@/lib/mutations` 든 `../lib/mutations` 든 같은 모듈이기 때문.
+    expect(code).not.toMatch(/(?:from|import\s*\(|require\s*\()\s*['"][^'"]*lib\/mutations['"]/);
+  });
+
+  it("첫 줄이 'use server' 다 — 이게 빠지면 화면에서 부를 수 없는 그냥 서버 함수가 된다", () => {
+    // H4 가 `lib/mutations.ts` 에 세운 것과 같은 단언. 지시문은 파일 맨 위여야 하고,
+    // 위쪽에 JSDoc 블록을 얹다가 한 줄 밀리면 조용히 서버 액션이 아니게 된다.
+    expect(source.split('\n')[0]).toBe("'use server';");
   });
 
   it('관문이 함수의 첫 줄이다 (소스)', () => {

@@ -131,6 +131,32 @@ describe('LinkAddRow — 줄의 모습 (프로토타입 359–366행)', () => {
     expect(form()).not.toHaveClass('border-b');
   });
 
+  /**
+   * "아래 줄이 있다"의 기준은 **React 가 실제로 무언가를 그리는가**다(J1b LinkCard `hasEditSlot`,
+   * `components/admin/CategoryHeader.tsx` 도 같은 규칙). `undefined` 만 걸러 내면 아래 세 값이
+   * 전부 검사를 통과해, 상자 테두리 바로 안쪽에 아무것도 나누지 않는 선이 하나 더 그어진다.
+   */
+  function expectNoDivider(children: ReactNode) {
+    const { unmount } = renderRow(ROWS, children);
+
+    expect(form()).not.toHaveClass('border-b');
+    expect(box().children).toHaveLength(1);
+
+    unmount();
+  }
+
+  it('조건이 거짓일 때 넘어오는 false 는 아래 줄로 치지 않는다 (`<LinkAddRow>{cond && <Table/>}</…>`)', () => {
+    expectNoDivider(false);
+  });
+
+  it('null 도 아래 줄로 치지 않는다', () => {
+    expectNoDivider(null);
+  });
+
+  it('빈 문자열도 아래 줄로 치지 않는다', () => {
+    expectNoDivider('');
+  });
+
   it('카테고리가 하나도 없으면 줄 자체를 만들지 않는다', () => {
     // 등록할 곳이 없다. 무엇을 해야 하는지는 바로 위 헤더 패널이 이미 말한다(문구를 겹쳐 적지 않는다).
     const { container } = renderRow([]);
@@ -281,6 +307,23 @@ describe('LinkAddRow — 등록', () => {
 
     expect(addButton()).not.toBeDisabled();
     expect(addButton()).toHaveAttribute('aria-busy', 'false');
+  });
+
+  it('같은 틱에 두 번 눌러도 한 번만 나간다 (아직 다시 그려지기 전이다)', async () => {
+    // 위 테스트는 두 클릭 사이에 렌더가 한 번 끼어 `busy=true` 가 화면에 닿은 뒤를 본다.
+    // 여기는 그 앞이다 — 두 이벤트가 **한 커밋 안에서** 처리되면 두 번째 핸들러가 읽는
+    // `busy` 는 여전히 첫 렌더의 `false` 이므로, 상태 하나로는 막히지 않는다(J3 실측).
+    // 그 틈을 막는 것이 ref 빗장이고, 이 테스트가 그 빗장의 유일한 증인이다.
+    renderRow();
+
+    fill({ url: 'https://perplexity.ai/' });
+    await act(async () => {
+      fireEvent.click(addButton());
+      fireEvent.click(addButton());
+    });
+
+    expect(collectFavicon).toHaveBeenCalledTimes(1);
+    expect(createBookmark).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useState, type FormEvent, type ReactNode } from 'react';
+import { useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
 
 import { useSelectedCategory } from '@/components/admin/CategoryPanel';
 import { toast } from '@/components/Toast';
@@ -71,8 +71,22 @@ export function LinkAddRow({ children }: { children?: ReactNode }) {
   const [url, setUrl] = useState('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  /** 등록 요청이 나가 있는 동안 — 같은 링크가 두 번 들어가는 것을 막는 빗장이다. */
+  /**
+   * 등록 요청이 나가 있음을 **화면에 알리는** 값 — 버튼을 흐리고 `aria-busy` 를 켠다.
+   *
+   * 두 번 들어가는 것을 막는 일은 이 값이 하지 않는다. 상태는 다음 렌더에야 새 값이 되는데,
+   * 두 제출이 **같은 커밋 안에서** 처리되면 두 번째 핸들러가 읽는 것은 여전히 첫 렌더의
+   * `false` 다(J3 실측 — 그 틈으로 요청이 두 번 나갔다). 실제 빗장은 아래 `sending` 이다.
+   */
   const [busy, setBusy] = useState(false);
+  /**
+   * 진짜 빗장 — 값이 그 자리에서 바뀌므로 렌더를 기다리지 않는다.
+   *
+   * 등록은 **되돌릴 수 없는 쓰기**라(같은 링크가 두 줄이 된다) 한 프레임의 틈도 열어 두지
+   * 않는다. 표시(`busy`)와 빗장(`sending`)을 나눈 것은 둘이 요구하는 것이 다르기 때문이다 —
+   * 앞엣것은 다시 그려져야 하고, 뒤엣것은 지금 즉시 잠겨야 한다.
+   */
+  const sending = useRef(false);
 
   if (selected === null) return null;
 
@@ -85,8 +99,27 @@ export function LinkAddRow({ children }: { children?: ReactNode }) {
   /** 이름 칸을 비웠을 때 서버가 채울 이름. 주소가 아직 주소 꼴이 아니면 `null`. */
   const autoTitle = autoTitleOf(url);
 
+  /**
+   * 아래에 줄이 붙는가 — 추가 줄에 구분선을 그릴지 정한다.
+   *
+   * 기준은 **React 가 실제로 무언가를 그리는가**다(J1b `LinkCard` 의 `hasEditSlot`,
+   * `components/admin/CategoryHeader.tsx` 와 같은 규칙). `undefined`·`null` 뿐 아니라 boolean·`''`
+   * 도 React 는 아무것도 그리지 않으므로 전부 '없음'으로 친다. `undefined` 만 걸러 내면 호출부의
+   * 관용구 `<LinkAddRow>{cond && <LinkTable/>}</…>` 가 cond 거짓일 때 **false** 를 넘겨 검사를
+   * 통과하고, 상자 테두리 바로 안쪽에 아무것도 나누지 않는 선이 하나 더 그어진다. `false` 한 값이
+   * 아니라 `typeof` 로 boolean 전체를 거르는 이유는 `cond || <LinkTable/>` 가 cond 참일 때 만드는
+   * **true** 도 똑같이 아무것도 그리지 않기 때문이다. 0·NaN 은 뺀다 — React 는 그 둘을 `"0"`·
+   * `"NaN"` 으로 **그리므로** 아래 줄이 맞다.
+   *
+   * `[]`·`<></>`·"렌더 결과가 null 인 컴포넌트"도 그리는 것이 없지만 prop 검사로는 자식이 있는
+   * 배열·프래그먼트·컴포넌트와 구별되지 않아 쫓지 않는다(J1b 도 같은 한계를 적어 두었다).
+   */
+  const hasRowsBelow =
+    children !== undefined && children !== null && typeof children !== 'boolean' && children !== '';
+
   async function submit(): Promise<void> {
-    if (busy) return;
+    // 상태가 아닌 ref 를 본다 — 같은 커밋 안의 두 번째 제출은 아직 `busy=false` 를 읽는다.
+    if (sending.current) return;
 
     // 빈 주소는 서버까지 가지 않는다(프로토타입 `if (!url) return` 과 같은 자리) — 아무것도 적지
     // 않고 누른 사람에게는 오류가 아니라 "아직 아무 일도 없음"이 맞다. 형식이 틀린 주소는
@@ -98,6 +131,8 @@ export function LinkAddRow({ children }: { children?: ReactNode }) {
     const cleanDescription = description.trim();
     const shownTitle = cleanTitle === '' ? hostOf(cleanUrl) : cleanTitle;
 
+    // 빗장부터 건다 — 아래 `await` 로 넘어가기 전에, 그리고 다시 그려지기 전에.
+    sending.current = true;
     setBusy(true);
 
     const favicon = await collect(cleanUrl);
@@ -115,12 +150,14 @@ export function LinkAddRow({ children }: { children?: ReactNode }) {
       // 액션이 **거부로 끝난** 경우다(네트워크 단절, 배포로 액션 id 가 바뀜 등). 잡지 않으면
       // 빗장이 선 채로 남아 이 줄이 통째로 잠긴다 — 나갈 길이 새로고침뿐인 화면이 된다.
       console.error('[LinkAddRow] 링크 추가 요청이 거부됐다', error);
+      sending.current = false;
       setBusy(false);
       toast(REQUEST_FAILED);
 
       return;
     }
 
+    sending.current = false;
     setBusy(false);
 
     if (!result.ok) {
@@ -130,6 +167,8 @@ export function LinkAddRow({ children }: { children?: ReactNode }) {
       return;
     }
 
+    // TODO(I4): 표가 붙으면 성공 전환을 트랜지션으로 묶을지 재판정 — 새 행 없는 표와 빈 폼의
+    // 한 프레임 공존.
     setUrl('');
     setTitle('');
     setDescription('');
@@ -158,7 +197,7 @@ export function LinkAddRow({ children }: { children?: ReactNode }) {
       <form
         aria-labelledby={labelId}
         onSubmit={handleSubmit}
-        className={`${ROW} ${children === undefined ? '' : 'border-b border-border'}`}
+        className={`${ROW} ${hasRowsBelow ? 'border-b border-border' : ''}`}
       >
         <span id={labelId} className="w-[56px] flex-none text-[11.5px] font-bold text-ink">
           링크 추가
