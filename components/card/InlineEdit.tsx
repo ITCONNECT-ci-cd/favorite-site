@@ -10,6 +10,7 @@ import {
 } from 'react';
 
 import { toast } from '@/components/Toast';
+import { REQUEST_FAILED } from '@/lib/constants';
 import { updateBookmark, type ActionResult, type BookmarkPatch } from '@/lib/mutations';
 import type { BookmarkWithCount } from '@/lib/types';
 
@@ -33,15 +34,6 @@ export type InlineEditProps = {
    */
   onDone: () => void;
 };
-
-/**
- * 요청 자체가 **거부됐을 때** 보여 줄 문구 — 아래 `save` 의 catch.
- *
- * `lib/mutations.ts` 의 `RETRY_LATER` 와 같은 문장을 일부러 한 벌 더 적었다. 그 파일은
- * `'use server'` 라 **상수를 내보낼 수 없다**(export 는 전부 async 함수여야 한다 — 파일 상단 규약).
- * 저쪽 문구를 고치면 여기도 함께 고쳐라.
- */
-const REQUEST_FAILED = '저장하지 못했습니다. 잠시 후 다시 시도해 주세요.';
 
 /** 두 입력의 공통 몸통 — 높이 30px, 라운드 6px, 좌우 패딩 8px, 흰 배경 (프로토타입 실측). */
 const FIELD = 'h-[30px] w-full rounded-[6px] bg-card px-[8px]';

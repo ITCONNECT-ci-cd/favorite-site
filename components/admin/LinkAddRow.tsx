@@ -4,8 +4,10 @@ import { useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
 
 import { useSelectedCategory } from '@/components/admin/CategoryPanel';
 import { toast } from '@/components/Toast';
+import { REQUEST_FAILED } from '@/lib/constants';
 import { collectFavicon, type FaviconResult } from '@/lib/favicon-collect';
 import { createBookmark, type ActionResult } from '@/lib/mutations';
+import { rendersSomething } from '@/lib/slots';
 import { hostOf } from '@/lib/url';
 
 /** 줄 — 프로토타입 원문 `display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:12px 16px`. */
@@ -17,15 +19,6 @@ const FIELD = 'h-[32px] rounded-[6px] border border-border-strong bg-card px-[10
 /** 검은 확정 버튼 — 높이 32px, 좌우 14px. 줄바꿈을 막는 것은 flex-wrap 줄에서 라벨이 길기 때문이다. */
 const BUTTON =
   'flex h-[32px] flex-none items-center rounded-[6px] bg-ink px-[14px] text-[12px] font-semibold whitespace-nowrap text-white hover:bg-ink-hover disabled:opacity-60';
-
-/**
- * 요청 자체가 **거부됐을 때** 보여 줄 문구 — 아래 `submit` 의 catch.
- *
- * `lib/mutations.ts` 의 `RETRY_LATER` 와 같은 문장을 한 벌 더 적었다. 그 파일은 `'use server'` 라
- * **상수를 내보낼 수 없다**(export 는 전부 async 함수여야 한다). 저쪽 문구를 고치면 여기도
- * 함께 고쳐라 — `components/card/InlineEdit.tsx` 도 같은 이유로 같은 문장을 들고 있다.
- */
-const REQUEST_FAILED = '저장하지 못했습니다. 잠시 후 다시 시도해 주세요.';
 
 /** 파비콘 수집 **요청 자체가** 거부된 경우. 서버가 준 사유가 없으니 여기서 한 문장을 만든다. */
 const FAVICON_REQUEST_FAILED = '파비콘을 가져오지 못했습니다.';
@@ -100,22 +93,13 @@ export function LinkAddRow({ children }: { children?: ReactNode }) {
   const autoTitle = autoTitleOf(url);
 
   /**
-   * 아래에 줄이 붙는가 — 추가 줄에 구분선을 그릴지 정한다.
+   * 아래에 줄이 붙는가 — 추가 줄에 구분선을 그릴지 정한다. 혼자 있을 때 그으면 상자 테두리
+   * 바로 안쪽에 아무것도 나누지 않는 선이 하나 더 생긴다.
    *
-   * 기준은 **React 가 실제로 무언가를 그리는가**다(J1b `LinkCard` 의 `hasEditSlot`,
-   * `components/admin/CategoryHeader.tsx` 와 같은 규칙). `undefined`·`null` 뿐 아니라 boolean·`''`
-   * 도 React 는 아무것도 그리지 않으므로 전부 '없음'으로 친다. `undefined` 만 걸러 내면 호출부의
-   * 관용구 `<LinkAddRow>{cond && <LinkTable/>}</…>` 가 cond 거짓일 때 **false** 를 넘겨 검사를
-   * 통과하고, 상자 테두리 바로 안쪽에 아무것도 나누지 않는 선이 하나 더 그어진다. `false` 한 값이
-   * 아니라 `typeof` 로 boolean 전체를 거르는 이유는 `cond || <LinkTable/>` 가 cond 참일 때 만드는
-   * **true** 도 똑같이 아무것도 그리지 않기 때문이다. 0·NaN 은 뺀다 — React 는 그 둘을 `"0"`·
-   * `"NaN"` 으로 **그리므로** 아래 줄이 맞다.
-   *
-   * `[]`·`<></>`·"렌더 결과가 null 인 컴포넌트"도 그리는 것이 없지만 prop 검사로는 자식이 있는
-   * 배열·프래그먼트·컴포넌트와 구별되지 않아 쫓지 않는다(J1b 도 같은 한계를 적어 두었다).
+   * 기준은 **React 가 실제로 무언가를 그리는가**이고, 그 판정과 근거는 `lib/slots.ts` 한곳에
+   * 있다(LinkCard 의 `editSlot`·CategoryHeader 의 구분선도 같은 것을 쓴다).
    */
-  const hasRowsBelow =
-    children !== undefined && children !== null && typeof children !== 'boolean' && children !== '';
+  const hasRowsBelow = rendersSomething(children);
 
   async function submit(): Promise<void> {
     // 상태가 아닌 ref 를 본다 — 같은 커밋 안의 두 번째 제출은 아직 `busy=false` 를 읽는다.

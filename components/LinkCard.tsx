@@ -3,6 +3,7 @@
 import type { MouseEvent, ReactNode } from 'react';
 import { CheckIcon, EyeIcon, PencilIcon, PinIcon, TrashIcon } from '@/components/icons';
 import { faviconSrc } from '@/lib/favicon';
+import { rendersSomething } from '@/lib/slots';
 import type { BookmarkWithCount } from '@/lib/types';
 import { hostOf } from '@/lib/url';
 
@@ -237,19 +238,9 @@ export function LinkCard({
   // 플래그와 노드가 **둘 다** 있을 때에만 교체한다 — 하나만 온 요청은 무시하고 평소대로 그린다
   // (isEditing·editSlot JSDoc). 편집 폼이 없는데 본문만 지워지는 빈 카드를 만들지 않기 위해서다.
   //
-  // "노드가 있다"의 기준은 **React 가 실제로 무언가를 그리는가**다. null·undefined 뿐 아니라
-  // boolean·'' 도 React 는 아무것도 그리지 않으므로 전부 '슬롯 없음'으로 친다. undefined·null 만
-  // 걸러 내면 호출부의 관용구 `editSlot={cond && <Form/>}` 가 cond 거짓일 때 **false** 를
-  // 넘겨 검사를 통과하고, 교체는 일어나는데 그려지는 것은 없는 — 위 JSDoc 이 금지한 바로 그
-  // 빈 카드가 된다. 0 과 NaN 은 뺀다: React 는 그 둘을 "0"·"NaN" 으로 **그리므로** 슬롯이 맞다.
-  //
-  // `false` 한 값이 아니라 `typeof` 로 boolean 전체를 거르는 이유: **둘 다 아무것도 그리지
-  // 않는다** — `&&` 가 만드는 false 도, `cond || <Form/>` 가 cond 참일 때 만드는 true 도.
-  // 한쪽만 막으면 규칙("React 가 그리는가")과 구현이 true 한 값에서 어긋나 그 관용구가
-  // 그대로 빈 카드를 만든다. `[]`·`<></>` 도 아무것도 그리지 않지만 prop 검사로는 판별할 수
-  // 없어(자식이 있는 배열·프래그먼트와 구별되지 않는다) 쫓지 않는다.
-  const hasEditSlot =
-    editSlot !== undefined && editSlot !== null && typeof editSlot !== 'boolean' && editSlot !== '';
+  // "노드가 있다"의 기준은 **React 가 실제로 무언가를 그리는가**이고, 그 판정과 근거는
+  // `lib/slots.ts` 한곳에 있다(CategoryHeader·LinkAddRow 의 구분선도 같은 것을 쓴다).
+  const hasEditSlot = rendersSomething(editSlot);
   const showEditSlot = isEditing && hasEditSlot;
 
   // 무시된 요청은 화면상 "편집을 눌렀는데 아무 일도 없다"로만 보인다 — 개발 중에만 이유를 준다.

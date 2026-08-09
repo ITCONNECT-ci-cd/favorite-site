@@ -3,6 +3,7 @@
 import { startTransition, useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 
 import { toast } from '@/components/Toast';
+import { REQUEST_FAILED } from '@/lib/constants';
 import { useFavorites } from '@/lib/favorites';
 import { deleteBookmark, type ActionResult } from '@/lib/mutations';
 import type { BookmarkWithCount } from '@/lib/types';
@@ -26,15 +27,6 @@ export type DeleteConfirmProps = {
    */
   onDone: () => void;
 };
-
-/**
- * 요청 자체가 **거부됐을 때** 보여 줄 문구 — 아래 `confirm` 의 catch.
- *
- * `lib/mutations.ts` 의 `RETRY_LATER` 와 같은 문장을 일부러 한 벌 더 적었다. 그 파일은
- * `'use server'` 라 **상수를 내보낼 수 없다**(export 는 전부 async 함수여야 한다 — 파일 상단 규약).
- * 저쪽 문구를 고치면 여기도 함께 고쳐라 (J2 InlineEdit 의 같은 상수와도 짝이다).
- */
-const REQUEST_FAILED = '저장하지 못했습니다. 잠시 후 다시 시도해 주세요.';
 
 /**
  * 카드를 덮는 오버레이 (DESIGN_SPEC 2-1 "삭제 확인" · 프로토타입 150행).

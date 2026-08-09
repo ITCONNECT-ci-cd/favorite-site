@@ -14,6 +14,7 @@ import { useSelectedCategory, type AdminCategory } from '@/components/admin/Cate
 import { toast } from '@/components/Toast';
 import { REQUEST_FAILED } from '@/lib/constants';
 import { deleteCategory, renameCategory, type ActionResult } from '@/lib/mutations';
+import { rendersSomething } from '@/lib/slots';
 
 /** 헤더 줄 — 프로토타입 원문 `display:flex; align-items:center; gap:12px; padding:14px 16px`. */
 const ROW = 'flex items-center gap-[12px] px-[16px] py-[14px]';
@@ -52,23 +53,17 @@ export function CategoryHeader({ children }: { children?: ReactNode }) {
   const { selected } = useSelectedCategory();
 
   /**
-   * 아래에 줄이 붙는가 — 헤더 줄에 구분선을 그릴지 정한다.
+   * 아래에 줄이 붙는가 — 헤더 줄에 구분선을 그릴지 정한다. 혼자 있을 때 그으면 상자 테두리
+   * 바로 안쪽에 아무것도 나누지 않는 선이 하나 더 생긴다.
    *
-   * 기준은 **React 가 실제로 무언가를 그리는가**다(J1b `LinkCard` 의 `hasEditSlot` 과 같은 규칙).
-   * `undefined`·`null` 뿐 아니라 boolean·`''` 도 React 는 아무것도 그리지 않으므로 전부 '없음'으로
-   * 친다. `undefined` 만 걸러 내면 호출부의 관용구 `<CategoryHeader>{cond && <SubRow/>}</…>` 가
-   * cond 거짓일 때 **false** 를 넘겨 검사를 통과하고, 상자 테두리 바로 안쪽에 아무것도 나누지
-   * 않는 선이 하나 더 그어진다. `false` 한 값이 아니라 `typeof` 로 boolean 전체를 거르는 이유는
-   * `cond || <SubRow/>` 가 cond 참일 때 만드는 **true** 도 똑같이 아무것도 그리지 않기 때문이다.
-   * 0·NaN 은 뺀다 — React 는 그 둘을 `"0"`·`"NaN"` 으로 **그리므로** 아래 줄이 맞다.
+   * 기준은 **React 가 실제로 무언가를 그리는가**이고, 그 판정과 근거(왜 boolean·`''` 까지
+   * '없음'인지, 무엇을 쫓지 않는지)는 `lib/slots.ts` 한곳에 있다.
    *
-   * `[]`·`<></>`·"렌더 결과가 null 인 컴포넌트"도 그리는 것이 없지만 prop 검사로는 자식이 있는
-   * 배열·프래그먼트·컴포넌트와 구별되지 않아 쫓지 않는다(J1b 도 같은 한계를 적어 두었다).
    * 지금 유일한 소비자(app/admin/page.tsx)가 넘기는 `<SubCategoryRow>` 는 상위가 없을 때 null 을
-   * 돌려주는데, 그 경우는 아래 M6 갈래가 children 자체를 그리지 않아 여기까지 오지 않는다.
+   * 돌려주는데(그 판정은 prop 으로는 보이지 않는다), 그 경우는 아래 M6 갈래가 children 자체를
+   * 그리지 않아 여기까지 오지 않는다.
    */
-  const hasRowsBelow =
-    children !== undefined && children !== null && typeof children !== 'boolean' && children !== '';
+  const hasRowsBelow = rendersSomething(children);
 
   return (
     <section
