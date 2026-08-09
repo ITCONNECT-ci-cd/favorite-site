@@ -581,24 +581,32 @@ graph LR
   - 내용: 서버 액션 모음 — category create/rename/delete/reorder, sub CRUD, bookmark create/update/delete/reorder, pin toggle. **모든 액션 첫 줄에서 `getAdminSession()` 확인**(RLS는 2차 방어). `revalidatePath`로 공개 화면 갱신. pin toggle은 DB `PIN_LIMIT` 예외를 잡아 사용자 메시지로 변환.
   - 완료 기준: 테스트 — 미인증 호출 거부, pin 13번째 거부 메시지.
 
-- [ ] **I1. 상위 카테고리 패널 + 우측 헤더 패널** `M` — 의존: H3, H4
-  - 구현 완료(9ac6171+1d6cd54, 테스트 49 추가·전체 1167 통과) — 스펙 리뷰 진행 중. 서버가 상위만 접어 내림(290행 미전달), SelectedCategoryProvider(URL 미동기화 — 근거 기록), useOptimistic 정렬, <820px 1단 접기를 I1이 소유(I4는 확인만). 실계정 통합: 추가→수정→정렬(공개 사이드바 재배치 실측)→복구→삭제, 원상 확증(상위 10개 sort_order 0..9·22/290). **I2~I5 인계**: 선택은 `useSelectedCategory()`(id를 prop으로 내리지 말 것), I2는 CategoryHeader **children**, I3~I5는 우측 칸 다음 상자, 실패 문구는 그대로 토스트(화면 복제 금지 관례). 참고: clicks가 비어 클릭 합계는 현재 전부 0 표시(로직은 테스트 고정), rollupClicks는 page 안(lib 경계 — 후속 병합 후보).
+- [x] **I1. 상위 카테고리 패널 + 우측 헤더 패널** `M` — 의존: H3, H4 ✅ 2026-08-09 야간 완료 (9ac6171+1d6cd54 + fixup 6cc8c60 — 스펙 승인·품질 조건부·재검증 종결. 리듀서형 useOptimistic 정확성 확인, 마운트 포커스 강탈 방지 등 자발적 방어 3건. O3 스윕 추가: REQUEST_FAILED 사본 5곳 이관(LinkTable.test 포함), 실패 경로 포커스 잔여(CategoryHeader·InlineEdit·DeleteConfirm 공통 판단), isConnected 테스트 실효화, page.tsx 낡은 주석 2곳은 impl-I4에 통지됨)
+  - **스펙 리뷰 승인 ✅**(수치 어긋남 0, 스펙 밖 6건 중 5 승인·1 조건부). **품질 리뷰 조건부 승인** — J 트랙 표준 4개(거부 try/catch·포커스 반환·startTransition 닫기·falsy 술어)가 각 1회씩 결락, 특히 handleDrop 거부는 error.tsx 부재로 **global-error(앱 전체 오류 화면)** 직행. **fixup 6cc8c60 랜딩** — 필수 6건+권고 4건+cursor 7자리 전부 반영(테스트 +26, 되돌리기 실검증: ref 제거 2건·effect 무력화 6건 실패 확인). 재검증 진행 중. 스윕 추가: page.tsx의 divided 우회 주석 축소, REQUEST_FAILED 잔여 사본 이관(InlineEdit·SubCategoryRow·LinkAddRow·DeleteConfirm), K1 직전 rollupBy(가중치) 통합.
+  - 구현 완료(9ac6171+1d6cd54, 테스트 49 추가·전체 1167 통과). 서버가 상위만 접어 내림(290행 미전달), SelectedCategoryProvider(URL 미동기화 — 근거 기록), useOptimistic 정렬, <820px 1단 접기를 I1이 소유(I4는 확인만). 실계정 통합: 추가→수정→정렬(공개 사이드바 재배치 실측)→복구→삭제, 원상 확증(상위 10개 sort_order 0..9·22/290). **I2~I5 인계**: 선택은 `useSelectedCategory()`(id를 prop으로 내리지 말 것), I2는 CategoryHeader **children**, I3~I5는 우측 칸 다음 상자, 실패 문구는 그대로 토스트(화면 복제 금지 관례). 참고: clicks가 비어 클릭 합계는 현재 전부 0 표시(로직은 테스트 고정), rollupClicks는 page 안(lib 경계 — 후속 병합 후보).
   - 파일: `components/admin/CategoryPanel.tsx`, `components/admin/CategoryHeader.tsx`
   - 내용: DESIGN_SPEC 6장 — 좌측 270px(추가 입력, 행: 손잡이·이름·개수·클릭 합계, 선택 행 다크, HTML5 draggable 정렬 → 사이드바 순서 반영) + **우측 헤더 패널**(카테고리 이름 16px/700 + 링크 수 + "이름 수정" 인라인 입력·저장·취소 + "카테고리 삭제").
   - **H4 인계(fixup-H4 반영 후 기준)**: ①서버 액션은 positional 인자 — `<form action={...}>` 직접 배선 불가, 클라이언트 컴포넌트에서 호출 ②deleteCategory는 **하위 또는 직속 링크가 남아 있으면 거부**("지우려면 비워라" 단일 규칙 — 미분류 링크 발생 경로 차단) — UI는 두 실패 문구를 그대로 안내하고, 삭제 확인 문구도 "비어 있는 카테고리만 삭제됩니다" 전제로 작성 ③reorderCategories에는 상위 카테고리 id만(하위 id 섞이면 서버가 거부 — fixup-H4에서 코드 강제) ④착수 전 lib/mutations.ts 최신 커밋(fixup-H4)의 헬퍼 이름(writeClient)·문구 상수를 확인.
   - 완료 기준: 테스트 — 추가·이름 인라인 수정·삭제·정렬·선택. 수동: 드래그 후 공개 사이드바 순서 변경.
 
-- [ ] **I2. 하위 카테고리 줄** `S` — 의존: I1 · 병렬: I3과 동시 가능
+- [x] **I2. 하위 카테고리 줄** `S` — 의존: I1 · 병렬: I3과 동시 가능 ✅ 2026-08-10 새벽 완료 (874a9bb + fixup ea7674b·2a6c374 — 스펙 승인·통합 품질 리뷰 조건 충족: 프래그먼트 키로 확인 갈래 포커스 분기 소생, handleAdd ref 빗장, 트랜지션 구조 소스 단언, 거부 시 확인 줄 유지(I1 정합))
+  - **스펙 리뷰 승인 ✅**(어긋남 0 — 수치·토스트 원문 행번호까지, 거부 try/catch는 I2가 처음부터 갖춤). 판단 ①삭제 전 확인 승인(I1과 문구 통일하지 말 것 — 규칙이 정반대) ②취소 버튼 없음은 조건부 → **오케스트레이터 결정: 추가**(fixup-I2).
+  - **fixup ea7674b 랜딩** — 6건+테스트 15 추가(뮤테이션 검증). 지시와 갈린 2건(타당 근거): busy 해제를 트랜지션 안으로(언마운트 위임은 Row 상주 상태라 불성립 — 영구 잠금 회피), 자리-ref 포커스 반환(칩 버튼 재생성으로 노드 캡처 무효 — I1 방식).
+  - **통합 품질 리뷰(Critical 0): 갈림 2건 승인**("지시가 틀렸고 구현이 맞다" — 단 확인 갈래는 노드 재사용으로 반환 분기 사망 실측). fixup-I2b 진행: I2-1(프래그먼트 키+테스트 정직화), I2-2(handleAdd ref 빗장 — 실측 2회 호출), I2-3(트랜지션 구조 소스 단언 — 뮤턴트 48/48 통과 구멍), I2-4(aria-busy), REQUEST_FAILED import, I2-5(거부 시 확인 줄 유지 — I1 정합), I3-1(favicon-collect SSRF 신고 정정: IPv6 문장은 오기·공개 재게시 채널·구글 유출 보강). **스윕 목록 최종판**: REQUEST_FAILED 잔여 3벌(LinkAddRow·InlineEdit·DeleteConfirm), hasRowsBelow/hasEditSlot 3중복→공용 헬퍼, supabase/admin 린트 전역 반전+allowlist, CategoryHeader aria-busy, I3-2 크기 선검사·I3-3 mock·I3-4 console·I3-5 커서·I3-6 입력 잠금, M11 낱말, 실패 경로 포커스 3파일 공통, isConnected 테스트 실효화, favorites remove(id)+E1 문언, RETRY_LATER 동작 중립어, LinkCard 슬롯 부모-자식 기록, preventScroll 판정, orphan documentElement, InlineEdit I5 문언, CategoryPanel.test:423 매달린 프라미스. (divided 주석은 I4가 이미 닫음 — 제거) fixup-I2 진행: rename 성공 시 빗장 조기 해제 제거, remove 성공 트랜지션, busy 게이트 2줄, 포커스 반환 4자리+취소 버튼, cursor-pointer(트랙 공통 — I1 7자리는 fixup-I1에 편입), 접근성 이름, 테스트 보강. 스윕 갱신: REQUEST_FAILED 사본 4벌(constants 승격분 포함) 이관, page.tsx divided 우회 주석 축소.
+  - 구현 완료(874a9bb, 테스트 32·돌연변이 7종 실검증·통합 26 PASS — 깊이 차단·재배속 실 DB 실측·원상 증명). divided 함정은 "언제나 렌더·스스로 접기" 설계로 원천 회피. **I4·I5 인계**: SubCategoryMap이 이미 page에서 내려옴(추가 조회 불필요), "하위 미지정 N"=selected.linkCount−Σsubs, 접근성 이름 "하위 카테고리" 사용 중(I5 필터 줄은 다른 이름), 하위 삭제 revalidate 후 select 값 소멸을 견딜 것.
   - 내용: 하위 칩(이름·개수·수정·×) + 추가. 삭제 시 소속 링크 `category_id`는 상위로 이동. **시스템 제약(D2·D3 품질 리뷰 확정): 카테고리는 2단계까지 — 하위의 하위 생성을 UI·서버 액션 양쪽에서 차단**(공개 화면 전체가 2단 트리 전제: Sidebar·category 라우팅·HomeView·칩 개수).
   - **H4 인계: 서버측 절반은 이미 구현됨 — 재구현 금지.** 깊이 차단은 createSubCategory가, 삭제 시 링크 재배속(재배속 후 삭제 순서)은 deleteSubCategory가 수행. I2는 UI측 차단·배선만.
   - 완료 기준: 테스트 — 추가·수정·삭제와 링크 재배속.
 
-- [ ] **I3. 링크 추가 줄** `S` — 의존: I1 · 병렬: I2와 동시 가능
+- [x] **I3. 링크 추가 줄** `S` — 의존: I1 · 병렬: I2와 동시 가능 ✅ 2026-08-10 새벽 완료 (c6c8bdd+e7368ef + fixup 8d12aae·2a6c374(SSRF 신고 정정) — 스펙 승인·통합 품질 리뷰 조건부 종결 조건 충족. 잔여 I3-2~6은 스윕)
+  - **스펙 리뷰 승인 ✅**(위반 0·수치 전수 일치·보안 계약 2축 실검증, 판단 9/9 승인). **fixup 8d12aae 랜딩** — 4건 전부 선실패 실증(같은 틱 2연발 `got 2 times` 재현, ESLint는 동적 import 못 잡고 정규식이 잡음을 한 벌로 실측). SSRF 신고는 처방보다 넓힘(DNS 리바인딩·`*.nip.io`·IPv6 fc00::/7·fe80::/10 — 같은 뿌리). **승격 조건: 비관리자 트리거 발생 시 즉시 Critical.** I4 인계: children 조건 없이 넘길 것, 카테고리 0개면 표도 소멸, 성공 폼 비우기 트랜지션은 표 랜딩 후 재판정.
+  - 구현 완료(c6c8bdd+e7368ef, 테스트 53·변이 검증 실증·통합 8/8 — 실수집·Storage 원상 290행/280객체). lib/favicon-collect.ts: 관문+service role은 Storage 업로드뿐(3중 잠금), hostOf 키+upsert, B4 사슬 이식(총 예산 8초). 자기 신고: SSRF 잔여(이름 기반 — B4 동일·관리자 전용 트리거). **I4·I5 인계**: `<LinkAddRow><FilterRow/><LinkTable/></LinkAddRow>` children 진입·`{조건 && }` 금지, 선 색 구분(border vs line), 후속 자리 수치 = 프로토타입 367~412행, collectFavicon 재사용 가능(멱등), reorderBookmarks는 카테고리 전체 목록.
   - 내용: URL/이름(비우면 도메인 host에서)/설명 → 선택 카테고리로 등록. 등록 시 구글 파비콘 수집 시도(B4 로직 재사용) → Storage 업로드.
   - **H4 인계(3bc226c 확정)**: 이름 자동 추출(hostOf·www 제거)·URL 스킴 검증은 createBookmark가 이미 수행 — UI는 미리보기·문구만. 파비콘은 **업로드 먼저 → `createBookmark({..., faviconUrl})` 1회**. faviconUrl 검증은 서버가 수행(http/https/`data:image/`만 허용, 그 외 명시 거부 문구) — UI는 거부 문구 표시만. Storage 키는 `hostOf(url)` 기반+`upsert:true` 권장(시드의 uuid 키와 공존 — 읽는 쪽은 public URL이라 무관).
   - 완료 기준: 테스트 — 이름 자동 추출, URL 검증. 새 링크가 공개 화면에 나타남.
 
 - [ ] **I4. 링크 표 + 인라인 편집 + 고정** `L` — 의존: I1, I2, I3
+  - 구현 완료(fd67a06, 테스트 53·돌연변이 22/23 RED·통합: 13번째 고정 실거부·/daily 반영·118행 재부여→복원·**290행 전 필드 대조 0건**·프로덕션 무누출 6/6) — 스펙 리뷰 진행 중. AdminLink 8칸(sort_order 제외 — 배열 자리가 순서), 하위 select 왕복 복귀 실결함을 useOptimistic+isPending으로 수정. **오케스트레이터 결정(미결 판단): 비직접 정렬 모드에서 드롭 무시+손잡이 비활성(impl-I5 반영).** 스윕 추가: CategoryPanel.test.tsx:423 매달린 프라미스 함정. 참고: Tailwind v4는 flex-[1_1_240px]를 flex:240px로 축약(동치 — 비대칭 값 쓸 때 생성 CSS 확인). 자기 신고: 비밀번호 콘솔 노출 1회(파일·커밋 무관 — 누적 4건, 아침 교체 권고).
   - **H4 인계**: reorderBookmarks의 sort_order는 전역 재부여 — **한 카테고리 목록 전체**를 넘겨야 함(부분 목록 금지). 고정 13번째는 togglePin이 PIN_LIMIT 문구로 거부 — UI는 그 `{ok:false,error}`를 토스트로.
   - 내용: DESIGN_SPEC 6장 표 — 행 구성(손잡이·이름·주소·설명 입력·하위 select·클릭·고정 토글), 드래그 정렬, 고정 최대 12 초과 시 토스트 차단, flex-wrap 반응 규칙.
   - 완료 기준: 테스트 — 설명 저장·하위 지정·고정 차단. 수동: 드래그 순서가 공개 화면에 반영, **<820px에서 2단 → 1단 축소**(스펙 1장 narrow 규칙).
@@ -623,8 +631,9 @@ graph LR
   - 내용: DESIGN_SPEC 2-1장 — 연필 클릭 시 본문·하단을 폼으로 교체(동시에 한 장만), Enter 저장/Esc 취소, 서버 액션 저장. 모달 금지.
   - 완료 기준: 테스트 — 폼 전환·저장·취소·단일 편집 보장.
 
-- [ ] **J3. 카드 삭제 확인** `S` — 의존: J1, H4 · 병렬: J2와 동시 가능
+- [x] **J3. 카드 삭제 확인** `S` — 의존: J1, H4 · 병렬: J2와 동시 가능 ✅ 2026-08-09 야간 완료 (1f75cd3 + fixup b8b79de — 스펙 합격·품질 조건부(C1 치명)·픽스업 재검증 통과. 소유 판정(owned‖orphan)·favsRef 등 신규 Minor 5건은 전부 비차단. **아침 확인 전환: 관리자로 링크 1건 삭제 시 revalidate 전 카드 부활 프레임이 없는지 실브라우저 1회**(startTransition 배선은 jsdom 잠금 완료 — 실커밋 결합만 미관측, J2 동일). O3 스윕 편입: RETRY_LATER 동작 중립어, favorites remove(id)+E1 문언, LinkCard 슬롯 부모-자식 의존 기록, 마운트 preventScroll 트레이드 판정, orphan에 documentElement 추가, I5 문언(useLayoutEffect 또는 완화))
   - **스펙 리뷰 합격**(위반 0, 수치 27개 중 26 이식·1 의도적 미이식 전건 확인. **판정: DESIGN_SPEC 153행 "12px"는 문서 오기 — 프로토타입 11.5px가 정본**(스펙 3행 자기 선언+타입 스케일 정합+D6 선례. DESIGN_SPEC 원본은 핸드오프 번들이라 미수정 — 정오표로 기록, 아침 보고). 테스트 실측 +51(보고 52는 계수 오차). favCount 잔여 빚 사유 정정: "셸 경계 밖"이 아니라 **페이로드 비용**(290 uuid×전 페이지뷰 RSC — 데이터는 셸에 이미 있음, 3줄이면 닿으나 비용>이득 판단). 품질 리뷰 이월: 중복 배치 마운트 포커스(나중 인스턴스 승리 — 실브라우저 확인), 포인터 밖 클릭 가둠 풀림(수용/후속 판정), E1 규칙 문언(위치 기준→실불변식), J2 재검증발 A(trigger 캡처 시점 — InlineEdit·DeleteConfirm 공유 패턴).
+  - **품질 리뷰: 조건부 승인(C1 치명 — 액션 거부 시 오버레이 영구 잠금·카드 사망) → fixup b8b79de 랜딩**(C1+I2~I5+M1~M3+트리거 렌더 시점 캡처·owned‖orphan 소유 판정 — InlineEdit과 단일 커밋으로 두 슬롯 동형 유지, 전 항목 선실패 확인). 재검증 진행 중. 스윕 이월: lib/favorites remove(id) 정공법, E1 규칙 문언, inert 백로그.
   - 구현 완료(1f75cd3, 테스트 +51). alertdialog+포커스 트랩(마운트 시 취소 포커스·언마운트 시 트리거 반환·오버레이 자체 Tab 순환), **ref 빗장**(상태 가드는 같은 틱 이중 클릭을 못 막음 — 실측, InlineEdit 동일 구멍은 fixup-J2에 전달), 양방향 상호 배제, 위임 4건 이행(31개 전수 순회 테스트 포함). favCount: 삭제 브라우저의 localStorage에서 제거 — **남는 빚: 다른 방문자 localStorage는 완전 해소 불가(셸이 실존 id 집합을 내려보내야 — 백로그)**. dev+프로덕션 삭제 사이클 실측(291→290·화면 소멸), 시드 290 불변. 참고: createBookmark는 I 트랙이 import하기 전까지 HTTP 미도달.
   - 파일: `components/card/DeleteConfirm.tsx` (+ SidebarContainer.tsx — favCount 정합)
   - 내용: 휴지통 → 카드 위 `inset-0` 오버레이("이 링크를 삭제할까요" + 삭제/취소). 즉시 삭제 금지. **추가(소유자 정정)**: 사이드바 favCount 정합 — 삭제된 링크 id가 localStorage에 남아 카운트가 어긋나는 문제의 완전 수정(C4 이월분, J2→J3 정정).
