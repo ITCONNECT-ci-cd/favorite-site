@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
 import type { LoginFormState } from '@/components/admin/LoginForm';
+import { ADMIN_PATH } from '@/lib/routes';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 
 /**
@@ -27,15 +28,15 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
  * 그리고 3단계 J1 이 붙일 공개 화면의 편집 노출까지). 순서를 바꾸면 화면이 한 박자 늦는다.
  */
 
-/**
- * 로그인 성공·로그아웃 뒤 돌아갈 자리. 둘 다 `/admin` 이다 — 그 자리에서
+/*
+ * 로그인 성공·로그아웃 뒤 돌아갈 자리는 둘 다 `ADMIN_PATH` 다 — 그 자리에서
  * `app/admin/layout.tsx` 가 세션을 다시 보고 관리 화면과 로그인 화면을 가른다.
  *
- * (`'use server'` 파일은 **async 함수만 export** 할 수 있다. 내보내지 않는 상수·헬퍼는
- * 이렇게 둬도 되지만, 이 파일에서 타입이나 문구를 export 하려 하면 빌드가 막힌다 —
- * `LoginFormState` 가 컴포넌트 쪽에 사는 이유다.)
+ * 값은 `lib/routes.ts` 에서 가져온다. 여기에 다시 적어 두면 로그인 화면·상단 탭이 쓰는 값과
+ * 갈라진다. (`'use server'` 파일은 **async 함수만 export** 할 수 있어 자기 상수를 남에게
+ * 나눠 줄 수 없다 — 상수가 중립 모듈에 사는 이유이자, `LoginFormState` 가 컴포넌트 쪽에
+ * 사는 이유이기도 하다.)
  */
-const ADMIN_PATH = '/admin';
 
 /**
  * 이메일·비밀번호로 로그인한다.
