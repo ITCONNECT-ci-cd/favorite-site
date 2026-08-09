@@ -3,7 +3,7 @@
  * 수치의 원본은 docs/DESIGN_SPEC.md 2-1장이며, 이 테스트가 그 값을 고정한다.
  */
 import { fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { LinkCard, type LinkCardProps } from '@/components/LinkCard';
 import type { BookmarkWithCount } from '@/lib/types';
 
@@ -31,33 +31,31 @@ function renderCard({ bookmark, ...props }: Overrides = {}) {
   return container.firstElementChild as HTMLElement;
 }
 
-/** 파비콘 타일 — 본문과 함께 단 둘뿐인 '열기' 영역이다. */
-const faviconButton = () => screen.getByRole('button', { name: 'ChatGPT 열기' });
+/**
+ * 파비콘 타일 — 본문과 같은 곳으로 가는 마우스 전용 보조 영역이라
+ * 접근성 트리에서는 감춰져 있다(탭 순서 중복 제거). 그래서 role로 찾지 못한다.
+ */
+function faviconLink(): HTMLAnchorElement {
+  const link = document.body.querySelector<HTMLAnchorElement>('a[aria-hidden="true"]');
+
+  if (link === null) throw new Error('파비콘 앵커를 찾지 못했다');
+  return link;
+}
+
 /** 본문 블록 — 접근성 이름은 이름 + 설명이다. */
-const bodyButton = () => screen.getByRole('button', { name: /AI 대화·문서 초안/ });
+const bodyLink = () => screen.getByRole('link', { name: /AI 대화·문서 초안/ });
 const pinButton = () => screen.getByRole('button', { name: 'ChatGPT 즐겨찾기' });
 const checkButton = () => screen.getByRole('button', { name: 'ChatGPT 선택' });
 
-/**
- * 열린 탭이 window.opener를 잡지 못하게 막는다(reverse tabnabbing).
- * window.open은 <a target="_blank">와 달리 noopener가 암묵 적용되지 않아 직접 넘겨야 한다.
- */
-const OPEN_ARGS = ['https://chat.openai.com/', '_blank', 'noopener,noreferrer'] as const;
-
-/** jsdom의 window.open은 "not implemented"를 던지므로 매 테스트에서 갈아 끼운다. */
-function spyOnOpen() {
-  return vi.spyOn(window, 'open').mockReturnValue(null);
+/** fireEvent에는 auxClick 헬퍼가 없어 auxclick 이벤트를 직접 만들어 쏜다. */
+function auxClick(element: Element, button: number) {
+  return fireEvent(element, new MouseEvent('auxclick', { bubbles: true, cancelable: true, button }));
 }
 
-let open: ReturnType<typeof spyOnOpen>;
-
-beforeEach(() => {
-  open = spyOnOpen();
-});
-
-afterEach(() => {
-  vi.restoreAllMocks();
-});
+/** 가운데 클릭 = 새 탭 (button 1). 왼쪽 클릭은 click이라 auxclick으로 오지 않는다. */
+const middleClick = (element: Element) => auxClick(element, 1);
+/** 우클릭 (button 2) — 메뉴만 연다. */
+const rightClick = (element: Element) => auxClick(element, 2);
 
 describe('LinkCard 렌더', () => {
   it('이름·설명·주소·클릭 수를 보여준다', () => {
@@ -91,65 +89,102 @@ describe('LinkCard 렌더', () => {
   it('파비콘을 19px 배경 이미지로 타일 가운데에 그린다', () => {
     renderCard();
 
-    expect(faviconButton()).toHaveStyle({
+    expect(faviconLink()).toHaveStyle({
       backgroundImage: 'url("https://cdn.example.com/openai.png")',
     });
-    expect(faviconButton()).toHaveClass('bg-[length:19px_19px]', 'bg-center', 'bg-no-repeat');
+    expect(faviconLink()).toHaveClass('bg-[length:19px_19px]', 'bg-center', 'bg-no-repeat');
   });
 
   it('파비콘이 없으면 이미지 없이 회색 타일만 그린다', () => {
     renderCard({ bookmark: { favicon_url: null } });
 
-    expect(faviconButton()).not.toHaveStyle({ backgroundImage: 'url("null")' });
-    expect(faviconButton().style.backgroundImage).toBe('');
-    expect(faviconButton()).toHaveClass('bg-side');
+    expect(faviconLink()).not.toHaveStyle({ backgroundImage: 'url("null")' });
+    expect(faviconLink().style.backgroundImage).toBe('');
+    expect(faviconLink()).toHaveClass('bg-side');
+  });
+
+  it('따옴표가 든 주소에서도 배경 선언이 살아남는다', () => {
+    // 이스케이프하지 않으면 url() 문자열이 중간에서 닫혀 선언 전체가 무효가 되고
+    // 파비콘이 통째로 사라진다.
+    renderCard({ bookmark: { favicon_url: 'https://cdn.example.com/a").png' } });
+
+    expect(faviconLink().style.backgroundImage).not.toBe('');
   });
 });
 
 describe('LinkCard 열기', () => {
-  it('본문을 누르면 새 탭으로 열고 onOpen을 부른다', () => {
+  it('본문과 파비콘 둘 다 새 탭으로 가는 진짜 앵커다', () => {
+    renderCard();
+
+    // 앵커여야 가운데 클릭·Ctrl+클릭·우클릭 메뉴·상태바 미리보기가 살아난다.
+    for (const link of [bodyLink(), faviconLink()]) {
+      expect(link).toHaveAttribute('href', 'https://chat.openai.com/');
+      expect(link).toHaveAttribute('target', '_blank');
+      // 열린 탭이 window.opener를 잡지 못하게 막는다(reverse tabnabbing).
+      expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    }
+  });
+
+  it('본문을 누르면 onOpen을 부른다', () => {
     const onOpen = vi.fn();
     renderCard({ onOpen });
 
-    fireEvent.click(bodyButton());
+    fireEvent.click(bodyLink());
 
-    expect(open).toHaveBeenCalledWith(...OPEN_ARGS);
     expect(onOpen).toHaveBeenCalledWith('bm-1');
   });
 
-  it('파비콘을 눌러도 똑같이 열린다', () => {
+  it('파비콘을 눌러도 똑같이 onOpen을 부른다', () => {
     const onOpen = vi.fn();
     renderCard({ onOpen });
 
-    fireEvent.click(faviconButton());
+    fireEvent.click(faviconLink());
 
-    expect(open).toHaveBeenCalledWith(...OPEN_ARGS);
     expect(onOpen).toHaveBeenCalledWith('bm-1');
   });
 
-  it('noopener·noreferrer로 열어 열린 탭이 opener를 잡지 못하게 한다', () => {
-    renderCard();
-
-    fireEvent.click(bodyButton());
-
-    expect(open.mock.calls[0]?.[2]).toBe('noopener,noreferrer');
-  });
-
-  it('onOpen은 새 탭을 열기 직전에 부른다 (F3이 클릭 기록에 배선)', () => {
+  it('가운데 클릭(새 탭)도 기록한다', () => {
     const onOpen = vi.fn();
     renderCard({ onOpen });
 
-    fireEvent.click(bodyButton());
+    middleClick(bodyLink());
+    middleClick(faviconLink());
 
-    expect(onOpen.mock.invocationCallOrder[0]).toBeLessThan(open.mock.invocationCallOrder[0]);
+    expect(onOpen).toHaveBeenCalledTimes(2);
+    expect(onOpen).toHaveBeenCalledWith('bm-1');
   });
 
-  it('onOpen을 주지 않아도 새 탭은 열린다', () => {
+  it('우클릭은 메뉴만 여는 것이라 기록하지 않는다', () => {
+    const onOpen = vi.fn();
+    renderCard({ onOpen });
+
+    rightClick(bodyLink());
+
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it('기본 이동을 막지 않는다 (브라우저가 연다)', () => {
+    const onOpen = vi.fn();
+    renderCard({ onOpen });
+
+    // preventDefault를 부르면 dispatchEvent가 false를 돌려준다.
+    expect(fireEvent.click(bodyLink())).toBe(true);
+    expect(fireEvent.click(faviconLink())).toBe(true);
+  });
+
+  it('onOpen을 주지 않아도 앵커는 그대로 동작한다', () => {
     renderCard();
 
-    fireEvent.click(bodyButton());
+    expect(fireEvent.click(bodyLink())).toBe(true);
+    expect(bodyLink()).toHaveAttribute('href', 'https://chat.openai.com/');
+  });
 
-    expect(open).toHaveBeenCalledWith(...OPEN_ARGS);
+  it('파비콘 타일은 탭 순서에 끼어들지 않는다 (본문과 목적지가 같다)', () => {
+    renderCard();
+
+    expect(faviconLink()).toHaveAttribute('tabindex', '-1');
+    expect(faviconLink()).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.getAllByRole('link')).toHaveLength(1);
   });
 
   it('카드 바탕을 눌러도 열리지 않는다 (열기 영역은 파비콘과 본문뿐)', () => {
@@ -158,7 +193,6 @@ describe('LinkCard 열기', () => {
 
     fireEvent.click(card);
 
-    expect(open).not.toHaveBeenCalled();
     expect(onOpen).not.toHaveBeenCalled();
   });
 });
@@ -170,7 +204,7 @@ describe('LinkCard 핀', () => {
     expect(pinButton()).toBeInTheDocument();
   });
 
-  it('핀을 누르면 onToggleFav만 부르고 새 탭은 열지 않는다', () => {
+  it('핀을 누르면 onToggleFav만 부르고 링크는 열지 않는다', () => {
     const onToggleFav = vi.fn();
     const onOpen = vi.fn();
     renderCard({ onToggleFav, onOpen });
@@ -178,8 +212,9 @@ describe('LinkCard 핀', () => {
     fireEvent.click(pinButton());
 
     expect(onToggleFav).toHaveBeenCalledWith('bm-1');
-    expect(open).not.toHaveBeenCalled();
     expect(onOpen).not.toHaveBeenCalled();
+    // 앵커 밖의 형제 요소라 클릭이 앵커로 새지 않는다.
+    expect(pinButton().closest('a')).toBeNull();
   });
 
   it('showPin=false면 핀을 그리지 않는다 (홈의 매일·운영 중 섹션)', () => {
@@ -218,14 +253,16 @@ describe('LinkCard 체크', () => {
     expect(checkButton()).toBeInTheDocument();
   });
 
-  it('체크를 누르면 onToggleCheck만 부르고 새 탭은 열지 않는다', () => {
+  it('체크를 누르면 onToggleCheck만 부르고 링크는 열지 않는다', () => {
     const onToggleCheck = vi.fn();
-    renderCard({ showCheck: true, onToggleCheck });
+    const onOpen = vi.fn();
+    renderCard({ showCheck: true, onToggleCheck, onOpen });
 
     fireEvent.click(checkButton());
 
     expect(onToggleCheck).toHaveBeenCalledWith('bm-1');
-    expect(open).not.toHaveBeenCalled();
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(checkButton().closest('a')).toBeNull();
   });
 
   it('꺼짐 상태는 흐린 회색이다', () => {
@@ -277,13 +314,22 @@ describe('LinkCard 테두리 3상태', () => {
     expect(card).toHaveClass('border-ink');
     expect(card).not.toHaveClass('border-fav-border');
   });
+
+  it('체크를 감춘 화면에서는 checked가 테두리를 바꾸지 못한다', () => {
+    // 체크가 보이지 않는데 테두리만 검게 변하면 이유를 알 수 없는 상태가 된다.
+    const card = renderCard({ showCheck: false, checked: true, isFaved: true });
+
+    expect(card).toHaveClass('border-fav-border');
+    expect(card).not.toHaveClass('border-ink');
+  });
 });
 
 describe('LinkCard 관리자', () => {
   it('isAdmin=true여도 연필·휴지통은 아직 그리지 않는다 (3단계 J1·J2 몫)', () => {
-    const card = renderCard({ isAdmin: true, showCheck: true });
+    renderCard({ isAdmin: true, showCheck: true });
 
-    expect(card.querySelectorAll('button')).toHaveLength(4); // 파비콘 · 체크 · 핀 · 본문
+    expect(screen.queryByRole('button', { name: /편집|수정/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /삭제/ })).not.toBeInTheDocument();
   });
 });
 
@@ -329,7 +375,7 @@ describe('LinkCard 수치 (DESIGN_SPEC 2-1)', () => {
   it('파비콘 타일: 32px, 흰 배경 + 1px 기본 테두리 + radius 9px', () => {
     renderCard();
 
-    expect(faviconButton()).toHaveClass(
+    expect(faviconLink()).toHaveClass(
       'size-[32px]',
       'shrink-0',
       'rounded-[9px]',
@@ -341,7 +387,7 @@ describe('LinkCard 수치 (DESIGN_SPEC 2-1)', () => {
 
   it('액션 줄: margin-left auto, gap 1px, 우측 정렬, 줄바꿈 허용', () => {
     renderCard();
-    const actions = faviconButton().nextElementSibling;
+    const actions = faviconLink().nextElementSibling;
 
     expect(actions).toHaveClass(
       'ml-auto',
@@ -370,9 +416,8 @@ describe('LinkCard 수치 (DESIGN_SPEC 2-1)', () => {
 
   it('본문 블록: margin-top auto, 이름 13.5px/600 2줄, 설명 12px 2줄', () => {
     renderCard();
-    const body = bodyButton();
 
-    expect(body).toHaveClass('mt-auto', 'w-full', 'text-left', 'cursor-pointer');
+    expect(bodyLink()).toHaveClass('mt-auto', 'block', 'w-full', 'cursor-pointer');
     expect(screen.getByText('ChatGPT')).toHaveClass(
       'block',
       'text-[13px]',
@@ -392,12 +437,6 @@ describe('LinkCard 수치 (DESIGN_SPEC 2-1)', () => {
       'overflow-hidden',
       'mt-[4px]',
     );
-  });
-
-  it('본문 버튼 안에는 div를 넣지 않는다 (button 콘텐츠 모델 = phrasing content)', () => {
-    renderCard();
-
-    expect(bodyButton().querySelector('div')).toBeNull();
   });
 
   it('하단 줄: margin-top 5px, gap 8px / 주소 10.5px 1줄 말줄임 / 클릭 수 11px/600', () => {

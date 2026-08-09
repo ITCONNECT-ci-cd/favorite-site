@@ -12,17 +12,3 @@ export function faviconSrc(bookmark: Pick<Bookmark, 'favicon_url'>): string | nu
 
   return src !== null && src.trim() !== '' ? src : null;
 }
-
-/**
- * 카드 하단 줄에 적는 주소. `https://www.perplexity.ai/` → `perplexity.ai`
- * (맨 앞 `www.`만 뗀다 — 프로토타입 표기 기준, docs/screenshots/03-shot.png)
- *
- * 주소로 해석되지 않으면 하단 줄을 비우는 대신 입력을 그대로 돌려준다.
- */
-export function hostOf(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, '');
-  } catch {
-    return url;
-  }
-}

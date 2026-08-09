@@ -1,8 +1,10 @@
 'use client';
 
+import type { MouseEvent } from 'react';
 import { CheckIcon, EyeIcon, PinIcon } from '@/components/icons';
-import { faviconSrc, hostOf } from '@/lib/favicon';
+import { faviconSrc } from '@/lib/favicon';
 import type { BookmarkWithCount } from '@/lib/types';
+import { hostOf } from '@/lib/url';
 
 export type LinkCardProps = {
   bookmark: BookmarkWithCount;
@@ -19,7 +21,7 @@ export type LinkCardProps = {
    * 연필·휴지통의 실제 렌더는 3단계(J1 인라인 편집 · J2 삭제 확인) 몫이라 지금은 받아만 둔다.
    */
   isAdmin?: boolean;
-  /** 새 탭 열기 직전 호출 — F3이 클릭 기록에 배선한다 */
+  /** 링크를 여는 순간 호출 — F3이 클릭 기록에 배선한다 */
   onOpen?: (id: string) => void;
 };
 
@@ -41,7 +43,11 @@ const CARD = [
 const ACTION =
   'flex size-[21px] shrink-0 items-center justify-center rounded-[6px] cursor-pointer hover:bg-[#efede8]';
 
-/** 파비콘 주소가 CSS url()을 빠져나가지 못하게 막는다. */
+/**
+ * 파비콘 주소를 CSS url() 안에 안전하게 넣는다.
+ * 따옴표가 든 주소를 그대로 이어 붙이면 url() 문자열이 중간에서 닫히고
+ * background-image 선언 전체가 무효 처리되어 파비콘이 통째로 사라진다.
+ */
 function cssUrl(src: string): string {
   return `url("${src.replace(/["\\]/g, '\\$&')}")`;
 }
@@ -49,8 +55,11 @@ function cssUrl(src: string): string {
 /**
  * 홈·카테고리·즐겨찾기·매일이 공유하는 단 하나의 링크 카드.
  *
- * 새 탭을 여는 클릭 영역은 **파비콘 타일과 본문 블록뿐**이다(DESIGN_SPEC 2-1).
+ * 링크를 여는 영역은 **파비콘 타일과 본문 블록뿐**이다(DESIGN_SPEC 2-1).
  * 카드 전체를 클릭 영역으로 만들면 핀·체크를 누를 때마다 탭이 열려 버린다.
+ *
+ * 두 영역 모두 진짜 앵커라서 가운데 클릭·Ctrl+클릭·우클릭 메뉴·상태바 미리보기가
+ * 브라우저 기본 동작 그대로 살아 있다. 우리는 기록만 남기고 이동을 가로채지 않는다.
  *
  * 즐겨찾기·선택 상태와 클릭 기록은 카드 밖(소비자)이 들고 있고, 카드는 콜백만 부른다.
  */
@@ -67,24 +76,38 @@ export function LinkCard({
   const { id, title, url, description } = bookmark;
   const icon = faviconSrc(bookmark);
 
-  function open() {
-    onOpen?.(id);
-    // noopener면 반환값이 항상 null이라 팝업 차단을 감지할 수 없지만, 카드 단건 열기는
-    // 감지가 필요 없고 여러 개를 여는 2단계 G4는 어차피 무조건 안내 토스트(V4)를 띄운다.
-    window.open(url, '_blank', 'noopener,noreferrer');
+  /** 가운데 클릭(새 탭)도 여는 것이다. 우클릭(button 2)은 메뉴만 여니 세지 않는다. */
+  function recordAuxOpen(event: MouseEvent<HTMLAnchorElement>) {
+    if (event.button === 1) onOpen?.(id);
   }
 
+  /**
+   * 두 열기 영역이 같은 계약을 쓰도록 한곳에 모은다.
+   * preventDefault를 부르지 않는다 — 이동은 브라우저에 맡기고 우리는 기록만 얹는다.
+   */
+  const openLink = {
+    href: url,
+    target: '_blank',
+    rel: 'noopener noreferrer',
+    onClick: () => onOpen?.(id),
+    onAuxClick: recordAuxOpen,
+  } as const;
+
+  // 체크를 감춘 화면에서 넘어온 checked는 무시한다 — 보이지 않는 상태로 테두리만 바뀌면 안 된다.
+  const isChecked = showCheck && checked;
   // 체크는 즐겨찾기보다 앞선다 — 선택한 카드를 한눈에 구분하는 쪽이 우선이다.
-  const border = checked ? 'border-ink' : isFaved ? 'border-fav-border' : 'border-card-border';
+  const border = isChecked ? 'border-ink' : isFaved ? 'border-fav-border' : 'border-card-border';
 
   return (
     <div className={`${CARD} ${border}`}>
       <div className="flex min-h-[32px] items-start gap-[4px]">
-        {/* 파비콘이 없으면 이미지 없이 회색(bg-side) 타일만 남긴다 — url("")은 깨진 이미지가 된다. */}
-        <button
-          type="button"
-          aria-label={`${title} 열기`}
-          onClick={open}
+        {/* 파비콘 타일은 본문과 같은 곳으로 가는 마우스 전용 보조 영역이다.
+            탭 순서에 290번 중복으로 끼어들지 않도록 접근성 트리에서는 감춘다.
+            파비콘이 없으면 이미지 없이 회색(bg-side) 타일만 남는다. */}
+        <a
+          {...openLink}
+          aria-hidden="true"
+          tabIndex={-1}
           style={icon === null ? undefined : { backgroundImage: cssUrl(icon) }}
           className={`size-[32px] shrink-0 cursor-pointer rounded-[9px] border border-border bg-center bg-no-repeat bg-[length:19px_19px] ${
             icon === null ? 'bg-side' : 'bg-card'
@@ -96,9 +119,9 @@ export function LinkCard({
             <button
               type="button"
               aria-label={`${title} 선택`}
-              aria-pressed={checked}
+              aria-pressed={isChecked}
               onClick={() => onToggleCheck?.(id)}
-              className={`${ACTION} ${checked ? 'bg-ink text-white' : 'text-check-off'}`}
+              className={`${ACTION} ${isChecked ? 'bg-ink text-white' : 'text-check-off'}`}
             >
               <CheckIcon />
             </button>
@@ -120,9 +143,10 @@ export function LinkCard({
         </span>
       </div>
 
-      <button type="button" onClick={open} className="mt-auto w-full cursor-pointer text-left">
-        {/* button의 콘텐츠 모델은 phrasing content라 div를 넣을 수 없다. 스펙의 블록 레이아웃
-            (2줄 말줄임 = max-height + overflow)은 span에 block을 얹어 그대로 살린다. */}
+      {/* ↓ J1(인라인 편집)이 통째로 교체할 범위: 본문 블록 + 하단 줄 ↓ */}
+      <a {...openLink} className="mt-auto block w-full cursor-pointer">
+        {/* button과 달리 a는 흐름 콘텐츠를 담을 수 있지만, 스펙의 2줄 말줄임
+            (max-height + overflow)만 필요하므로 span + block으로 충분하다. */}
         <span className="block max-h-[2.6em] overflow-hidden text-[13px] leading-[1.3] font-semibold tracking-[-0.01em] min-[820px]:text-[13.5px]">
           {title}
         </span>
@@ -131,7 +155,7 @@ export function LinkCard({
             {description}
           </span>
         )}
-      </button>
+      </a>
 
       <div className="mt-[5px] flex items-center gap-[8px]">
         <span className="min-w-0 flex-1 truncate text-[10.5px] text-muted">{hostOf(url)}</span>
@@ -140,6 +164,7 @@ export function LinkCard({
           {bookmark.click_count}
         </span>
       </div>
+      {/* ↑ J1 교체 범위 끝 ↑ */}
     </div>
   );
 }
