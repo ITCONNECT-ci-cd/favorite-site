@@ -3,11 +3,11 @@ import { FavoritesView } from '@/components/FavoritesView';
 import { getAllData } from '@/lib/queries';
 
 /**
- * 탭 제목 — 셸(app/layout.tsx)의 '내 링크' 를 화면 이름으로 덮는다.
+ * 탭 제목 — 화면 이름만 댄다. 꼬리표(`— 내 링크`)는 셸의 title template 이 붙인다.
  * 담긴 개수는 브라우저에만 있어(localStorage) 서버가 모르므로 제목에 넣지 않는다.
  */
 export const metadata: Metadata = {
-  title: '내 즐겨찾기 — 내 링크',
+  title: '내 즐겨찾기',
 };
 
 /**

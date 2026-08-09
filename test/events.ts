@@ -17,7 +17,11 @@ export function auxClick(element: Element, button: number): boolean {
 }
 
 /** 가운데 클릭 = 새 탭 (button 1). 왼쪽 클릭은 click 이라 auxclick 으로 오지 않는다. */
-export const middleClick = (element: Element) => auxClick(element, 1);
+export function middleClick(element: Element): boolean {
+  return auxClick(element, 1);
+}
 
 /** 우클릭 (button 2) — 메뉴만 연다. 여는 것이 아니므로 세지 않는다. */
-export const rightClick = (element: Element) => auxClick(element, 2);
+export function rightClick(element: Element): boolean {
+  return auxClick(element, 2);
+}

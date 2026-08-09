@@ -24,6 +24,12 @@ export type HeaderProps = {
  * 여기에 <input>을 두면 포커스가 두 군데로 갈라진다. 커서를 `cursor-text`로 두는 것도
  * 같은 이유다 — "여기서 타이핑이 시작된다"는 신호는 남기되 입력은 팔레트가 받는다.
  *
+ * 375px에서 placeholder 여유 ~26px — 프로토타입 동일, 수용(D5 판정).
+ * 좁은 화면에서도 헤더는 이 세 가지를 다 들고 있고(검색창·AI 검색·우측 개수), 줄어드는 것은
+ * 검색창의 안내 문구뿐이다(`min-w-0 flex-1 truncate`). 프로토타입의 narrow 헤더 규칙도
+ * `headPad`(좌우 12px) 하나뿐이라 같은 모습이므로 그대로 둔다. 잘림은 없다 —
+ * 헤더 min-content 합이 325px로 375px 화면의 가용 351px보다 작다.
+ *
  * G5 배선 시 할 일:
  * - 팔레트 열림 상태를 `aria-expanded`로 스레딩한다 (선택적 `isSearchOpen?: boolean` prop 추가).
  *   지금은 열림 상태를 알 수 없어 `aria-haspopup="dialog"`까지만 걸어 뒀다.

@@ -15,8 +15,17 @@ import "./globals.css";
 const PRETENDARD_CSS_URL =
   "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css";
 
+/**
+ * 탭 제목의 규칙은 셸이 한 번만 정한다 — 화면은 자기 이름만 대고 꼬리표(`— 내 링크`)는
+ * template 이 붙인다. 화면마다 문자열을 이어 붙이면 꼬리표가 여러 파일에 흩어져,
+ * 서비스 이름이 바뀔 때 한 곳이라도 빠지면 조용히 어긋난다.
+ * 제목이 없는 화면(홈·404·metadata 를 내보내지 않는 라우트)은 default 를 그대로 쓴다.
+ */
 export const metadata: Metadata = {
-  title: "내 링크",
+  title: {
+    default: "내 링크",
+    template: "%s — 내 링크",
+  },
   description: "사내 구성원이 자주 쓰는 링크를 한곳에서 찾는 대시보드",
 };
 

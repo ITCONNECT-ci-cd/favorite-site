@@ -12,9 +12,12 @@ import { TOAST_DURATION_MS } from '@/components/Toast';
  * `act()` 로 감싸는 이유: 타이머가 깨우는 것은 React 상태 갱신(useSyncExternalStore 구독)이라
  * act 밖에서 일어나면 경고가 난다.
  *
+ * 이름이 `use*` 가 아닌 것은 일부러다 — React 훅이 아니라 vitest 훅(beforeEach/afterEach)을
+ * 등록하는 함수이고, `use` 로 시작하면 훅 규칙 린트가 컴포넌트/훅 안에서만 부르라고 요구한다.
+ *
  * D5 에서 여섯 벌로 복제돼 있던 같은 훅 쌍을 여기로 모았다.
  */
-export function useToastTimers(): void {
+export function setupToastTimers(): void {
   beforeEach(() => {
     vi.useFakeTimers();
   });

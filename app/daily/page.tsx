@@ -1,18 +1,16 @@
 import type { Metadata } from 'next';
 import { ListView } from '@/components/ListView';
+import { EMPTY_LIST_MESSAGE } from '@/lib/constants';
 import { getAllData } from '@/lib/queries';
 
 /** 제목·설명은 프로토타입의 `listTitle`·`listDesc` 그대로다. */
 const TITLE = '매일 사용하는 사이트';
 const DESCRIPTION = '직접 고정한 링크만 모입니다. 순서가 바뀌지 않습니다.';
 
-/** 탭 제목 — 셸(app/layout.tsx)의 '내 링크' 를 화면 이름으로 덮는다. */
+/** 탭 제목 — 화면 이름만 댄다. 꼬리표(`— 내 링크`)는 셸의 title template 이 붙인다. */
 export const metadata: Metadata = {
-  title: `${TITLE} — 내 링크`,
+  title: TITLE,
 };
-
-/** DESIGN_SPEC 4장 빈 상태 문구 — 즐겨찾기만 전용 문구고, 그 밖의 목록은 모두 이 문구다. */
-const EMPTY_MESSAGE = '이 분류에 링크가 없습니다.';
 
 /**
  * 매일 사용하는 사이트 목록 화면 — `/daily` (DESIGN_SPEC 4장).
@@ -34,7 +32,7 @@ export default async function DailyPage() {
       title={TITLE}
       description={DESCRIPTION}
       bookmarks={bookmarks.filter((bookmark) => bookmark.is_pinned)}
-      emptyMessage={EMPTY_MESSAGE}
+      emptyMessage={EMPTY_LIST_MESSAGE}
     />
   );
 }

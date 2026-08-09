@@ -77,8 +77,15 @@ body {
    움직임 가드(prefers-reduced-motion)를 여기 두지 않은 이유: 대상이 토스트 rise와 카드 호버
    확대 둘뿐이고, 각 컴포넌트에서 `motion-safe:`로 규칙을 아예 걸지 않는 편이 전역에서 되돌리는
    것보다 안전하다(같은 특정도 규칙끼리 출력 순서로 승부가 갈리지 않는다). 근거는
-   components/Toast.tsx · components/LinkCard.tsx 주석에 있다. */
-:focus-visible {
-  outline: 2px solid var(--color-ink);
-  outline-offset: 2px;
+   components/Toast.tsx · components/LinkCard.tsx 주석에 있다.
+
+   **`@layer base` 안에 두는 것이 이 규칙의 핵심이다.** 레이어 밖 선언은 Tailwind의 어떤
+   유틸보다도 강하므로, 이대로 두면 특정 요소가 `outline-*` 유틸로 링을 바꾸려 할 때
+   전역 규칙이 조용히 이긴다(2단계 G2 팔레트처럼 자기 링을 갖는 화면이 곧 들어온다).
+   base 레이어에 넣으면 "기본값은 이것, 필요하면 유틸로 덮어쓰기"가 성립한다. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--color-ink);
+    outline-offset: 2px;
+  }
 }

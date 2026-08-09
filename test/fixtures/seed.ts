@@ -13,26 +13,40 @@
  * 파비콘은 넣지 않는다(빈 집합) — 파비콘 유무는 이 fixture 를 쓰는 어느 테스트의 관심사도 아니고,
  * 넣으려면 실제 수집 결과(scripts/collect-favicons)가 있어야 해서 테스트가 그 산출물에 묶인다.
  */
-import type { Bookmark, BookmarkWithCount, Category } from '@/lib/types';
+import type { Bookmark, BookmarkWithCount, Category, SiteData } from '@/lib/types';
 import { buildSeed, toBookmarkRow, type RawLink } from '@/scripts/seed-mapper';
 import RAW_LINKS from '@/docs/data/links.json';
 
 const SEED = buildSeed(RAW_LINKS as RawLink[], new Set<number>());
 
+/**
+ * 세 배열 모두 `readonly` 다 — 모듈 레벨 상수를 여러 파일이 나눠 쓰므로, 한 테스트가 정렬하거나
+ * push 하면 그 결과가 다른 파일로 새어 나간다. 배열을 바꿔야 하는 쪽은 복사본을 만들어 쓴다
+ * (`SiteData` 처럼 가변 배열을 요구하는 자리는 스프레드로 넘긴다).
+ */
+
 /** 상위 10 · 하위 12, sort_order 순 (getAllData 가 주는 순서와 같다). */
-export const CATEGORIES: Category[] = SEED.categories;
+export const CATEGORIES: readonly Category[] = SEED.categories;
 
 /** DB 행 그대로 — 클릭 수는 별도 테이블 집계라 여기 없다. `lib/queries` 테스트가 쓴다. */
-export const BOOKMARK_ROWS: Bookmark[] = SEED.bookmarks.map(toBookmarkRow);
+export const BOOKMARK_ROWS: readonly Bookmark[] = SEED.bookmarks.map(toBookmarkRow);
 
 /**
  * 화면용 — 카드(C2)가 `click_count` 를 요구하므로 인덱스로 채운다.
  * 값 자체에 뜻은 없다. 자리마다 다른 수가 필요한 테스트가 있어 0 대신 인덱스를 쓴다.
  */
-export const BOOKMARKS: BookmarkWithCount[] = BOOKMARK_ROWS.map((bookmark, index) => ({
+export const BOOKMARKS: readonly BookmarkWithCount[] = BOOKMARK_ROWS.map((bookmark, index) => ({
   ...bookmark,
   click_count: index,
 }));
+
+/**
+ * 서버가 화면에 넘기는 것과 같은 묶음 한 벌. **부를 때마다 새 배열**이라 어느 테스트가
+ * 정렬하거나 밀어 넣어도 옆 테스트로 새지 않는다 (`SiteData` 는 가변 배열을 요구한다).
+ */
+export function siteData(): SiteData {
+  return { categories: [...CATEGORIES], bookmarks: [...BOOKMARKS] };
+}
 
 /** 상위(부모 없음) 카테고리 id — 이름은 상위끼리 유일하다(DB 의 unique nulls not distinct). */
 export function topId(name: string): string {

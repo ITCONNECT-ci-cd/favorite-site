@@ -1,6 +1,7 @@
 import { render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MobileChips } from '@/components/MobileChips';
+import { Sidebar } from '@/components/Sidebar';
 import type { Category } from '@/lib/types';
 
 /** usePathname 은 라우터 컨텍스트가 없는 단위 테스트에서 쓸 수 없으므로 모킹한다 (C3 사이드바와 같은 방식). */
@@ -163,5 +164,40 @@ describe('MobileChips — 프로토타입 수치', () => {
 
     pathname.current = '/';
     expect(chip('홈')).toHaveClass('border-border-strong');
+  });
+});
+
+describe('MobileChips ↔ Sidebar 교차 계약', () => {
+  /**
+   * 칩 줄은 사이드바의 모바일 형태다. 같은 데이터를 받고도 두 내비게이션이 다른 곳을, 다른
+   * 순서로 가리키면 화면 폭에 따라 메뉴가 달라 보인다 — 그 어긋남은 어느 한쪽의 단위 테스트로는
+   * 잡히지 않아 여기서 둘을 나란히 세워 본다.
+   *
+   * 사이드바의 '내 링크'(상단 60px)는 nav 밖이라 세지 않는다. 하위 분류는 지금 경로(`/`)에
+   * 걸린 가지가 없어 펼쳐지지 않는다 — 칩 줄에는 하위가 아예 없으므로 그 상태에서 비교한다.
+   */
+  it('두 내비게이션이 같은 곳을 같은 순서로 가리킨다', () => {
+    render(
+      <>
+        <MobileChips categories={CATEGORIES} operatingCategoryId="op" />
+        <Sidebar
+          categories={CATEGORIES}
+          counts={{}}
+          totalCount={290}
+          dailyCount={12}
+          favCount={3}
+          operatingCategoryId="op"
+        />
+      </>,
+    );
+
+    const hrefsIn = (name: string) =>
+      within(screen.getByRole('navigation', { name }))
+        .getAllByRole('link')
+        .map((link) => link.getAttribute('href'));
+
+    // 길이도 함께 못박는다 — 양쪽이 똑같이 비어 버린 경우를 통과시키지 않기 위해서다.
+    expect(hrefsIn('바로 가기')).toHaveLength(13);
+    expect(hrefsIn('바로 가기')).toEqual(hrefsIn('사이드바'));
   });
 });

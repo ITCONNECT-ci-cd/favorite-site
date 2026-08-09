@@ -12,7 +12,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import DailyPage, { metadata } from '@/app/daily/page';
 import type { BookmarkWithCount, SiteData } from '@/lib/types';
 import { setFavs } from '@/test/favs';
-import { BOOKMARKS, CATEGORIES } from '@/test/fixtures/seed';
+import { BOOKMARKS, siteData } from '@/test/fixtures/seed';
 
 const getAllData = vi.hoisted(() => vi.fn());
 
@@ -65,12 +65,12 @@ const pins = () => screen.queryAllByRole('button', { name: /.+ 즐겨찾기$/ })
 beforeEach(() => {
   localStorage.clear();
   getAllData.mockReset();
-  getAllData.mockResolvedValue({ categories: CATEGORIES, bookmarks: BOOKMARKS } satisfies SiteData);
+  getAllData.mockResolvedValue(siteData() satisfies SiteData);
 });
 
 describe('매일 사용하는 사이트 — 라우트 metadata (D5)', () => {
-  it('브라우저 탭 제목이 화면 이름이다 — 셸의 "내 링크" 를 덮는다', () => {
-    expect(metadata.title).toBe('매일 사용하는 사이트 — 내 링크');
+  it('화면 이름만 댄다 — 꼬리표(— 내 링크)는 셸의 title template 이 붙인다', () => {
+    expect(metadata.title).toBe('매일 사용하는 사이트');
   });
 });
 

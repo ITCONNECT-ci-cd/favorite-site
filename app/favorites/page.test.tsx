@@ -14,8 +14,8 @@ import FavoritesPage, { metadata } from '@/app/favorites/page';
 import { Toaster } from '@/components/Toast';
 import type { BookmarkWithCount, SiteData } from '@/lib/types';
 import { setFavs } from '@/test/favs';
-import { BOOKMARKS, CATEGORIES } from '@/test/fixtures/seed';
-import { useToastTimers } from '@/test/toast';
+import { BOOKMARKS, siteData } from '@/test/fixtures/seed';
+import { setupToastTimers } from '@/test/toast';
 
 const getAllData = vi.hoisted(() => vi.fn());
 
@@ -55,12 +55,12 @@ const pins = () => screen.queryAllByRole('button', { name: /.+ 즐겨찾기$/ })
 beforeEach(() => {
   localStorage.clear();
   getAllData.mockReset();
-  getAllData.mockResolvedValue({ categories: CATEGORIES, bookmarks: BOOKMARKS } satisfies SiteData);
+  getAllData.mockResolvedValue(siteData() satisfies SiteData);
 });
 
 describe('내 즐겨찾기 — 라우트 metadata (D5)', () => {
-  it('브라우저 탭 제목이 화면 이름이다 — 셸의 "내 링크" 를 덮는다', () => {
-    expect(metadata.title).toBe('내 즐겨찾기 — 내 링크');
+  it('화면 이름만 댄다 — 꼬리표(— 내 링크)는 셸의 title template 이 붙인다', () => {
+    expect(metadata.title).toBe('내 즐겨찾기');
   });
 });
 
@@ -136,7 +136,7 @@ describe('내 즐겨찾기 — 빈 상태 (DESIGN_SPEC 4장)', () => {
 });
 
 describe('내 즐겨찾기 — 핀 해제 (D6)', () => {
-  useToastTimers();
+  setupToastTimers();
 
   it('핀을 다시 누르면 그 카드가 곧바로 사라진다 — 이 화면은 담긴 것만 그리기 때문이다', async () => {
     setFavs(FAV_IDS);

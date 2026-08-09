@@ -13,7 +13,7 @@ import { recordClick } from '@/lib/clicks';
 import type { BookmarkWithCount } from '@/lib/types';
 import { middleClick } from '@/test/events';
 import { setFavs, storedFavs } from '@/test/favs';
-import { useToastTimers } from '@/test/toast';
+import { setupToastTimers } from '@/test/toast';
 
 /**
  * 클릭 기록은 네트워크를 타므로 여기서는 부르는지만 본다 — 요청의 모양(keepalive·visitorId·
@@ -267,7 +267,7 @@ describe('ListView — 본문 (홈과 같은 카드 그리드)', () => {
 });
 
 describe('ListView — 핀 토글 (D6)', () => {
-  useToastTimers();
+  setupToastTimers();
 
   const pin = (title: string) => screen.getByLabelText(`${title} 즐겨찾기`);
 
@@ -323,7 +323,7 @@ describe('ListView — 핀 토글 (D6)', () => {
 });
 
 describe('ListView — 카드 클릭 기록 (F3)', () => {
-  useToastTimers();
+  setupToastTimers();
 
   beforeEach(() => {
     vi.mocked(recordClick).mockClear();

@@ -113,9 +113,14 @@ export function Toaster() {
           <div
             key={message.id}
             /* 폭 상한은 D5 실측 결과다 — 시드에서 가장 긴 제목 + 가장 긴 꼬리표는 12.5px 기준
-               약 444px 라 375px 화면을 넘는다. 좌우 12px(모바일 본문 패딩과 같은 값)을 남기고
-               말줄임으로 끊는다. 데스크톱에서는 상한에 닿지 않아 모습이 그대로다. */
-            className="motion-safe:animate-[toast-rise_0.18s_ease-out] max-w-[calc(100vw-24px)] truncate rounded-[8px] bg-ink px-[16px] py-[11px] text-[12.5px] whitespace-nowrap text-white shadow-[0_8px_24px_rgba(20,21,22,0.3)]"
+               약 444px 라 375px 화면을 넘는다. 좌우 12px(모바일 본문 패딩과 같은 값)을 남긴다.
+               `100%`는 전폭 래퍼 기준이라 100vw 와 달리 스크롤바를 세지 않는다.
+
+               넘칠 때는 말줄임이 아니라 **줄바꿈**이다(D5 판정). 이 문구의 뜻은 꼬리표
+               (`· 홈 즐겨찾기에 담김` / `즐겨찾기 해제`)에 있는데, 제목이 긴 링크일수록 잘리는
+               쪽이 바로 그 꼬리표다. 핀 토글은 토스트가 유일한 피드백이라(D6) 무엇이 일어났는지를
+               잃는다. 데스크톱은 상한에 닿지 않아 한 줄 그대로이므로 모습이 바뀌지 않는다. */
+            className="motion-safe:animate-[toast-rise_0.18s_ease-out] max-w-[calc(100%-24px)] rounded-[8px] bg-ink px-[16px] py-[11px] text-center text-[12.5px] whitespace-normal text-white shadow-[0_8px_24px_rgba(20,21,22,0.3)]"
           >
             {message.text}
           </div>

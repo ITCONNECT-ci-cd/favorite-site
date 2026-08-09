@@ -11,8 +11,8 @@ import { rollupCounts } from '@/lib/queries';
 import type { BookmarkWithCount, Category, SiteData } from '@/lib/types';
 import { middleClick } from '@/test/events';
 import { setFavs, storedFavs } from '@/test/favs';
-import { BOOKMARKS, CATEGORIES } from '@/test/fixtures/seed';
-import { useToastTimers } from '@/test/toast';
+import { BOOKMARKS, CATEGORIES, siteData } from '@/test/fixtures/seed';
+import { setupToastTimers } from '@/test/toast';
 
 /**
  * 클릭 기록은 네트워크를 타므로 여기서는 부르는지만 본다 — 요청의 모양(keepalive·visitorId·
@@ -27,7 +27,7 @@ vi.mock('@/lib/clicks', async (importOriginal) => ({
  * fixture 는 실시드 그대로다 (`test/fixtures/seed.ts`) — 화면에 적히는 실측치
  * (매일 12 · 운영 중 16)가 시드와 어긋나면 여기서 먼저 깨진다.
  */
-const DATA: SiteData = { categories: CATEGORIES, bookmarks: BOOKMARKS };
+const DATA: SiteData = siteData();
 
 const OPERATING_ID = CATEGORIES.find(
   (category) => category.parent_id === null && category.name === OPERATING_CATEGORY_NAME,
@@ -295,7 +295,7 @@ describe('HomeView — 현재 운영 중인 사이트 섹션', () => {
       <HomeView
         data={{
           categories: CATEGORIES.filter((category) => category.id !== OPERATING_ID),
-          bookmarks: BOOKMARKS,
+          bookmarks: [...BOOKMARKS],
         }}
       />,
     );
@@ -307,7 +307,7 @@ describe('HomeView — 현재 운영 중인 사이트 섹션', () => {
 });
 
 describe('HomeView — 핀 토글 (D6)', () => {
-  useToastTimers();
+  setupToastTimers();
 
   it('즐겨찾기 카드의 핀을 누르면 그 카드가 곧바로 사라지고 해제 토스트가 뜬다', () => {
     setFavs(FAV_IDS);
@@ -381,7 +381,7 @@ describe('HomeView — 카드 클릭 기록 (F3)', () => {
   const DAILY = BOOKMARKS.filter((bookmark) => bookmark.is_pinned);
   const OPERATING = BOOKMARKS.filter((bookmark) => bookmark.category_id === OPERATING_ID);
 
-  useToastTimers();
+  setupToastTimers();
 
   beforeEach(() => {
     vi.mocked(recordClick).mockClear();

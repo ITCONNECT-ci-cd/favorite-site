@@ -97,11 +97,18 @@ describe('디자인 토큰 (app/globals.css)', () => {
     // :focus 가 아니라 :focus-visible 이어야 마우스 클릭에는 링이 뜨지 않는다.
     expect(globalsCss).not.toMatch(/(^|[^-\w:]):focus\s*\{/m);
   });
+
+  it('포커스 링을 @layer base 안에 둔다 — 유틸로 덮어쓸 수 있어야 한다', () => {
+    // 레이어 밖 선언은 Tailwind 의 모든 유틸을 이긴다. 화면이 outline-* 유틸로 자기 링을
+    // 갖는 순간(2단계 G2 팔레트) 전역 규칙이 조용히 이기는 것을 막는 잠금이다.
+    expect(globalsCss).toMatch(/@layer base\s*\{[\s\S]*?:focus-visible\s*\{/);
+  });
 });
 
 describe('루트 레이아웃 (app/layout.tsx)', () => {
   it('metadata가 실제 제품 값이다', () => {
-    expect(metadata.title).toBe('내 링크');
+    // 화면은 자기 이름만 대고 꼬리표는 셸이 붙인다 — 서비스 이름이 한 곳에만 적히도록.
+    expect(metadata.title).toEqual({ default: '내 링크', template: '%s — 내 링크' });
     expect(metadata.description).toBe('사내 구성원이 자주 쓰는 링크를 한곳에서 찾는 대시보드');
   });
 

@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import CategoryPage, { generateMetadata } from '@/app/category/[id]/page';
 import { OPERATING_CATEGORY_NAME } from '@/lib/constants';
 import type { BookmarkWithCount, SiteData } from '@/lib/types';
-import { BOOKMARKS, CATEGORIES, subId, topId } from '@/test/fixtures/seed';
+import { siteData, subId, topId } from '@/test/fixtures/seed';
 
 const getAllData = vi.hoisted(() => vi.fn());
 
@@ -52,7 +52,7 @@ const chipRow = () => screen.getByRole('group', { name: '하위 분류' });
 beforeEach(() => {
   localStorage.clear();
   getAllData.mockReset();
-  getAllData.mockResolvedValue({ categories: CATEGORIES, bookmarks: BOOKMARKS } satisfies SiteData);
+  getAllData.mockResolvedValue(siteData() satisfies SiteData);
 });
 
 describe('상위 카테고리로 들어왔을 때', () => {
@@ -198,10 +198,10 @@ describe('그 밖의 계약', () => {
     expect(chip('하위 1')).toBeInTheDocument();
   });
 
-  it('브라우저 탭 제목이 분류 이름이다 (D5 — 라우트별 metadata)', async () => {
+  it('탭 제목이 분류 이름이다 — 꼬리표는 셸의 title template 이 붙인다 (D5)', async () => {
     const meta = await generateMetadata({ params: Promise.resolve({ id: topId('마케팅') }) });
 
-    expect(meta.title).toBe('마케팅 — 내 링크');
+    expect(meta.title).toBe('마케팅');
   });
 
   it('하위 id 로 들어와도 탭 제목은 화면 제목(상위 이름)과 같다', async () => {
@@ -209,13 +209,13 @@ describe('그 밖의 계약', () => {
       params: Promise.resolve({ id: subId('AI 도구 모음', '대화·검색') }),
     });
 
-    expect(meta.title).toBe('AI 도구 모음 — 내 링크');
+    expect(meta.title).toBe('AI 도구 모음');
   });
 
-  it('없는 id 의 제목은 셸의 기본값으로 돌아간다 — 본문이 404 를 그린다', async () => {
+  it('없는 id 는 제목을 대지 않는다 — 셸의 default 가 남고 404 판정은 본문 몫이다', async () => {
     const meta = await generateMetadata({ params: Promise.resolve({ id: '없는-id' }) });
 
-    expect(meta.title).toBe('내 링크');
+    expect(meta).toEqual({});
   });
 
   it('revalidate 를 내보내지 않는다 — 이 페이지는 매 요청 렌더가 의도다 (lib/queries.ts)', async () => {

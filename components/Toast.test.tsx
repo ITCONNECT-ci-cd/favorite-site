@@ -1,10 +1,10 @@
 import { act, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { TOAST_DURATION_MS, Toaster, toast } from '@/components/Toast';
-import { useToastTimers } from '@/test/toast';
+import { setupToastTimers } from '@/test/toast';
 
 describe('Toast', () => {
-  useToastTimers();
+  setupToastTimers();
 
   it('띄운 토스트가 없으면 라이브 리전만 비어 있다', () => {
     render(<Toaster />);
@@ -77,20 +77,25 @@ describe('Toast', () => {
    * 가장 긴 꼬리표(" · 홈 즐겨찾기에 담김")가 붙으면 12.5px 기준 말풍선 폭이 약 444px 다.
    * 375px 화면에서는 좌우로 삐져나가 앞뒤 글자를 읽을 수 없으므로 폭 상한을 둔다.
    * (`fixed` 요소라 가로 스크롤은 생기지 않는다 — 읽을 수 없다는 것이 문제였다.)
+   *
+   * **넘칠 때 말줄임이 아니라 줄바꿈이다.** 문구의 뜻은 꼬리표에 있는데 말줄임은 정확히 그
+   * 꼬리표부터 지운다 — 핀 토글은 토스트가 유일한 피드백이라(D6) 무슨 일이 일어났는지를 잃는다.
+   * 그래서 스펙 7장의 한 줄 모습은 상한에 닿지 않는 데스크톱에서 그대로 두고, 좁은 화면에서만
+   * 여러 줄로 풀어 준다.
    */
-  it('말풍선이 화면 밖으로 나가지 않는다 — 좌우 12px 을 남기고 말줄임', () => {
+  it('말풍선이 화면 밖으로 나가지 않는다 — 좌우 12px 을 남기고 줄바꿈', () => {
     render(<Toaster />);
 
     act(() => {
       toast('지식을 담다. 지식을 나누다. 학술논문 전문 검… · 홈 즐겨찾기에 담김');
     });
 
-    expect(screen.getByRole('status').firstElementChild).toHaveClass(
-      'max-w-[calc(100vw-24px)]',
-      'truncate',
-      // 한 줄 유지는 그대로다 — 넘칠 때 줄바꿈이 아니라 말줄임으로 끊는다.
-      'whitespace-nowrap',
-    );
+    const bubble = screen.getByRole('status').firstElementChild;
+
+    // 100% 는 전폭 래퍼 기준이라 100vw 와 달리 스크롤바 폭을 세지 않는다.
+    expect(bubble).toHaveClass('max-w-[calc(100%-24px)]', 'whitespace-normal', 'text-center');
+    // 꼬리표가 잘리면 안 되므로 말줄임(truncate = overflow-hidden + ellipsis + nowrap)은 쓰지 않는다.
+    expect(bubble?.className).not.toMatch(/(?:^|\s)(?:truncate|whitespace-nowrap)(?:\s|$)/);
   });
 
   it('2초가 지나면 스스로 사라진다', () => {

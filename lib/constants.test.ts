@@ -5,6 +5,7 @@ import {
   CLICK_COOLDOWN_MS,
   CLICK_DAILY_CAP,
   DAILY_PIN_MAX,
+  EMPTY_LIST_MESSAGE,
   FAVS_KEY,
   OPERATING_CATEGORY_NAME,
   VISITOR_KEY,
@@ -28,5 +29,9 @@ describe('공유 상수', () => {
 
   it('좁은 화면 분기점은 820px이다', () => {
     expect(BREAKPOINT_NARROW).toBe(820);
+  });
+
+  it('빈 목록 안내 문구가 DESIGN_SPEC 4장 그대로다', () => {
+    expect(EMPTY_LIST_MESSAGE).toBe('이 분류에 링크가 없습니다.');
   });
 });
