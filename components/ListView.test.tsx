@@ -9,8 +9,18 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ListView, type ListViewProps } from '@/components/ListView';
 import { TOAST_DURATION_MS, Toaster } from '@/components/Toast';
+import { recordClick } from '@/lib/clicks';
 import { FAVS_KEY } from '@/lib/constants';
 import type { BookmarkWithCount } from '@/lib/types';
+
+/**
+ * 클릭 기록은 네트워크를 타므로 여기서는 부르는지만 본다 — 요청의 모양(keepalive·visitorId·
+ * 실패를 삼키는 것)은 `lib/clicks.test.ts` 가 못박는다. 문구 함수(`openToastText`)는 진짜를 쓴다.
+ */
+vi.mock('@/lib/clicks', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/clicks')>()),
+  recordClick: vi.fn(),
+}));
 
 function makeBookmark(
   over: Partial<BookmarkWithCount> & Pick<BookmarkWithCount, 'id'>,
@@ -76,6 +86,16 @@ function shownTitles(container: HTMLElement): string[] {
     return title;
   });
 }
+
+/**
+ * 카드에서 링크를 여는 영역 — 접근성 이름은 제목이다. 카드에는 앵커가 둘이지만 파비콘 타일은
+ * aria-hidden 이라 접근성 트리에 없다(C2).
+ */
+const openLink = (title: string) => screen.getByRole('link', { name: title });
+
+/** fireEvent 에 auxClick 헬퍼가 없어 직접 만들어 쏜다 (가운데 클릭 = button 1). */
+const middleClick = (element: Element) =>
+  fireEvent(element, new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 }));
 
 const chip = (name: string) => screen.getByRole('button', { name });
 const chips = () => screen.getAllByRole('button', { name: /^(전체|대화·검색|영상) \d+$/ });
@@ -317,6 +337,70 @@ describe('ListView — 핀 토글 (D6)', () => {
     // 토글이 탭 선택을 되돌리지 않는다.
     expect(chip('영상 1')).toHaveAttribute('aria-pressed', 'true');
     expect(shownTitles(screen.getByRole('main'))).toEqual(['영상A']);
+  });
+});
+
+describe('ListView — 카드 클릭 기록 (F3)', () => {
+  beforeEach(() => {
+    vi.mocked(recordClick).mockClear();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    // 모듈 레벨 토스트 스토어가 다음 테스트로 새지 않게 자동 소멸까지 흘려보낸다(Toast.tsx 규약).
+    act(() => {
+      vi.advanceTimersByTime(TOAST_DURATION_MS);
+    });
+    vi.useRealTimers();
+  });
+
+  it('카드를 열면 그 링크의 클릭을 기록하고 프로토타입 문구로 알린다', () => {
+    renderList();
+    render(<Toaster />);
+
+    fireEvent.click(openLink('대화A'));
+
+    // 인자가 id 하나뿐이다 — isBulk 는 넘기지 않는다(사람이 카드를 누른 클릭 = 기본 false).
+    expect(recordClick).toHaveBeenCalledWith('대화A');
+    expect(recordClick).toHaveBeenCalledOnce();
+    expect(screen.getByText('대화A · 새 탭으로 이동')).toBeInTheDocument();
+  });
+
+  it('가운데 클릭(새 탭)도 기록한다', () => {
+    renderList();
+    render(<Toaster />);
+
+    middleClick(openLink('영상A'));
+
+    expect(recordClick).toHaveBeenCalledWith('영상A');
+    expect(screen.getByText('영상A · 새 탭으로 이동')).toBeInTheDocument();
+  });
+
+  it('하위 탭으로 좁혀 놓은 화면에서도 기록한다', () => {
+    renderList({ subTabs: SUB_TABS });
+
+    fireEvent.click(chip('영상 1'));
+    fireEvent.click(openLink('영상A'));
+
+    expect(recordClick).toHaveBeenCalledWith('영상A');
+    // 여는 동작이 탭 선택을 되돌리지 않는다.
+    expect(chip('영상 1')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('기본 동작을 막지 않는다 — 이동은 브라우저에 맡긴다', () => {
+    renderList();
+
+    // preventDefault 를 부르면 dispatchEvent 가 false 를 돌려준다.
+    expect(fireEvent.click(openLink('대화A'))).toBe(true);
+    expect(middleClick(openLink('대화B'))).toBe(true);
+  });
+
+  it('핀을 눌러도 클릭을 기록하지 않는다 (여는 동작이 아니다)', () => {
+    renderList();
+
+    fireEvent.click(screen.getByLabelText('대화A 즐겨찾기'));
+
+    expect(recordClick).not.toHaveBeenCalled();
   });
 });
 

@@ -8,6 +8,7 @@ import { EmptyBox } from '@/components/EmptyBox';
 import { LinkCard } from '@/components/LinkCard';
 import { SectionHeader } from '@/components/SectionHeader';
 import { toast } from '@/components/Toast';
+import { openToastText, recordClick } from '@/lib/clicks';
 import { OPERATING_CATEGORY_NAME } from '@/lib/constants';
 import { favToastText, pickFavorites, useFavorites } from '@/lib/favorites';
 import type { Category, SiteData } from '@/lib/types';
@@ -56,7 +57,7 @@ function findOperatingIds(categories: readonly Category[]): { id: string; ids: S
  * **한 번만** 부르고 카드에는 계산된 값을 내린다 — 카드마다 부르면 렌더 때마다 카드 수만큼
  * 동기 localStorage 읽기가 생긴다(E1 규약).
  *
- * 아직 배선하지 않은 것: 열기 버튼(`onOpenAll`)은 2단계 G4, 클릭 기록(`onOpen`)은 F3 몫이다.
+ * 아직 배선하지 않은 것: 열기 버튼(`onOpenAll`)은 2단계 G4 몫이다.
  */
 export function HomeView({ data }: HomeViewProps) {
   const { categories, bookmarks } = data;
@@ -75,6 +76,27 @@ export function HomeView({ data }: HomeViewProps) {
       if (bookmark !== undefined) toast(favToastText(bookmark.title, faved));
     },
     [bookmarks, toggle],
+  );
+
+  /**
+   * 카드 열기 — 클릭을 기록하고(F2 로 보내는 fire-and-forget) 열었다고 알린다. 세 섹션이 모두 이
+   * 배선을 쓴다: 즐겨찾기든 관리자가 정한 자리든 클릭 집계 대상인 것은 같다.
+   *
+   * 가운데 클릭도 여기로 온다(카드가 onClick·onAuxClick 양쪽에서 부른다 — C2).
+   * 이동을 가로채지 않으므로 `event` 를 받지 않는다.
+   *
+   * ⓘ 토스트 스토어는 슬롯이 하나라(Toast.tsx) 이 문구가 직전의 핀 토스트를 밀어낸다.
+   *   프로토타입도 토스트가 하나뿐이라 같은 동작이다.
+   */
+  const handleOpen = useCallback(
+    (id: string) => {
+      recordClick(id);
+
+      // 카드가 돌려준 id 라 이 배열에 반드시 있다. 없더라도 기록은 하고 토스트만 건너뛴다.
+      const bookmark = bookmarks.find((item) => item.id === id);
+      if (bookmark !== undefined) toast(openToastText(bookmark.title));
+    },
+    [bookmarks],
   );
 
   const daily = bookmarks.filter((bookmark) => bookmark.is_pinned);
@@ -110,6 +132,7 @@ export function HomeView({ data }: HomeViewProps) {
                 bookmark={bookmark}
                 isFaved
                 onToggleFav={handleToggleFav}
+                onOpen={handleOpen}
               />
             ))}
           </CardGrid>
@@ -128,7 +151,12 @@ export function HomeView({ data }: HomeViewProps) {
         {/* 관리자가 정하는 자리라 핀을 노출하지 않는다(DESIGN_SPEC 3장). */}
         <CardGrid>
           {daily.map((bookmark) => (
-            <LinkCard key={bookmark.id} bookmark={bookmark} showPin={false} />
+            <LinkCard
+              key={bookmark.id}
+              bookmark={bookmark}
+              showPin={false}
+              onOpen={handleOpen}
+            />
           ))}
         </CardGrid>
       </section>
@@ -151,7 +179,12 @@ export function HomeView({ data }: HomeViewProps) {
 
           <CardGrid>
             {operatingItems.map((bookmark) => (
-              <LinkCard key={bookmark.id} bookmark={bookmark} showPin={false} />
+              <LinkCard
+                key={bookmark.id}
+                bookmark={bookmark}
+                showPin={false}
+                onOpen={handleOpen}
+              />
             ))}
           </CardGrid>
         </section>

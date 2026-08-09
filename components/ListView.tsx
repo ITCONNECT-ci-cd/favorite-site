@@ -5,6 +5,7 @@ import { CardGrid } from '@/components/CardGrid';
 import { EmptyBox } from '@/components/EmptyBox';
 import { LinkCard } from '@/components/LinkCard';
 import { toast } from '@/components/Toast';
+import { openToastText, recordClick } from '@/lib/clicks';
 import { favToastText, useFavorites } from '@/lib/favorites';
 import type { BookmarkWithCount } from '@/lib/types';
 
@@ -87,6 +88,26 @@ export function ListView({
     [bookmarks, toggle],
   );
 
+  /**
+   * 카드 열기 — 클릭을 기록하고(F2 로 보내는 fire-and-forget) 열었다고 알린다. 홈과 같은 배선이다.
+   *
+   * 하위 탭으로 좁혀 놓은 화면에서도 `bookmarks`(화면 전체)에서 찾는다 — 보이는 카드는 언제나 그
+   * 부분집합이라 못 찾는 일이 없다. 가운데 클릭도 여기로 온다(카드가 양쪽에서 부른다 — C2).
+   *
+   * ⓘ 토스트 스토어는 슬롯이 하나라(Toast.tsx) 이 문구가 직전의 핀 토스트를 밀어낸다.
+   *   프로토타입도 토스트가 하나뿐이라 같은 동작이다.
+   */
+  const handleOpen = useCallback(
+    (id: string) => {
+      recordClick(id);
+
+      // 카드가 돌려준 id 라 이 배열에 반드시 있다. 없더라도 기록은 하고 토스트만 건너뛴다.
+      const bookmark = bookmarks.find((item) => item.id === id);
+      if (bookmark !== undefined) toast(openToastText(bookmark.title));
+    },
+    [bookmarks],
+  );
+
   const tabs = subTabs ?? [];
   const [selected, setSelected] = useState(initialSubId);
 
@@ -159,12 +180,12 @@ export function ListView({
         <CardGrid>
           {shown.map((bookmark) => (
             // showPin 은 LinkCard 기본값(true)을 그대로 쓴다 — 목록 화면은 전부 핀이 보인다.
-            // 클릭 기록(onOpen) 배선은 F3 몫이다.
             <LinkCard
               key={bookmark.id}
               bookmark={bookmark}
               isFaved={favs.has(bookmark.id)}
               onToggleFav={handleToggleFav}
+              onOpen={handleOpen}
             />
           ))}
         </CardGrid>

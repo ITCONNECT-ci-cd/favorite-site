@@ -4,12 +4,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HomeView } from '@/components/HomeView';
 import { TOAST_DURATION_MS, Toaster } from '@/components/Toast';
+import { recordClick } from '@/lib/clicks';
 import { FAVS_KEY, OPERATING_CATEGORY_NAME } from '@/lib/constants';
 import { useFavorites } from '@/lib/favorites';
 import { rollupCounts } from '@/lib/queries';
 import type { BookmarkWithCount, Category, SiteData } from '@/lib/types';
 import { buildSeed, toBookmarkRow, type RawLink } from '@/scripts/seed-mapper';
 import RAW_LINKS from '@/docs/data/links.json';
+
+/**
+ * 클릭 기록은 네트워크를 타므로 여기서는 부르는지만 본다 — 요청의 모양(keepalive·visitorId·
+ * 실패를 삼키는 것)은 `lib/clicks.test.ts` 가 못박는다. 문구 함수(`openToastText`)는 진짜를 쓴다.
+ */
+vi.mock('@/lib/clicks', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/clicks')>()),
+  recordClick: vi.fn(),
+}));
 
 /**
  * fixture 는 실제 `docs/data/links.json` 을 B3 의 `buildSeed` 로 돌려 만든다(B3·D1 관례).
@@ -65,6 +75,16 @@ function expectCards(name: string, expected: readonly BookmarkWithCount[]): void
 /** 섹션 안 카드의 핀 버튼 — 없으면 빈 배열. */
 const pins = (name: string) =>
   within(section(name)).queryAllByRole('button', { name: /.+ 즐겨찾기$/ });
+
+/**
+ * 섹션의 n 번째 카드에서 링크를 여는 영역. 카드에는 앵커가 둘이지만 파비콘 타일은 aria-hidden
+ * 이라 접근성 트리에 없어서 본문 앵커 하나만 잡힌다(C2).
+ */
+const openLink = (name: string, index = 0) => within(cards(name)[index]).getByRole('link');
+
+/** fireEvent 에 auxClick 헬퍼가 없어 직접 만들어 쏜다 (가운데 클릭 = button 1). */
+const middleClick = (element: Element) =>
+  fireEvent(element, new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 }));
 
 /** localStorage 에 실제로 저장된 순서. */
 function storedFavs(): unknown {
@@ -384,5 +404,87 @@ describe('HomeView — 핀 토글 (D6)', () => {
     expect(pins('내 즐겨찾기')).toHaveLength(3);
     expect(pins('매일 사용하는 사이트')).toHaveLength(0);
     expect(pins('현재 운영 중인 사이트')).toHaveLength(0);
+  });
+});
+
+describe('HomeView — 카드 클릭 기록 (F3)', () => {
+  const DAILY = BOOKMARKS.filter((bookmark) => bookmark.is_pinned);
+  const OPERATING = BOOKMARKS.filter((bookmark) => bookmark.category_id === OPERATING_ID);
+
+  beforeEach(() => {
+    vi.mocked(recordClick).mockClear();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    // 모듈 레벨 토스트 스토어가 다음 테스트로 새지 않게 자동 소멸까지 흘려보낸다(Toast.tsx 규약).
+    act(() => {
+      vi.advanceTimersByTime(TOAST_DURATION_MS);
+    });
+    vi.useRealTimers();
+  });
+
+  function renderHome() {
+    setFavs(FAV_IDS);
+    render(
+      <>
+        <HomeView data={DATA} />
+        <Toaster />
+      </>,
+    );
+  }
+
+  it('즐겨찾기 카드를 열면 그 링크의 클릭을 기록하고 프로토타입 문구로 알린다', () => {
+    renderHome();
+
+    fireEvent.click(openLink('내 즐겨찾기'));
+
+    // 인자가 id 하나뿐이다 — isBulk 는 넘기지 않는다(사람이 카드를 누른 클릭 = 기본 false).
+    expect(recordClick).toHaveBeenCalledWith(BOOKMARKS[200].id);
+    expect(recordClick).toHaveBeenCalledOnce();
+    expect(screen.getByText(`${BOOKMARKS[200].title} · 새 탭으로 이동`)).toBeInTheDocument();
+  });
+
+  it('매일 사용하는 사이트 카드도 기록한다', () => {
+    renderHome();
+
+    fireEvent.click(openLink('매일 사용하는 사이트'));
+
+    expect(recordClick).toHaveBeenCalledWith(DAILY[0].id);
+    expect(screen.getByText(`${DAILY[0].title} · 새 탭으로 이동`)).toBeInTheDocument();
+  });
+
+  it('현재 운영 중인 사이트 카드도 기록한다 — 세 섹션 모두 클릭 기록 대상이다', () => {
+    renderHome();
+
+    fireEvent.click(openLink('현재 운영 중인 사이트', 2));
+
+    expect(recordClick).toHaveBeenCalledWith(OPERATING[2].id);
+    expect(screen.getByText(`${OPERATING[2].title} · 새 탭으로 이동`)).toBeInTheDocument();
+  });
+
+  it('가운데 클릭(새 탭)도 기록한다', () => {
+    renderHome();
+
+    middleClick(openLink('매일 사용하는 사이트'));
+
+    expect(recordClick).toHaveBeenCalledWith(DAILY[0].id);
+    expect(screen.getByText(`${DAILY[0].title} · 새 탭으로 이동`)).toBeInTheDocument();
+  });
+
+  it('기본 동작을 막지 않는다 — 이동은 브라우저에 맡긴다', () => {
+    renderHome();
+
+    // preventDefault 를 부르면 dispatchEvent 가 false 를 돌려준다.
+    expect(fireEvent.click(openLink('내 즐겨찾기'))).toBe(true);
+    expect(middleClick(openLink('매일 사용하는 사이트'))).toBe(true);
+  });
+
+  it('핀을 눌러도 클릭을 기록하지 않는다 (여는 동작이 아니다)', () => {
+    renderHome();
+
+    fireEvent.click(pins('내 즐겨찾기')[0]);
+
+    expect(recordClick).not.toHaveBeenCalled();
   });
 });
