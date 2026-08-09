@@ -7,7 +7,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import CategoryPage from '@/app/category/[id]/page';
 import { OPERATING_CATEGORY_NAME } from '@/lib/constants';
@@ -139,6 +139,22 @@ describe('하위 카테고리 id 로 들어왔을 때 (사이드바의 하위 �
     expect(screen.getByText('26개')).toBeInTheDocument();
   });
 
+  it('다른 분류에 갔다 돌아오면 앞서 고른 하위 탭이 남지 않는다', async () => {
+    const ai = topId('AI 도구 모음');
+    const view = await renderPage(ai);
+
+    fireEvent.click(chip(/^영상 \d+$/));
+    expect(chip(/^영상 \d+$/)).toHaveAttribute('aria-pressed', 'true');
+
+    // 사이드바로 다른 분류에 들렀다가 돌아온다 — 화면이 바뀌었으므로 선택은 버려야 한다.
+    view.rerender(await CategoryPage({ params: Promise.resolve({ id: topId('마케팅') }) }));
+    view.rerender(await CategoryPage({ params: Promise.resolve({ id: ai }) }));
+
+    expect(chip('전체 118')).toHaveAttribute('aria-pressed', 'true');
+    expect(chip(/^영상 \d+$/)).toHaveAttribute('aria-pressed', 'false');
+    expect(cardCount(view.container)).toBe(118);
+  });
+
   it('다른 하위(학습·리서치 17)도 같은 방식으로 열린다', async () => {
     const { container } = await renderPage(subId('참고자료', '학습·리서치'));
 
@@ -170,6 +186,20 @@ describe('그 밖의 계약', () => {
     expect(screen.getByText('이 분류에 링크가 없습니다.')).toBeInTheDocument();
     expect(screen.getByText('0개')).toBeInTheDocument();
     expect(cardCount(container)).toBe(0);
+  });
+
+  it('부모가 사라진 하위(데이터 손상)는 404 대신 자기 자신을 상위처럼 그린다', async () => {
+    getAllData.mockResolvedValue({
+      categories: [{ id: '고아', name: '고아 분류', parent_id: '사라진부모', sort_order: 0 }],
+      bookmarks: [makeBookmark('고아링크', '고아')],
+    } satisfies SiteData);
+
+    const { container } = await renderPage('고아');
+
+    expect(screen.getByRole('heading', { name: '고아 분류' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^전체 \d+$/ })).toBeNull();
+    expect(screen.getByText('1개')).toBeInTheDocument();
+    expect(cardCount(container)).toBe(1);
   });
 
   it("'전체'는 상위 직속 링크와 하위 링크를 모두 담는다", async () => {

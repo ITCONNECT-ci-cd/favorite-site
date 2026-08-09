@@ -62,9 +62,12 @@ export function ListView({
   const [selected, setSelected] = useState(initialSubId);
 
   /**
-   * 같은 상위 안에서 하위를 오가면(`/category/<상위>` ↔ `/category/<하위>`) 라우트가 같아
-   * 이 컴포넌트가 다시 마운트되지 않는다. 그래서 서버가 준 선택이 바뀌면 렌더 중에 맞춘다
+   * 같은 상위 안에서 하위를 오가면(`/category/<상위>` ↔ `/category/<하위>`) 화면의 정체성이
+   * 그대로라 이 컴포넌트가 다시 마운트되지 않는다. 그래서 서버가 준 선택이 바뀌면 렌더 중에 맞춘다
    * (렌더 중 상태 조정 패턴 — Sidebar 의 펼침 처리와 같다).
+   *
+   * 다른 분류로 넘어가는 경우는 화면 자체가 바뀌는 것이라 상태를 조정하지 않고 버린다 —
+   * 호출부(app/category/[id]/page.tsx)가 분류 id 를 key 로 주어 통째로 리마운트한다.
    */
   const [seenInitial, setSeenInitial] = useState(initialSubId);
   if (seenInitial !== initialSubId) {

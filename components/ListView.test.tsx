@@ -59,6 +59,9 @@ function renderList(props: Partial<ListViewProps> = {}) {
   };
 }
 
+/** 이 파일이 쓰는 카드 제목 전부 — 목록에 없는 카드가 나오면 테스트가 조용히 넘어가지 않게 한다. */
+const KNOWN_TITLES = ['직속', '대화A', '대화B', '영상A', '마케팅A'];
+
 /** 그리드에 깔린 카드들의 제목 — 순서 그대로. 카드 안쪽 구조는 보지 않는다. */
 function shownTitles(container: HTMLElement): string[] {
   const grid = container.querySelector('.grid');
@@ -66,7 +69,10 @@ function shownTitles(container: HTMLElement): string[] {
 
   return [...grid.children].map((card) => {
     const text = card.textContent ?? '';
-    return ['직속', '대화A', '대화B', '영상A', '마케팅A'].find((t) => text.includes(t)) ?? '?';
+    const title = KNOWN_TITLES.find((known) => text.includes(known));
+    if (title === undefined) throw new Error(`알 수 없는 카드가 그려졌다: ${text}`);
+
+    return title;
   });
 }
 
@@ -135,7 +141,8 @@ describe('ListView — 하위 탭 칩 줄', () => {
 
     expect(chip('전체 4')).toHaveClass('bg-ink', 'text-white', 'border-ink');
     expect(chip('전체 4')).toHaveAttribute('aria-pressed', 'true');
-    expect(chip('영상 1')).toHaveClass('bg-card', 'border-border-strong');
+    // 비선택 글자색은 스펙 표에 없는 프로토타입 고유값이라 임의 값으로 옮겼다.
+    expect(chip('영상 1')).toHaveClass('bg-card', 'border-border-strong', 'text-[#3a3833]');
     expect(chip('영상 1')).toHaveAttribute('aria-pressed', 'false');
   });
 

@@ -43,6 +43,9 @@ export default async function CategoryPage({ params }: CategoryPageProps) {
 
   return (
     <ListView
+      // 분류가 바뀌면 화면의 정체성도 바뀐다 — 키로 리마운트해 앞 분류에서 고른 하위 탭이
+      // 남지 않게 한다(프로토타입도 이동할 때마다 sub 를 비웠다).
+      key={root.id}
       title={root.name}
       description={descriptionOf(root, categories, subs.length > 0)}
       bookmarks={own}
