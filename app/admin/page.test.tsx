@@ -113,6 +113,20 @@ describe('AdminPage — 카테고리 · 링크 (I1 2단)', () => {
     expect(within(headerPanel()).getByText('AI 도구 모음')).toBeInTheDocument();
     expect(within(headerPanel()).getByText('3개 링크')).toBeInTheDocument();
   });
+
+  /**
+   * I2 — 하위 줄은 헤더와 **같은 상자**에 들어가고, 그 안의 칩은 서버가 접어 내린 목록이다.
+   * 줄이 무엇을 할 수 있는지는 `components/admin/SubCategoryRow.test.tsx` 가 본다.
+   */
+  it('헤더 패널 안에 선택한 카테고리의 하위 칩 줄이 붙는다', async () => {
+    render((await AdminPage()) as ReactElement);
+
+    const subRow = within(headerPanel()).getByRole('group', { name: '하위 카테고리' });
+
+    expect(within(subRow).getByText('대화형')).toBeInTheDocument();
+    // 하위 개수는 그 하위에 달린 링크 수다 (bm-2 · bm-3).
+    expect(within(subRow).getByText('2개')).toBeInTheDocument();
+  });
 });
 
 /** K2·M2 가 통째로 교체할 자리다. 탭이 404 가 되지 않도록 자리만 잡아 둔다. */

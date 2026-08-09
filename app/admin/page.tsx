@@ -4,6 +4,11 @@ import {
   SelectedCategoryProvider,
   type AdminCategory,
 } from '@/components/admin/CategoryPanel';
+import {
+  SubCategoryRow,
+  type AdminSubCategory,
+  type SubCategoryMap,
+} from '@/components/admin/SubCategoryRow';
 import { getAllData, rollupCounts } from '@/lib/queries';
 import { getAdminSession } from '@/lib/supabase/server';
 import type { BookmarkWithCount, Category } from '@/lib/types';
@@ -49,10 +54,17 @@ export default async function AdminPage() {
 
         {/* 우측 칸. `min-w-0` 이 없으면 안의 긴 주소·이름이 flex 칸을 밀어내 좌측 패널을 찌그러뜨린다. */}
         <div className="w-full min-w-0 min-[820px]:flex-1">
-          {/* 하위 칩 줄(I2)은 이 패널 **안**으로 들어간다 — `<CategoryHeader>` 의 children 으로
-              넘겨라(그쪽 JSDoc "I2 와의 계약"). 프로토타입에서 흰 상자 하나가 헤더 줄과 하위 줄을
-              함께 담는다. */}
-          <CategoryHeader />
+          {/* 하위 칩 줄(I2)은 이 패널 **안**이다 — 프로토타입에서 흰 상자 하나가 헤더 줄과 하위
+              줄을 함께 담는다(그쪽 JSDoc "I2 와의 계약").
+
+              **조건부로 넘기지 마라.** 헤더는 children 이 있을 때만 구분선을 그리는데, 그 판정이
+              `!== undefined` 라 `{조건 && <줄/>}` 로 넘기면 거짓일 때 `false` 가 들어가 아무것도
+              없는 아래에 선만 남는다. 여기서는 **언제나** 넘기고 빈 상태는 줄이 스스로 접는다
+              (하위가 0개여도 '하위' 라벨과 추가 입력은 프로토타입에 그대로 있고, 상위가 하나도
+              없을 때만 줄 전체가 사라진다 — 그때는 헤더도 안내 문구라 구분선을 그리지 않는다). */}
+          <CategoryHeader>
+            <SubCategoryRow subsByCategory={subRows(categories, bookmarks)} />
+          </CategoryHeader>
 
           {/* 여기부터는 헤더 패널 **다음 상자**다(프로토타입 359행부터):
               I3 링크 추가 줄 · I5 필터 줄 · I4 표 헤더와 행. 순서대로 이 자리에 붙인다. */}
@@ -84,6 +96,39 @@ function topLevelRows(
       linkCount: linkCounts[category.id] ?? 0,
       clickTotal: clickTotals[category.id] ?? 0,
     }));
+}
+
+/**
+ * 하위 줄이 그릴 목록 — 상위 카테고리 id → 그 아래 하위들 `{id, name, linkCount}`.
+ *
+ * **선택한 상위 것만 접어 보낼 수는 없다** — 선택은 클라이언트 상태라 서버가 모른다
+ * (`SelectedCategoryProvider` JSDoc). 그래서 전부 넘기되 넘어가는 것은 이름과 개수뿐이다:
+ * 좌측 패널과 같은 원칙으로 북마크 배열 자체는 여전히 내려가지 않는다.
+ *
+ * 개수는 `rollupCounts` 로 센다 — 하위 아래에는 아무것도 없으므로(2단계 제약) 직속 링크 수와
+ * 같은 값이지만, 규칙을 손으로 다시 적지 않으면 사이드바·좌측 패널과 갈라질 일도 없다.
+ *
+ * 부모가 하위인 카테고리(있을 수 없다 — `createSubCategory` 가 막는다)는 그 하위의 id 를 키로
+ * 얹혀 갈 뿐, 조회하는 쪽이 **상위 id 로만** 찾으므로 화면에 나오지 않는다.
+ */
+function subRows(
+  categories: readonly Category[],
+  bookmarks: readonly BookmarkWithCount[],
+): SubCategoryMap {
+  const linkCounts = rollupCounts(categories, bookmarks);
+
+  const rows: Record<string, AdminSubCategory[]> = {};
+  for (const category of categories) {
+    if (category.parent_id === null) continue;
+
+    (rows[category.parent_id] ??= []).push({
+      id: category.id,
+      name: category.name,
+      linkCount: linkCounts[category.id] ?? 0,
+    });
+  }
+
+  return rows;
 }
 
 /**
