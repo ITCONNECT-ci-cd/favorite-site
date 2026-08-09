@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { FavoritesView } from '@/components/FavoritesView';
+import { FAVORITES_TITLE } from '@/lib/constants';
 import { getAllData } from '@/lib/queries';
 
 /**
@@ -7,7 +8,7 @@ import { getAllData } from '@/lib/queries';
  * 담긴 개수는 브라우저에만 있어(localStorage) 서버가 모르므로 제목에 넣지 않는다.
  */
 export const metadata: Metadata = {
-  title: '내 즐겨찾기',
+  title: FAVORITES_TITLE,
 };
 
 /**

@@ -101,6 +101,7 @@ const chips = () => screen.getAllByRole('button', { name: /^(전체|대화·검�
 const chipRow = () => screen.getByRole('group', { name: '하위 분류' });
 
 /** 툴바 (DESIGN_SPEC 4장) — 라벨의 숫자는 화면 상태를 따라 바뀌므로 정규식으로 잡는다. */
+const toolbar = () => screen.getByRole('group', { name: '한 번에 열기' });
 const openAllButton = () => screen.getByRole('button', { name: /^전체 \d+개 열기$/ });
 const openCheckedButton = () => screen.getByRole('button', { name: /^선택 \d+개 열기$/ });
 const clearButton = () => screen.getByRole('button', { name: '선택 해제' });
@@ -390,15 +391,23 @@ describe('ListView — 툴바 (DESIGN_SPEC 4장 · G4)', () => {
   it('칩 줄 아래, 카드 그리드 위에 놓는다', () => {
     const { container } = renderList({ subTabs: SUB_TABS });
 
-    const toolbar = openAllButton().parentElement!;
-
     expect(
-      chipRow().compareDocumentPosition(toolbar) & Node.DOCUMENT_POSITION_FOLLOWING,
+      chipRow().compareDocumentPosition(toolbar()) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
-      toolbar.compareDocumentPosition(container.querySelector('.grid')!) &
+      toolbar().compareDocumentPosition(container.querySelector('.grid')!) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it('버튼 셋을 이름 있는 묶음으로 감싼다 — 칩 줄과 구분된다', () => {
+    renderList({ subTabs: SUB_TABS });
+
+    expect(toolbar()).toContainElement(openAllButton());
+    expect(toolbar()).toContainElement(openCheckedButton());
+    expect(toolbar()).toContainElement(clearButton());
+    // 칩 줄도 group 이라 이름으로만 갈린다.
+    expect(toolbar()).not.toBe(chipRow());
   });
 
   it('전체 열기는 검은 버튼이다 (높이 32px · 패딩 13px · 라운드 7px · 12px/600)', () => {

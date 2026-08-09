@@ -7,7 +7,7 @@ import { EmptyBox } from '@/components/EmptyBox';
 import { LinkCard } from '@/components/LinkCard';
 import { SectionHeader } from '@/components/SectionHeader';
 import { useCardHandlers } from '@/components/useCardHandlers';
-import { OPERATING_CATEGORY_NAME } from '@/lib/constants';
+import { DAILY_TITLE, FAVORITES_TITLE, OPERATING_CATEGORY_NAME } from '@/lib/constants';
 import { pickFavorites } from '@/lib/favorites';
 import type { Category, SiteData } from '@/lib/types';
 
@@ -19,13 +19,6 @@ export type HomeViewProps = {
 /** 빈 즐겨찾기 안내 — DESIGN_SPEC 3장의 문구를 그대로 옮긴다. */
 const EMPTY_FAVS_TEXT =
   '다른 화면에서 카드 오른쪽 위의 핀을 누르면 이 자리에 모입니다. 매일 사용하는 사이트와 달리 내가 직접 담고 빼는 목록입니다.';
-
-/**
- * 섹션 이름 — 제목·`aria-label`·'한 번에 열기' 토스트의 탭 그룹 명칭이 모두 이 문자열이라
- * 한 번만 적는다(프로토타입도 `openMany(daily, '매일 사용하는 사이트')` 처럼 섹션 이름을 넘긴다).
- */
-const FAVS_TITLE = '내 즐겨찾기';
-const DAILY_TITLE = '매일 사용하는 사이트';
 
 /**
  * '현재 운영 중인 사이트' 상위 카테고리와 그 하위까지의 id 집합. 없으면 null(섹션을 접는다).
@@ -85,9 +78,9 @@ export function HomeView({ data }: HomeViewProps) {
   // 섹션 간격은 프로토타입 sectionGap 그대로다 — narrow 20px · 데스크톱 26px (D5).
   return (
     <main className="flex flex-col gap-[20px] min-[820px]:gap-[26px]">
-      <section aria-label={FAVS_TITLE}>
+      <section aria-label={FAVORITES_TITLE}>
         <SectionHeader
-          title={FAVS_TITLE}
+          title={FAVORITES_TITLE}
           note={
             favItems.length > 0
               ? `핀으로 직접 담은 ${favItems.length}개 · 이 브라우저에만 저장됩니다`
@@ -95,7 +88,7 @@ export function HomeView({ data }: HomeViewProps) {
           }
           // 0개면 버튼 자체가 없다(DESIGN_SPEC 3장) — 그래서 여기서는 빈 목록 분기를 걱정하지 않는다.
           openLabel={favItems.length > 0 ? `${favItems.length}개 한 번에 열기` : undefined}
-          onOpenAll={() => openMany(favItems, FAVS_TITLE)}
+          onOpenAll={() => openMany(favItems, FAVORITES_TITLE)}
         />
 
         {favItems.length > 0 ? (

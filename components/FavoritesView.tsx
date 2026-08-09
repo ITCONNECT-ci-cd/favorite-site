@@ -1,6 +1,7 @@
 'use client';
 
 import { ListView } from '@/components/ListView';
+import { FAVORITES_TITLE } from '@/lib/constants';
 import { pickFavorites, useFavorites } from '@/lib/favorites';
 import type { BookmarkWithCount } from '@/lib/types';
 
@@ -9,8 +10,10 @@ export type FavoritesViewProps = {
   bookmarks: BookmarkWithCount[];
 };
 
-/** 제목·설명은 프로토타입의 `listTitle`·`listDesc`, 빈 문구는 DESIGN_SPEC 4장 그대로다. */
-const TITLE = '내 즐겨찾기';
+/**
+ * 설명은 프로토타입의 `listDesc`, 빈 문구는 DESIGN_SPEC 4장 그대로다.
+ * 제목은 홈 섹션과 같은 이름이라 `lib/constants` 가 든다(FAVORITES_TITLE 주석).
+ */
 const DESCRIPTION = '카드의 핀을 눌러 담은 링크입니다 · 이 브라우저에만 저장됩니다';
 const EMPTY_MESSAGE = '아직 담은 즐겨찾기가 없습니다. 목록에서 카드의 핀을 눌러보세요.';
 
@@ -40,7 +43,7 @@ export function FavoritesView({ bookmarks }: FavoritesViewProps) {
 
   return (
     <ListView
-      title={TITLE}
+      title={FAVORITES_TITLE}
       description={DESCRIPTION}
       bookmarks={items}
       emptyMessage={EMPTY_MESSAGE}

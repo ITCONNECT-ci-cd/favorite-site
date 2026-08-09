@@ -97,8 +97,10 @@ export function ListView({
    * `shown` 과 교차하는 것은 그 위의 이중 안전장치다 — 목록(props)이 통째로 갈리는 경우까지 막는다.
    */
   const [checked, setChecked] = useState<ReadonlySet<string>>(() => new Set());
+  // 이미 비어 있으면 **같은 객체를 그대로** 돌려준다 — 렌더 중에도 불리는 함수라(아래 장치 2)
+  // 매번 새 Set 을 넣으면 고를 것도 없는데 렌더가 한 번 더 돈다.
   const clearChecked = useCallback(() => {
-    setChecked(new Set());
+    setChecked((prev) => (prev.size === 0 ? prev : new Set()));
   }, []);
 
   const handleToggleCheck = useCallback((id: string) => {
@@ -184,8 +186,13 @@ export function ListView({
       )}
 
       {/* 툴바 (DESIGN_SPEC 4장). 목록이 비어도 남는다 — 프로토타입도 목록 화면이면 언제나 그리고,
-          '열 것이 없다'는 말은 눌렀을 때 토스트가 한다(lib/clicks 의 bulkOpenToastText). */}
-      <div className="mb-[12px] flex items-center gap-[8px]">
+          '열 것이 없다'는 말은 눌렀을 때 토스트가 한다(lib/clicks 의 bulkOpenToastText).
+          칩 줄과 마찬가지로 묶음에 이름을 준다 — 버튼 셋이 한 가지 일(여는 방법 고르기)로 묶인다. */}
+      <div
+        role="group"
+        aria-label="한 번에 열기"
+        className="mb-[12px] flex items-center gap-[8px]"
+      >
         <button
           type="button"
           onClick={() => openMany(shown, groupLabel)}

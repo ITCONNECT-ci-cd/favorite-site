@@ -22,6 +22,9 @@ export function setupWindowOpen(): ReturnType<typeof vi.fn<typeof window.open>> 
   });
 
   afterEach(() => {
+    // ⚠️ `unstubAllGlobals` 는 이 헬퍼가 세운 것만이 아니라 **그 테스트의 전역 스텁 전부**를
+    // 되돌린다 — 같은 파일에서 다른 전역을 stub 하는 묶음과 함께 쓰려면 그쪽 정리와 겹치지
+    // 않는지 먼저 확인해라.
     vi.unstubAllGlobals();
   });
 

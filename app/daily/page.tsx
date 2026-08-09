@@ -1,15 +1,17 @@
 import type { Metadata } from 'next';
 import { ListView } from '@/components/ListView';
-import { EMPTY_LIST_MESSAGE } from '@/lib/constants';
+import { DAILY_TITLE, EMPTY_LIST_MESSAGE } from '@/lib/constants';
 import { getAllData } from '@/lib/queries';
 
-/** 제목·설명은 프로토타입의 `listTitle`·`listDesc` 그대로다. */
-const TITLE = '매일 사용하는 사이트';
+/**
+ * 설명은 프로토타입의 `listDesc` 그대로다.
+ * 제목은 홈 섹션과 같은 이름이라 `lib/constants` 가 든다(DAILY_TITLE 주석).
+ */
 const DESCRIPTION = '직접 고정한 링크만 모입니다. 순서가 바뀌지 않습니다.';
 
 /** 탭 제목 — 화면 이름만 댄다. 꼬리표(`— 내 링크`)는 셸의 title template 이 붙인다. */
 export const metadata: Metadata = {
-  title: TITLE,
+  title: DAILY_TITLE,
 };
 
 /**
@@ -29,7 +31,7 @@ export default async function DailyPage() {
 
   return (
     <ListView
-      title={TITLE}
+      title={DAILY_TITLE}
       description={DESCRIPTION}
       bookmarks={bookmarks.filter((bookmark) => bookmark.is_pinned)}
       emptyMessage={EMPTY_LIST_MESSAGE}

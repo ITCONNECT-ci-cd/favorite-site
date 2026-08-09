@@ -5,7 +5,9 @@ import {
   CLICK_COOLDOWN_MS,
   CLICK_DAILY_CAP,
   DAILY_PIN_MAX,
+  DAILY_TITLE,
   EMPTY_LIST_MESSAGE,
+  FAVORITES_TITLE,
   FAVS_KEY,
   OPERATING_CATEGORY_NAME,
   VISITOR_KEY,
@@ -33,5 +35,12 @@ describe('공유 상수', () => {
 
   it('빈 목록 안내 문구가 DESIGN_SPEC 4장 그대로다', () => {
     expect(EMPTY_LIST_MESSAGE).toBe('이 분류에 링크가 없습니다.');
+  });
+
+  it('화면 이름 셋이 DESIGN_SPEC 3장 표 그대로다 (홈 섹션 = 목록 화면 = 탭 그룹 명칭)', () => {
+    expect(FAVORITES_TITLE).toBe('내 즐겨찾기');
+    expect(DAILY_TITLE).toBe('매일 사용하는 사이트');
+    // 세 번째는 카테고리 판정도 겸하는 위 상수가 그대로 맡는다.
+    expect(OPERATING_CATEGORY_NAME).toBe('현재 운영 중인 사이트');
   });
 });
