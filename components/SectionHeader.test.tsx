@@ -82,12 +82,9 @@ describe('SectionHeader', () => {
   });
 
   it('aside가 없으면 열기 버튼이, 있으면 aside가 오른쪽으로 밀린다', () => {
-    const { container: withoutAside } = render(
-      <SectionHeader title="매일 사용하는 사이트" openLabel="12개 한 번에 열기" />,
-    );
+    render(<SectionHeader title="매일 사용하는 사이트" openLabel="12개 한 번에 열기" />);
 
     expect(screen.getByRole('button', { name: '12개 한 번에 열기' })).toHaveClass('ml-auto');
-    expect(withoutAside.firstElementChild).toBeInTheDocument();
 
     render(
       <SectionHeader

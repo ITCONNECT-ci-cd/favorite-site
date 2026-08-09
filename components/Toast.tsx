@@ -46,6 +46,15 @@ function getServerSnapshot(): ToastMessage | null {
  * 없으면 조용히 넘어간다.
  *
  * 한 번에 하나만 보인다 — 연속 호출하면 앞선 메시지를 밀어내고 2초를 다시 센다.
+ *
+ * 이 토스트를 거치는 화면(D6 핀 토글·F3 카드 클릭 등)을 테스트할 때 주의할 점 두 가지:
+ *
+ * 1. 스토어가 모듈 레벨이라 상태가 테스트 사이에 남는다. 토스트를 띄운 테스트는
+ *    afterEach에서 `vi.advanceTimersByTime(TOAST_DURATION_MS)`로 타이머를 흘려보내
+ *    비워 줘야 다음 테스트가 앞 테스트의 문구를 보지 않는다 (Toast.test.tsx 참고).
+ * 2. React 이벤트 핸들러 밖에서 직접 부르면 상태 갱신이 act() 밖에서 일어난다.
+ *    `act(() => { toast('...'); })`로 감싼다. 클릭 등으로 간접 호출되는 경로는
+ *    fireEvent/userEvent가 이미 act()로 감싸므로 따로 처리할 필요가 없다.
  */
 export function toast(message: string): void {
   clearTimeout(timer);
