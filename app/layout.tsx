@@ -30,6 +30,84 @@ export const metadata: Metadata = {
 };
 
 /**
+ * 셸을 그릴 데이터가 없을 때의 화면 — 사이드바·헤더 없이 이것만 렌더한다.
+ *
+ * **왜 global-error.tsx 가 아니라 여기서 잡나** (O1 게이트 F-1 에서 격리 재현):
+ * 루트 레이아웃의 SSR 실패는 global-error 가 잡지 못한다. 서버 렌더가 던지면 Next 는
+ * 빈 500 셸(`__next_error__`)만 내보내고 우리 클라이언트 청크는 로드조차 되지 않아,
+ * 클라이언트 경계인 global-error 가 마운트될 기회 자체가 없다. 그래서 셸이 직접 잡아
+ * 서버에서 완성된 HTML 을 내보낸다.
+ *
+ * 문구·스타일은 app/global-error.tsx 와 같게 유지한다 — 한쪽만 고치지 마라.
+ * 다른 점은 되돌리는 방법 하나다. 여기는 서버 렌더라 reset() 이 없고, 대신 링크로 새 요청을
+ * 보내 서버 리렌더를 유도한다(클라이언트 내비게이션이 아니라 문서 요청이어야 셸이 다시 선다).
+ *
+ * globals.css 가 실려 있다는 보장이 없어 색·타이포를 inline style 로 적는다 —
+ * 값은 DESIGN_SPEC 1장 무채색 토큰과 같다.
+ */
+function ShellUnavailable() {
+  return (
+    <html lang="ko">
+      <body
+        style={{
+          margin: 0,
+          minHeight: "100vh",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "14px",
+          padding: "0 24px",
+          textAlign: "center",
+          background: "#f7f5f2",
+          color: "#141516",
+          fontFamily: "'Pretendard', system-ui, sans-serif",
+          WebkitFontSmoothing: "antialiased",
+        }}
+      >
+        <h1
+          style={{
+            margin: 0,
+            fontSize: "20px",
+            fontWeight: 700,
+            letterSpacing: "-0.02em",
+          }}
+        >
+          일시적인 오류가 발생했습니다
+        </h1>
+
+        <p style={{ margin: 0, fontSize: "13px", color: "#6d6a65" }}>
+          잠시 후 다시 시도해 주세요. 문제가 계속되면 관리자에게 알려 주세요.
+        </p>
+
+        {/* next/link 의 클라이언트 내비게이션이 아니라 문서 요청이어야 한다 — 셸이 서버에서
+            처음부터 다시 서야 복구되기 때문이다. 규칙이 권하는 <Link> 로 바꾸면 안 된다. */}
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+        <a
+          href="/"
+          style={{
+            marginTop: "4px",
+            display: "flex",
+            alignItems: "center",
+            height: "38px",
+            padding: "0 18px",
+            border: "1px solid #141516",
+            borderRadius: "7px",
+            background: "#141516",
+            color: "#ffffff",
+            fontSize: "13px",
+            fontWeight: 600,
+            textDecoration: "none",
+          }}
+        >
+          다시 시도
+        </a>
+      </body>
+    </html>
+  );
+}
+
+/**
  * 공통 셸 — DESIGN_SPEC 2장.
  *
  * 뷰포트 높이를 꽉 채운 좌우 분할이다. 사이드바(240px)와 헤더(60px)는 자리에 고정되고
@@ -49,11 +127,21 @@ export const metadata: Metadata = {
  * `export const revalidate` 를 넣지 마라 — 이 셸은 매 요청 렌더되는 것이 의도다.
  * 근거는 같은 JSDoc 에 있다.
  *
- * 여기서 던진 오류를 받는 곳은 app/global-error.tsx 하나뿐이다 — 루트 레이아웃이 죽으면
- * 그 아래 error.tsx 들은 셸 안에 있어 그릴 자리가 없기 때문이다.
+ * 조회가 실패하면 셸을 그릴 수 없으므로 아래 ShellUnavailable 을 대신 렌더한다.
+ * 이 실패를 여기서 직접 잡는 이유는 ShellUnavailable 의 주석에 적어 뒀다.
  */
 export default async function RootLayout({ children }: LayoutProps<"/">) {
-  const { categories, bookmarks } = await getAllData();
+  let data;
+  try {
+    data = await getAllData();
+  } catch (error) {
+    // 삼키면 원인을 볼 곳이 사라진다 — 원문은 서버 로그에만 남기고 화면에는 내지 않는다.
+    console.error("셸 데이터 조회 실패 — 오류 화면으로 대체한다", error);
+
+    return <ShellUnavailable />;
+  }
+
+  const { categories, bookmarks } = data;
 
   /**
    * 셸이 내려보내는 값 넷. 지금은 수가 적어 여기 두지만, 3단계 J1 이 관리자 세션까지

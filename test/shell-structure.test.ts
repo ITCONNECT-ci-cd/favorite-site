@@ -67,7 +67,10 @@ describe('셸 레이아웃 뼈대 (app/layout.tsx)', () => {
   });
 
   it('프로토타입 전용 주소창(38px)을 만들지 않는다', () => {
-    expect(layoutCode).not.toContain('38px');
+    // 클래스 형태로만 본다. 38이라는 숫자 자체는 금지 대상이 아니다 — 스펙의 검색창·버튼
+    // 높이도 38px 이고, 실제로 오류 화면의 '다시 시도' 링크가 그 높이를 inline 으로 쓴다.
+    // 주소창을 만든다면 셸의 다른 치수처럼 h-[38px] 로 적힐 것이므로 그 형태를 잠근다.
+    expect(layoutCode).not.toContain('h-[38px]');
   });
 
   it('토스터를 딱 한 번 마운트한다', () => {
@@ -76,6 +79,37 @@ describe('셸 레이아웃 뼈대 (app/layout.tsx)', () => {
 
   it('revalidate 를 내보내지 않는다 (매 요청 렌더가 의도 — getAllData JSDoc)', () => {
     expect(layoutCode).not.toMatch(/export\s+const\s+revalidate/);
+  });
+});
+
+/**
+ * 셸 데이터 조회가 실패해도 빈 500 이 아니라 안내 화면이 나가야 한다 (O1 게이트 F-1).
+ *
+ * 루트 레이아웃의 SSR 실패는 global-error.tsx 가 잡지 못한다 — Next 가 빈 500 셸
+ * (`__next_error__`)을 내보내고 클라이언트 청크가 로드되지 않기 때문이다. 그래서 셸이
+ * 직접 try/catch 로 잡는데, **이 구조는 지우기 쉬운 종류의 코드**라 소스 수준에서 잠가 둔다.
+ *
+ * async 서버 컴포넌트라 RTL 로 렌더해 확인할 수 없다. 실제 동작 검증(env 를 지우고
+ * 프로덕션 빌드로 재현)은 O1 게이트 보고서에 기록돼 있고, 여기서는 그 구조가 사라지지
+ * 않는지만 지킨다.
+ */
+describe('셸 데이터 조회 실패 대비 (O1 게이트 F-1)', () => {
+  it('getAllData 를 try/catch 로 감싼다', () => {
+    expect(layoutCode).toMatch(/try\s*\{[\s\S]*?getAllData\(\)[\s\S]*?\}\s*catch/);
+  });
+
+  it('실패해도 안내 문구를 내보낸다 (global-error 와 같은 문구)', () => {
+    expect(layoutCode).toContain('일시적인 오류가 발생했습니다');
+  });
+
+  it('오류 화면도 자기 html·body 를 직접 렌더한다', () => {
+    // 루트 레이아웃 자리를 대신 채우는 화면이라 문서 뼈대를 스스로 갖춰야 한다.
+    expect(layoutCode.match(/<html lang="ko"/g)!.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('되돌리기는 reset() 이 아니라 문서 요청 링크다', () => {
+    // 서버 렌더 경로라 reset() 이 없다. 셸을 다시 세우려면 새 요청이 필요하다.
+    expect(layoutCode).toMatch(/<a\s+href="\/"/);
   });
 });
 
