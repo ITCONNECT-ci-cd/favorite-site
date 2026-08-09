@@ -1,9 +1,11 @@
 import { randomInt } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
 
+import { ADMIN_EMAIL } from '@/lib/admin-config';
 import { createServiceRoleClient } from '@/scripts/lib/service-client';
 
 /**
@@ -26,9 +28,6 @@ import { createServiceRoleClient } from '@/scripts/lib/service-client';
  * 콘솔 출력은 터미널 스크롤백·CI 로그·에이전트 기록에 남는다. 비밀번호는 오직
  * `.admin-credentials.local` 파일에만 들어가고, 이 스크립트는 파일 경로까지만 말한다.
  */
-
-/** PRD 기준 관리자 1계정. 사내 수동 생성이라 이메일이 코드에 박혀 있는 게 맞다. */
-const ADMIN_EMAIL = 'contact@itconnect.dev';
 
 /** 자격 파일 — 저장소 루트. `.gitignore` 에 등재돼 있다(커밋되면 안 된다). */
 const CREDENTIALS_PATH = fileURLToPath(new URL('../.admin-credentials.local', import.meta.url));
@@ -60,8 +59,11 @@ function pick(chars: string): string {
  * 4종 각 1자를 먼저 심어 종류 요건을 보장한 뒤 나머지를 전체 알파벳에서 채우고,
  * 마지막에 Fisher–Yates 로 섞는다. 안 섞으면 앞 4자리의 종류가 항상 같은 순서라
  * 그만큼 추측 공간이 줄어든다.
+ *
+ * export 되어 있는 것은 `create-admin.test.ts` 가 성질(길이·4종 포함·모호 글리프 부재)을
+ * 반복 실행으로 확인하기 위해서다. 무작위 출력은 한 번 돌려서는 회귀가 드러나지 않는다.
  */
-function generatePassword(): string {
+export function generatePassword(): string {
   const all = ALPHABET.lower + ALPHABET.upper + ALPHABET.digit + ALPHABET.symbol;
 
   const chars = [pick(ALPHABET.lower), pick(ALPHABET.upper), pick(ALPHABET.digit), pick(ALPHABET.symbol)];
@@ -170,6 +172,12 @@ function writeCredentials(email: string, password: string, createdAt: Date): voi
  * 그래서 사용자가 실제로 지나갈 경로(anon 키 + 비밀번호)를 그대로 밟아 본다.
  *
  * 토큰은 반환하지도 찍지도 않는다 — 성공 여부와 사용자 id 만 본다.
+ *
+ * ⚠️ **재사용 주의**: 아래 `signOut()` 은 기본 scope 가 global 이라 그 사용자의 **모든**
+ * 리프레시 토큰을 폐기한다. 계정을 방금 만든 직후에는 폐기할 세션이 이 검증용 하나뿐이라
+ * 무해하지만, 이 함수를 비밀번호 리셋 흐름 같은 데서 다시 쓰면 **브라우저에 로그인해 둔
+ * 관리자가 그 자리에서 쫓겨난다.** 그런 곳에 쓸 거라면 `signOut({ scope: 'local' })` 로
+ * 바꿔라 — 여기서 굳이 global 을 쓰는 이유는 생성 직후엔 흔적을 남기지 않는 쪽이 낫기 때문이다.
  */
 async function verifySignIn(url: string, anonKey: string, email: string, password: string, expectedUserId: string) {
   const anon = createClient(url, anonKey, {
@@ -230,8 +238,13 @@ async function main(): Promise<void> {
     throw new Error(`계정 생성에 실패했습니다: [${createError.code ?? '-'}] ${createError.message}`);
   }
 
-  const createdAt = new Date();
+  // ⚠️ 여기서부터 계정은 이미 존재한다. **이 줄과 파일 쓰기 사이에는 아무것도 넣지 마라.**
+  // 그 사이에서 죽으면 "계정은 생겼는데 비밀번호는 아무도 모른다"가 되고, 이 스크립트는
+  // 재실행해도 기존 계정을 건드리지 않으므로(위 분기) 대시보드에서 손으로 재설정해야만
+  // 빠져나올 수 있다. 검증은 검증일 뿐이고, 산출물을 유실시킬 자격은 없다.
+  writeCredentials(ADMIN_EMAIL, password, new Date());
 
+  // 파일이 안전해진 뒤에야 확인한다. 아래 셋 중 무엇이 던져도 비밀번호는 이미 디스크에 있다.
   // 반환값만 믿지 않고 service 로 다시 조회한다 — 정말 저장됐는지, 확인 상태로 들어갔는지 본다.
   const stored = await findUserByEmail(service, ADMIN_EMAIL);
   if (stored === null) throw new Error('생성 응답은 성공이었으나 조회에서 계정을 찾지 못했습니다.');
@@ -239,10 +252,6 @@ async function main(): Promise<void> {
   if (!stored.email_confirmed_at) {
     throw new Error('계정은 만들어졌으나 이메일 확인 상태가 아닙니다 — email_confirm 옵션을 확인하세요.');
   }
-
-  // 파일을 먼저 쓴다. 로그인 검증에서 죽더라도 비밀번호가 유실되면 안 된다
-  // (계정은 이미 만들어졌는데 비밀번호를 아무도 모르는 상태가 최악이다).
-  writeCredentials(ADMIN_EMAIL, password, createdAt);
 
   await verifySignIn(url, anonKey, ADMIN_EMAIL, password, stored.id);
 
@@ -258,7 +267,32 @@ async function main(): Promise<void> {
   console.log('로그인 후 비밀번호를 바꾸고, 바꾼 뒤에는 파일을 삭제하세요.');
 }
 
-main().catch((error: unknown) => {
-  console.error(`관리자 계정 준비를 끝내지 못했습니다: ${error instanceof Error ? error.message : String(error)}`);
-  process.exit(1);
-});
+/**
+ * `npx tsx scripts/create-admin.ts` 로 **직접 실행됐을 때만** 참.
+ *
+ * 이 파일은 `generatePassword` 를 export 하고 테스트가 그것을 import 한다. 가드가 없으면
+ * import 만으로 `main()` 이 돌아 테스트가 실제 Supabase 프로젝트에 계정을 만들려 든다.
+ *
+ * 경로 비교는 정규화해서 한다 — Windows 에서는 구분자(`\` 대 `/`)와 드라이브 문자
+ * 대소문자(`E:` 대 `e:`)가 실행 방법에 따라 다르게 들어온다. 그 차이로 가드가 어긋나면
+ * 증상은 "스크립트가 아무 일도 안 하고 조용히 끝난다"라 원인을 찾기 어렵다.
+ */
+function isDirectRun(): boolean {
+  const entry = process.argv[1];
+  if (entry === undefined) return false;
+
+  const normalize = (path: string): string => resolve(path).replaceAll('\\', '/').toLowerCase();
+
+  return normalize(fileURLToPath(import.meta.url)) === normalize(entry);
+}
+
+if (isDirectRun()) {
+  main().catch((error: unknown) => {
+    console.error(`관리자 계정 준비를 끝내지 못했습니다: ${error instanceof Error ? error.message : String(error)}`);
+    console.error('');
+    console.error('계정이 만들어진 뒤에 실패했다면 비밀번호는 이미 아래 파일에 기록돼 있습니다:');
+    console.error(`  ${CREDENTIALS_PATH}`);
+    console.error('(파일이 없다면 계정도 만들어지지 않은 것입니다 — 그대로 다시 실행하세요.)');
+    process.exit(1);
+  });
+}

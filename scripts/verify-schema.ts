@@ -5,7 +5,7 @@ import { createClient, type PostgrestError, type SupabaseClient } from '@supabas
 import { createServiceRoleClient } from '@/scripts/lib/service-client';
 
 /**
- * B2 완료 기준 6종을 실제 DB에 대고 자동 검증한다.
+ * 실제 Supabase 프로젝트에 대고 자동 검증한다 — B2 완료 기준 6종 + Auth 설정 1종.
  *
  * 실행: `npx tsx scripts/verify-schema.ts` (PowerShell, 저장소 루트에서)
  * 선행: `supabase/migrations/0001_init.sql` 적용 + `.env.local` 에 URL·anon·service role 키.
@@ -13,8 +13,12 @@ import { createServiceRoleClient } from '@/scripts/lib/service-client';
  * ⚠️ `tsx` 로 실행할 것 — `@/…` 별칭은 tsconfig `paths` 이고 Node 네이티브 TS 실행은
  * tsconfig 를 읽지 않는다(scripts/lib/service-client.ts 주석 참조).
  *
- * 검증은 **임시 행을 넣었다 지우는** 방식이라 시드 전후 아무 때나 돌릴 수 있다.
+ * ①~⑥ 은 **임시 행을 넣었다 지우는** 방식이라 시드 전후 아무 때나 돌릴 수 있다.
  * 임시 행은 전부 `__verify_schema__` 마커를 달고, 각 검사가 finally 에서 스스로 지운다.
+ *
+ * ⑦ 은 DB 가 아니라 **프로젝트 설정**을 본다. 스키마가 아무리 맞아도 public signup 이
+ * 열려 있으면 누구나 인증 사용자가 되어 쓰기 정책 안으로 들어오기 때문이다(C-1).
+ * 한 검사의 실패가 나머지를 가리지 않도록 전부 돌리고 마지막에 합산한다.
  */
 
 /** 임시 행 식별자 — 검사가 중간에 죽었을 때 수동 정리용으로 남긴다. */
@@ -253,6 +257,62 @@ async function checkCategoryUnique(service: SupabaseClient): Promise<Outcome> {
   }
 }
 
+/**
+ * ⑦ Auth 설정 — public signup 과 익명 로그인이 모두 꺼져 있는지.
+ *
+ * ## 왜 스키마 검증 스크립트가 프로젝트 설정을 보는가
+ *
+ * RLS 의 쓰기 정책은 "인증 사용자"에게 열려 있다(0002 는 거기에 관리자 이메일 조건을
+ * 더한다). 그런데 anon 키는 브라우저에 실려 나가는 공개 값이라, signup 이 열려 있으면
+ * 누구나 `POST /auth/v1/signup` 한 번으로 스스로 인증 사용자가 된다. 그 순간 "인증된
+ * 사용자만"이라는 전제가 "아무나"와 같아진다. 스키마만 봐서는 절대 드러나지 않는 구멍이라
+ * 여기서 함께 본다.
+ *
+ * ## 무엇을 어떻게 읽는가
+ *
+ * GoTrue 의 `/auth/v1/settings` 는 anon 키로 읽을 수 있는 **공개** 엔드포인트다(로그인
+ * 화면이 어떤 로그인 수단을 그릴지 정하려고 읽는 자리다). 그래서 service role 없이 확인된다.
+ * `disable_signup: true` = 가입 차단, `external.anonymous_users: false` = 익명 로그인 차단.
+ *
+ * 이 검사는 켜 두는 것 자체가 목적이다 — 설정이 되돌아가면 **시끄럽게 실패해야 한다.**
+ */
+async function checkSignupDisabled(url: string, anonKey: string): Promise<Outcome> {
+  const endpoint = `${url.replace(/\/+$/, '')}/auth/v1/settings`;
+
+  const response = await fetch(endpoint, { headers: { apikey: anonKey } });
+  if (!response.ok) {
+    return fail(`Auth 설정을 읽지 못했다: HTTP ${response.status} ${response.statusText} (${endpoint})`);
+  }
+
+  const settings = (await response.json()) as {
+    disable_signup?: unknown;
+    external?: { anonymous_users?: unknown } | null;
+  };
+
+  const signupDisabled = settings.disable_signup === true;
+  const anonymousDisabled = settings.external?.anonymous_users === false;
+
+  if (signupDisabled && anonymousDisabled) {
+    return pass('disable_signup=true · external.anonymous_users=false — 스스로 인증 사용자가 될 길이 없다');
+  }
+
+  const problems: string[] = [];
+  if (!signupDisabled) problems.push(`disable_signup=${JSON.stringify(settings.disable_signup)} (true 여야 한다)`);
+  if (!anonymousDisabled) {
+    problems.push(`external.anonymous_users=${JSON.stringify(settings.external?.anonymous_users)} (false 여야 한다)`);
+  }
+
+  return fail(
+    [
+      problems.join(' · '),
+      '        → 누구나 anon 키로 계정을 만들어 "인증 사용자"가 될 수 있다. 쓰기 RLS 가 그 문 뒤에 있다.',
+      '        해결: Supabase 대시보드 → Authentication → Sign In / Up →',
+      '              "Allow new users to sign up" 끄기 (익명 로그인도 같은 화면에서 끈다).',
+      '        그리고 supabase/migrations/0002_admin_write_policy.sql 을 SQL Editor 에서 실행하세요.',
+    ].join('\n'),
+  );
+}
+
 async function main(): Promise<void> {
   loadEnvLocal();
   const { url, anonKey } = resolveEnv();
@@ -269,9 +329,10 @@ async function main(): Promise<void> {
     { id: '④', label: `service: is_pinned ${PIN_LIMIT + 1}번째 → PIN_LIMIT`, run: () => checkPinLimit(service) },
     { id: '⑤', label: 'anon: bookmark_click_counts select 성공', run: () => checkAnonViewRead(anon) },
     { id: '⑥', label: 'service: 동명 상위 카테고리 중복 거부', run: () => checkCategoryUnique(service) },
+    { id: '⑦', label: 'auth: public signup·익명 로그인 비활성', run: () => checkSignupDisabled(url, anonKey) },
   ];
 
-  console.log('B2 스키마 검증 — supabase/migrations/0001_init.sql 적용 결과를 확인합니다.');
+  console.log('스키마·설정 검증 — 0001_init.sql 적용 결과(①~⑥)와 Auth 설정(⑦)을 확인합니다.');
   console.log(`대상: ${url}`);
   console.log('');
 
@@ -293,12 +354,14 @@ async function main(): Promise<void> {
   console.log('');
 
   if (failed > 0) {
-    console.error(`${checks.length}종 중 ${failed}종 실패 — 0001_init.sql 이 그대로 적용됐는지 확인하세요.`);
+    console.error(`${checks.length}종 중 ${failed}종 실패.`);
+    console.error('  ①~⑥ 이 실패했다면: 0001_init.sql 이 그대로 적용됐는지 확인하세요.');
+    console.error('  ⑦ 이 실패했다면: 위 안내대로 대시보드에서 signup 을 끄세요 (코드로는 못 고칩니다).');
     console.error(`임시 행이 남았을 수 있습니다. 남았다면 title/name 이 '${MARKER}' 로 시작하는 행을 지우세요.`);
     process.exit(1);
   }
 
-  console.log(`${checks.length}종 전부 통과 — B2 완료 기준을 만족합니다.`);
+  console.log(`${checks.length}종 전부 통과 — B2 완료 기준과 Auth 설정 요건을 만족합니다.`);
 }
 
 main().catch((error: unknown) => {

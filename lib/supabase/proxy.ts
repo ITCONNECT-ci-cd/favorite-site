@@ -26,6 +26,16 @@ import { requireEnv } from './env';
  * 새 `NextResponse` 를 만들어 돌려주면 브라우저와 서버의 세션이 어긋난다. 헤더를 더해야
  * 하면 이 객체에 더해라.
  *
+ * 이 경고는 **`setAll` 콜백 밖**을 가리킨다 — 아래 `setAll` 안에서 `response` 를 다시 만드는
+ * 줄은 모순이 아니라 Supabase 공식 SSR 패턴이다. 갱신된 쿠키를 요청 객체에 먼저 심은 뒤
+ * 그 요청으로 응답을 다시 만들어야 이번 요청을 이어서 처리할 서버 컴포넌트가 새 쿠키를
+ * 읽을 수 있기 때문이다. 그 재생성은 곧바로 쿠키·헤더를 새 객체에 다시 붙이므로 유실이 없다.
+ *
+ * ⚠️ 단, 그 안전은 **`setAll` 이 요청당 최대 한 번 불린다**는 전제 위에 있다. 두 번째
+ * 호출은 응답을 다시 만들면서 **앞선 호출이 붙여 둔 Set-Cookie 를 잃는다.** 지금은
+ * `getUser()` 한 번이 전부라(갱신도 한 번뿐) 그 전제가 성립한다. 이 함수에 Supabase
+ * 호출을 더 넣게 되면 그때는 `response.cookies` 를 유지한 채 누적하도록 고쳐야 한다.
+ *
  * ## 리다이렉트는 여기서 하지 않는다
  *
  * 미인증 접근 처리는 관리 레이아웃(H2/H3)이 `getAdminSession()` 으로 판단한다. 프록시는
@@ -48,6 +58,9 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
             request.cookies.set(name, value);
           }
 
+          // 위 루프로 갱신 쿠키를 심은 **뒤** 그 요청으로 응답을 다시 만든다. 이 재생성이
+          // 상단 "응답 객체를 갈아치우지 마라" 경고와 모순돼 보이지만, 경고는 이 콜백 밖의
+          // 교체를 말한다(윗줄 JSDoc). 요청당 한 번만 불린다는 전제도 그쪽에 적어 뒀다.
           response = NextResponse.next({ request });
 
           for (const { name, value, options } of cookiesToSet) {
