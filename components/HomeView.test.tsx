@@ -1,0 +1,278 @@
+/** D2. 홈 화면 — DESIGN_SPEC 3장(섹션 3개 + 하단 안내). */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { render, screen, within } from '@testing-library/react';
+import { beforeEach, describe, expect, it } from 'vitest';
+
+import { HomeView } from '@/components/HomeView';
+import { FAVS_KEY, OPERATING_CATEGORY_NAME } from '@/lib/constants';
+import type { BookmarkWithCount, Category, SiteData } from '@/lib/types';
+import { buildSeed, toBookmarkRow, type RawLink } from '@/scripts/seed-mapper';
+
+/**
+ * fixture 는 실제 `docs/data/links.json` 을 B3 의 `buildSeed` 로 돌려 만든다(B3·D1 관례).
+ * 손으로 적은 숫자가 아니라 시드가 DB 에 넣을 바로 그 형태라, 화면에 적히는 실측치
+ * (매일 12 · 운영 중 16 · 나머지 262)가 시드와 어긋나면 여기서 먼저 깨진다.
+ *
+ * 경로는 vitest 실행 디렉터리(= 프로젝트 루트) 기준이다. D1 테스트처럼 `import.meta.url` 로
+ * 잡을 수 없다 — 이 파일은 DOM 이 필요해 jsdom 환경이고, jsdom 은 `import.meta.url` 을
+ * 페이지 URL(http:)로 바꿔 버려 `fileURLToPath` 가 던진다.
+ */
+const LINKS_PATH = resolve(process.cwd(), 'docs/data/links.json');
+const RAW: RawLink[] = JSON.parse(readFileSync(LINKS_PATH, 'utf8')) as RawLink[];
+const SEED = buildSeed(RAW, new Set<number>());
+
+const CATEGORIES: Category[] = SEED.categories;
+/** 클릭 수는 카드(C2)가 요구하는 필드라 인덱스로 채운다 — 홈은 이 값을 쓰지 않는다. */
+const BOOKMARKS: BookmarkWithCount[] = SEED.bookmarks.map((bookmark, index) => ({
+  ...toBookmarkRow(bookmark),
+  click_count: index,
+}));
+const DATA: SiteData = { categories: CATEGORIES, bookmarks: BOOKMARKS };
+
+const OPERATING_ID = CATEGORIES.find(
+  (category) => category.parent_id === null && category.name === OPERATING_CATEGORY_NAME,
+)!.id;
+
+/** 즐겨찾기 순서 검증용 — sort_order 순서(5 → 40 → 200)와 일부러 다르게 담는다. */
+const FAV_IDS = [BOOKMARKS[200].id, BOOKMARKS[5].id, BOOKMARKS[40].id];
+
+function setFavs(ids: readonly string[]): void {
+  localStorage.setItem(FAVS_KEY, JSON.stringify(ids));
+}
+
+const section = (name: string) => screen.getByRole('region', { name });
+
+/** 섹션 본문 — 헤더 다음에 오는 카드 그리드(또는 빈 상태 박스). */
+const body = (name: string) => section(name).lastElementChild as HTMLElement;
+
+/** 섹션 안 카드들 — 그리드에 놓인 순서 그대로. */
+const cards = (name: string) => [...body(name).children] as HTMLElement[];
+
+/**
+ * 섹션이 어떤 링크를 어떤 순서로 놓았는지 확인한다.
+ * 카드 내부 구조(C2 LinkCard)에는 기대지 않는다 — 자리마다 그 링크의 제목이 보이면 된다.
+ */
+function expectCards(name: string, expected: readonly BookmarkWithCount[]): void {
+  const rendered = cards(name);
+
+  expect(rendered).toHaveLength(expected.length);
+  rendered.forEach((card, index) => {
+    expect(card).toHaveTextContent(expected[index].title);
+  });
+}
+
+/** 섹션 안 카드의 핀 버튼 — 없으면 빈 배열. */
+const pins = (name: string) =>
+  within(section(name)).queryAllByRole('button', { name: /.+ 즐겨찾기$/ });
+
+beforeEach(() => {
+  localStorage.clear();
+});
+
+describe('HomeView — 섹션 구성', () => {
+  it('내 즐겨찾기 · 매일 사용하는 사이트 · 현재 운영 중인 사이트 순으로 놓는다', () => {
+    setFavs(FAV_IDS);
+    render(<HomeView data={DATA} />);
+
+    expect(screen.getAllByRole('heading').map((heading) => heading.textContent)).toEqual([
+      '내 즐겨찾기',
+      '매일 사용하는 사이트',
+      '현재 운영 중인 사이트',
+    ]);
+  });
+
+  it('섹션 사이를 26px 띄운다 (DESIGN_SPEC 1장 섹션 간격)', () => {
+    render(<HomeView data={DATA} />);
+
+    expect(screen.getByRole('main')).toHaveClass('flex', 'flex-col', 'gap-[26px]');
+  });
+
+  it('홈에서는 체크 아이콘을 쓰지 않는다 (목록 화면 전용)', () => {
+    setFavs(FAV_IDS);
+    render(<HomeView data={DATA} />);
+
+    expect(screen.queryAllByRole('button', { name: /.+ 선택$/ })).toHaveLength(0);
+  });
+});
+
+describe('HomeView — 내 즐겨찾기 섹션', () => {
+  it('favs(localStorage) 순서 그대로 카드를 놓는다', () => {
+    setFavs(FAV_IDS);
+    render(<HomeView data={DATA} />);
+
+    expectCards('내 즐겨찾기', [BOOKMARKS[200], BOOKMARKS[5], BOOKMARKS[40]]);
+  });
+
+  it('보조문과 열기 버튼에 담긴 개수를 적는다', () => {
+    setFavs(FAV_IDS);
+    render(<HomeView data={DATA} />);
+
+    const header = section('내 즐겨찾기');
+
+    expect(
+      within(header).getByText('핀으로 직접 담은 3개 · 이 브라우저에만 저장됩니다'),
+    ).toBeInTheDocument();
+    expect(
+      within(header).getByRole('button', { name: '3개 한 번에 열기' }),
+    ).toBeInTheDocument();
+  });
+
+  it('카드의 핀이 켜진 상태로 보인다', () => {
+    setFavs(FAV_IDS);
+    render(<HomeView data={DATA} />);
+
+    const pinButtons = pins('내 즐겨찾기');
+
+    expect(pinButtons).toHaveLength(3);
+    for (const pin of pinButtons) expect(pin).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('이제 없는 링크 id 가 favs 에 남아 있어도 건너뛴다', () => {
+    setFavs([BOOKMARKS[5].id, '사라진-링크', BOOKMARKS[40].id]);
+    render(<HomeView data={DATA} />);
+
+    expectCards('내 즐겨찾기', [BOOKMARKS[5], BOOKMARKS[40]]);
+    expect(
+      screen.getByText('핀으로 직접 담은 2개 · 이 브라우저에만 저장됩니다'),
+    ).toBeInTheDocument();
+  });
+
+  it('0개면 열기 버튼 없이 빈 즐겨찾기 안내만 보여준다 (DESIGN_SPEC 3장)', () => {
+    render(<HomeView data={DATA} />);
+
+    const empty = within(section('내 즐겨찾기')).getByText(
+      '다른 화면에서 카드 오른쪽 위의 핀을 누르면 이 자리에 모입니다. 매일 사용하는 사이트와 달리 내가 직접 담고 빼는 목록입니다.',
+    );
+
+    // 점선 테두리 #d8d3cb · 배경 #f3f1ed · 라운드 10px · 패딩 16px · 11.5px #6d6a65
+    expect(empty).toHaveClass(
+      'rounded-[10px]',
+      'border-dashed',
+      'border-dash',
+      'bg-side',
+      'p-[16px]',
+      'text-[11.5px]',
+      'text-desc',
+    );
+    expect(pins('내 즐겨찾기')).toHaveLength(0);
+    expect(
+      within(section('내 즐겨찾기')).queryByRole('button', { name: /한 번에 열기$/ }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe('HomeView — 매일 사용하는 사이트 섹션', () => {
+  it('is_pinned 12개를 sort_order 순으로 놓는다', () => {
+    render(<HomeView data={DATA} />);
+
+    const pinned = BOOKMARKS.filter((bookmark) => bookmark.is_pinned);
+
+    expect(pinned).toHaveLength(12);
+    expectCards('매일 사용하는 사이트', pinned);
+  });
+
+  it('보조문과 열기 버튼을 스펙 문구 그대로 적는다', () => {
+    render(<HomeView data={DATA} />);
+
+    const header = section('매일 사용하는 사이트');
+
+    expect(
+      within(header).getByText('직접 고정한 12개 · 자리가 바뀌지 않습니다'),
+    ).toBeInTheDocument();
+    expect(
+      within(header).getByRole('button', { name: '12개 한 번에 열기' }),
+    ).toBeInTheDocument();
+  });
+
+  it('카드에 핀을 노출하지 않는다 (관리자 영역)', () => {
+    setFavs([BOOKMARKS.find((bookmark) => bookmark.is_pinned)!.id]);
+    render(<HomeView data={DATA} />);
+
+    expect(pins('매일 사용하는 사이트')).toHaveLength(0);
+  });
+});
+
+describe('HomeView — 현재 운영 중인 사이트 섹션', () => {
+  it('운영 중 카테고리 소속 16개를 sort_order 순으로 놓는다', () => {
+    render(<HomeView data={DATA} />);
+
+    const operating = BOOKMARKS.filter((bookmark) => bookmark.category_id === OPERATING_ID);
+
+    expect(operating).toHaveLength(16);
+    expectCards('현재 운영 중인 사이트', operating);
+  });
+
+  it('보조문에 실제 개수를 적는다', () => {
+    render(<HomeView data={DATA} />);
+
+    expect(
+      within(section('현재 운영 중인 사이트')).getByText('회사가 직접 운영하는 서비스 16개'),
+    ).toBeInTheDocument();
+  });
+
+  it('"전체 보기" 링크가 열기 버튼 왼쪽에서 그 카테고리로 간다', () => {
+    render(<HomeView data={DATA} />);
+
+    const header = section('현재 운영 중인 사이트');
+    const all = within(header).getByRole('link', { name: '전체 보기' });
+    const open = within(header).getByRole('button', { name: '16개 한 번에 열기' });
+
+    expect(all).toHaveAttribute('href', `/category/${OPERATING_ID}`);
+    expect(all.compareDocumentPosition(open) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('카드에 핀을 노출하지 않는다', () => {
+    setFavs([BOOKMARKS.find((bookmark) => bookmark.category_id === OPERATING_ID)!.id]);
+    render(<HomeView data={DATA} />);
+
+    expect(pins('현재 운영 중인 사이트')).toHaveLength(0);
+  });
+
+  it('운영 중 카테고리가 없으면 섹션을 접는다', () => {
+    render(
+      <HomeView
+        data={{
+          categories: CATEGORIES.filter((category) => category.id !== OPERATING_ID),
+          bookmarks: BOOKMARKS,
+        }}
+      />,
+    );
+
+    expect(
+      screen.queryByRole('region', { name: '현재 운영 중인 사이트' }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe('HomeView — 하단 안내', () => {
+  it('사이드바로 넘긴 나머지 개수를 적는다 (290 - 매일 12 - 운영 중 16)', () => {
+    render(<HomeView data={DATA} />);
+
+    expect(
+      screen.getByText(
+        '나머지 262개는 왼쪽 사이드바에서 분류별로 들어갑니다. 홈에는 즐겨찾기와 매일 사용하는 사이트, 현재 운영 중인 사이트를 둡니다.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('빈 즐겨찾기 안내(EmptyBox)와 값이 다르다 — 라운드 9px · 패딩 14px 16px · line-height 1.7', () => {
+    render(<HomeView data={DATA} />);
+
+    const notice = screen.getByText(/^나머지 262개는/);
+
+    expect(notice).toHaveClass(
+      'rounded-[9px]',
+      'border-dashed',
+      'border-dash',
+      'bg-side',
+      'px-[16px]',
+      'py-[14px]',
+      'text-[11.5px]',
+      'leading-[1.7]',
+      'text-desc',
+    );
+    // EmptyBox 를 재사용하면 따라붙는 값들 — 여기서는 나오면 안 된다.
+    expect(notice).not.toHaveClass('rounded-[10px]', 'p-[16px]', 'leading-[1.6]');
+  });
+});

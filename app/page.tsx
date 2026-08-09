@@ -1,14 +1,13 @@
+import { HomeView } from "@/components/HomeView";
+import { getAllData } from "@/lib/queries";
+
 /**
- * 홈 화면 자리표시자 — 디자인 토큰·폰트가 실제로 적용되는지 눈으로 확인하기 위한 최소 화면.
- * 실제 홈(3섹션 + 링크 카드)은 D2 스토리에서 구현한다.
+ * 홈 (DESIGN_SPEC 3장). 데이터를 서버에서 한 번 읽어 화면(HomeView)에 넘기기만 한다 —
+ * 섹션을 나누는 규칙은 즐겨찾기(localStorage)와 함께 봐야 하므로 클라이언트 쪽에 둔다.
+ *
+ * `export const revalidate` 를 넣지 마라 — 이 페이지는 매 요청 렌더되는 것이 의도다.
+ * 근거는 lib/queries.ts 의 getAllData JSDoc 에 있다.
  */
-export default function Home() {
-  return (
-    <main className="flex flex-1 flex-col items-center justify-center gap-2 bg-surface px-6 text-center">
-      <h1 className="text-xl font-bold tracking-[-0.02em] text-ink">내 링크</h1>
-      <p className="text-[13px] text-desc">
-        사내 구성원이 자주 쓰는 링크를 한곳에서 찾는 대시보드
-      </p>
-    </main>
-  );
+export default async function Home() {
+  return <HomeView data={await getAllData()} />;
 }
