@@ -2,7 +2,9 @@
 
 import { useCallback, useState } from 'react';
 import { Header, type HeaderProps } from '@/components/Header';
+import { AiSearchResults } from '@/components/palette/AiSearchResults';
 import { CommandPalette } from '@/components/palette/CommandPalette';
+import { useAiSearch } from '@/components/palette/useAiSearch';
 import type { SiteData } from '@/lib/types';
 
 /**
@@ -37,13 +39,18 @@ export type PaletteHostProps = Omit<HeaderProps, 'onSearchClick' | 'onAiClick' |
  * 여기에 카드 쪽 핸들러(useCardHandlers.handleOpen)를 이어 붙이면 기록이 두 번 가고
  * 토스트가 두 번 뜬다(CommandPalette 의 onOpenLink JSDoc).
  *
- * **아직 없는 것**: `onAiSearch`·`aiSlot`(N3). 지금은 넘기지 않아 팔레트 안의 AI 경로
- * (하단 'AI 검색' 버튼 · `⌘↵` · 0건에서의 `↵`)가 아무 일도 하지 않는다. **헤더**의 AI 버튼은
- * 다르다 — 계획서 G5 가 "우선 팔레트 열기로 연결"로 확정한 자리라 검색창과 같은 일을 한다.
- * N3 은 이 파일에서 AI 모드 진입을 갈라내면 된다.
+ * **AI 의미 검색(N3)**: 상태는 `useAiSearch` 훅이 쥐고, 팔레트에는 슬롯(`aiSlot`)·바쁨 표시
+ * (`aiBusy`)·트리거(`onAiSearch`)·입력 변경 신호(`onQueryChange`)로 내려간다. 팔레트 안의 AI 경로
+ * (하단 'AI 검색' 버튼 · `⌘↵` · 0건에서의 `↵`)가 모두 `onAiSearch(query)` 로 모여 실제
+ * `/api/ai-search` 호출로 이어진다. 결과 행을 열거나(닫힘) 질의를 고치면 지난 AI 결과를 지운다.
+ *
+ * **헤더**의 AI 버튼은 여전히 팔레트를 열기만 한다 — 계획서 G5 가 "우선 팔레트 열기로 연결"로 확정한
+ * 자리다. 질의 없이 AI 를 부를 수는 없으니(빈 질의는 no-op), 헤더 버튼은 AI 검색의 입구이고
+ * 실제 실행은 팔레트 안의 세 트리거가 맡는다.
  */
 export function PaletteHost({ data, ...header }: PaletteHostProps) {
   const [open, setOpen] = useState(false);
+  const { state: aiState, busy: aiBusy, run: runAi, clear: clearAi, reset: resetAi } = useAiSearch();
 
   // 둘 다 `useCallback` 인 것은 팔레트 때문이다. 게이트의 전역 ⌘K 리스너는 `onOpenRequest` 를,
   // 패널의 키 리스너는 `onClose` 를 의존성으로 잡고 있어, 렌더마다 새 함수가 내려가면
@@ -52,9 +59,18 @@ export function PaletteHost({ data, ...header }: PaletteHostProps) {
     setOpen(true);
   }, []);
 
+  // 닫힘은 곧 AI 결과의 초기화다 — 행을 열거나(onClose 로 닫힌다) esc·오버레이 어느 쪽이든,
+  // 다음에 열릴 땐 빈 입력에서 시작하므로 지난 AI 결과가 남아 있으면 안 된다(프로토타입 open/closePalette).
   const closePalette = useCallback(() => {
     setOpen(false);
-  }, []);
+    resetAi();
+  }, [resetAi]);
+
+  // idle 이면 슬롯을 아예 그리지 않는다 — 그래야 팔레트의 0건 안내(`aiBusy` 로 감춘다)가 정상 동작한다.
+  const aiSlot =
+    aiState.status === 'idle' ? undefined : (
+      <AiSearchResults state={aiState} data={data} onClose={closePalette} />
+    );
 
   return (
     <>
@@ -62,7 +78,7 @@ export function PaletteHost({ data, ...header }: PaletteHostProps) {
         {...header}
         isSearchOpen={open}
         onSearchClick={openPalette}
-        // 지금은 검색창과 같은 일을 한다. AI 모드로 바로 들어가는 것은 N3 몫이다.
+        // 헤더 AI 버튼은 팔레트를 열기만 한다(G5). 실제 AI 실행은 팔레트 안 세 트리거(onAiSearch)다.
         onAiClick={openPalette}
       />
 
@@ -71,6 +87,10 @@ export function PaletteHost({ data, ...header }: PaletteHostProps) {
         onOpenRequest={openPalette}
         onClose={closePalette}
         data={data}
+        aiSlot={aiSlot}
+        aiBusy={aiBusy}
+        onAiSearch={runAi}
+        onQueryChange={clearAi}
       />
     </>
   );

@@ -99,8 +99,14 @@ function categoryLabel(categoryId: string | null, names: Map<string, string>): s
   return categoryId === null ? '' : (names.get(categoryId) ?? '');
 }
 
-/** 파비콘 타일 한 칸 — 이미지가 없으면 회색 타일만 남긴다(LinkCard 와 같은 처리). */
-function FaviconTile({ bookmark, size }: { bookmark: BookmarkWithCount; size: 26 | 22 }) {
+/**
+ * 파비콘 타일 한 칸 — 이미지가 없으면 회색 타일만 남긴다(LinkCard 와 같은 처리).
+ *
+ * N3 의 AI 결과 행(`AiSearchResults`)이 같은 26px 타일을 쓰므로 export 한다 — 세 번째 사용처가
+ * 이 타일을 복제하면 위 `cssUrl` 도 함께 복제돼야 하는데(모듈 내부 함수), 그러면 프로토타입의
+ * 파비콘 렌더가 팔레트/AI 두 갈래로 갈라진다. 하나만 두고 나눠 쓴다.
+ */
+export function FaviconTile({ bookmark, size }: { bookmark: BookmarkWithCount; size: 26 | 22 }) {
   const icon = faviconSrc(bookmark);
   const box =
     size === 26 ? 'size-[26px] rounded-[7px] bg-[length:16px_16px]' : 'size-[22px] rounded-[6px] bg-[length:14px_14px]';
@@ -169,6 +175,14 @@ export type CommandPaletteProps = {
    * N3 은 그 가드를 이 콜백 안에 그대로 두면 된다.
    */
   onAiSearch?: (query: string) => void;
+  /**
+   * 입력이 바뀔 때마다 알린다 — **API 를 부르는 신호가 아니다**(그건 `onAiSearch` 뿐이다).
+   *
+   * N3 이 지난 AI 결과를 지우는 데 쓴다(프로토타입 `onQ` 의 `ai: 'idle'`, 994행). AI 상태는 상위가
+   * 쥐고 있어 팔레트 안의 질의 변경을 스스로 볼 수 없으므로, 이 한 줄로 "질의가 바뀌었다"만 흘려
+   * 준다. 상위는 이미 idle 이면 아무 일도 하지 않아, 타자마다 불려도 리렌더가 새로 일지 않는다.
+   */
+  onQueryChange?: () => void;
 };
 
 /**
@@ -199,6 +213,7 @@ export function CommandPalette({
   aiSlot,
   aiBusy,
   onAiSearch,
+  onQueryChange,
 }: CommandPaletteProps) {
   // 훅은 아래 조기 반환보다 앞이어야 한다 — 닫혀 있을 때도 같은 순서로 불려야 하고,
   // 애초에 이 리스너의 존재 이유가 "닫혀 있는 동안 듣는 것"이다.
@@ -235,6 +250,7 @@ export function CommandPalette({
       aiSlot={aiSlot}
       aiBusy={aiBusy}
       onAiSearch={onAiSearch}
+      onQueryChange={onQueryChange}
     />
   );
 }
@@ -250,6 +266,7 @@ function PalettePanel({
   aiSlot,
   aiBusy = false,
   onAiSearch,
+  onQueryChange,
 }: Omit<CommandPaletteProps, 'open' | 'onOpenRequest'>) {
   const [query, setQuery] = useState('');
   /** 선택된 결과 행. 프로토타입의 `sel` 이다(838·840·994·998행). */
@@ -492,6 +509,9 @@ function PalettePanel({
               setQuery(event.target.value);
               // 결과가 통째로 바뀌므로 선택도 첫 행으로 돌아온다(프로토타입 994행 `sel: 0`).
               setSelected(FIRST_ROW);
+              // 질의가 바뀌면 지난 AI 결과는 낡았다 — 상위가 지운다(프로토타입 994행 `ai: 'idle'`).
+              // API 호출이 아니다: `onAiSearch` 만 서버를 부른다.
+              onQueryChange?.();
             }}
             placeholder="무엇을 찾나요"
             aria-label="검색어"

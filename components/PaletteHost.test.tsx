@@ -5,9 +5,10 @@
  * 헤더 **생김새**는 Header.test.tsx 가 이미 못박았다. 여기서 보는 것은 그 둘을 잇는 세 가닥뿐이다:
  * 열림 상태의 소유(이 호스트) · 세 입구(검색창 · AI 버튼 · 전역 ⌘K) · 닫힘 경로와 `aria-expanded`.
  */
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PaletteHost, type PaletteHostProps } from '@/components/PaletteHost';
+import type { AiSearchResponse } from '@/lib/ai-search-client';
 import { recordClick } from '@/lib/clicks';
 import type { SiteData } from '@/lib/types';
 import { setupToastTimers } from '@/test/toast';
@@ -187,5 +188,152 @@ describe('PaletteHost — 행 열기 (G3 인계)', () => {
     expect(recordClick).toHaveBeenCalledTimes(1);
     // 행을 열면 팔레트도 닫힌다(프로토타입) — onClose 가 이어져 있다는 뜻이다.
     expect(palette()).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * N3. AI 의미 검색 — 트리거(⌘↵·0건 ↵)가 실제 `/api/ai-search`(N2) 호출로 이어지고, 로딩→결과로
+ * 바뀌며, 팔레트의 0건 안내를 가리고, 질의를 고치거나 닫으면 지워지는지를 본다.
+ *
+ * 호출의 모양은 lib/ai-search-client.test.ts, 상태→화면 매핑은 AiSearchResults.test.tsx 가 이미
+ * 못박았다 — 여기서는 팔레트↔호스트↔훅이 실제로 이어지는지(라이브 호출 없이 fetch 모킹)만 본다.
+ */
+describe('PaletteHost — AI 의미 검색 (N3)', () => {
+  const fetchMock = vi.fn<typeof fetch>();
+
+  function aiResponse(body: AiSearchResponse | { error: string }, status = 200): Response {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  const AI_HIT: AiSearchResponse = {
+    ok: true,
+    source: 'ai',
+    reason: 'ok',
+    results: [{ id: 'a', reason: '문서를 모아 두는 곳입니다' }],
+    tookMs: 812,
+  };
+
+  /** 마이크로태스크(fetch → json → then)를 모두 흘려보낸다. */
+  const flush = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function openAndType(text: string) {
+    fireEvent.click(renderHost().searchTrigger());
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: text } });
+  }
+
+  function pressAi() {
+    // ⌘↵ — 어디에 포커스가 있든 AI 검색이다(팔레트 키 리스너는 window 가 듣는다).
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+  }
+
+  it('⌘↵ 는 typed 질의로 /api/ai-search 를 부른다 (타자만으로는 안 부른다)', () => {
+    fetchMock.mockResolvedValue(aiResponse(AI_HIT));
+    openAndType('문서');
+    // 여기까지(입력 변경만) 로는 호출이 없다.
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    pressAi();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/ai-search');
+    expect(JSON.parse(String(init?.body))).toEqual({ query: '문서' });
+  });
+
+  it('로딩 점 3개가 뜬 뒤 "AI가 의미로 찾은 링크 N건" + 소요 시간으로 바뀐다', async () => {
+    fetchMock.mockResolvedValue(aiResponse(AI_HIT));
+    openAndType('문서');
+
+    pressAi();
+    // 호출이 끝나기 전 — 로딩.
+    expect(screen.getByTestId('ai-loading')).toBeInTheDocument();
+    expect(screen.queryByTestId('ai-hits')).not.toBeInTheDocument();
+
+    await flush();
+
+    expect(screen.queryByTestId('ai-loading')).not.toBeInTheDocument();
+    expect(screen.getByText('AI가 의미로 찾은 링크 1건')).toBeInTheDocument();
+    expect(screen.getByText('0.81초')).toBeInTheDocument();
+    // 실존 링크로 렌더된다 — 키워드 본문에도 같은 링크가 있으니 AI 영역 안으로 좁혀 본다.
+    expect(within(screen.getByTestId('ai-hits')).getByRole('link', { name: /사내 문서함/ })).toBeInTheDocument();
+  });
+
+  it('결과 0건에서의 ↵ 도 AI 를 부르고, 그동안 이름 검색 0건 안내를 감춘다', async () => {
+    fetchMock.mockResolvedValue(aiResponse(AI_HIT));
+    openAndType('존재하지않는말'); // 키워드 0건
+    expect(screen.getByText('이름이 일치하는 링크가 없습니다')).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: 'Enter' }); // 0건이라 ↵ 가 AI 로 샌다
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // AI 가 도는 동안 0건 안내는 감춰진다(aiBusy).
+    expect(screen.queryByText('이름이 일치하는 링크가 없습니다')).not.toBeInTheDocument();
+    expect(screen.getByTestId('ai-loading')).toBeInTheDocument();
+
+    await flush();
+    expect(screen.getByText('AI가 의미로 찾은 링크 1건')).toBeInTheDocument();
+  });
+
+  it('rate-limit 은 "잠시 후 재시도"로 구분해 보여 준다', async () => {
+    fetchMock.mockResolvedValue(
+      aiResponse({ ok: false, source: 'keyword', reason: 'rate-limit', results: [], tookMs: 1 }),
+    );
+    openAndType('문서');
+
+    pressAi();
+    await flush();
+
+    expect(screen.getByText('AI 검색 요청이 많습니다')).toBeInTheDocument();
+    expect(screen.getByText('잠시 후 다시 시도해 주세요')).toBeInTheDocument();
+  });
+
+  it('400/413 등 비200 은 실행 실패 안내로 떨어진다', async () => {
+    fetchMock.mockResolvedValue(aiResponse({ error: 'body 가 너무 큽니다.' }, 413));
+    openAndType('문서');
+
+    pressAi();
+    await flush();
+
+    expect(screen.getByText('AI 검색을 실행하지 못했습니다')).toBeInTheDocument();
+  });
+
+  it('결과가 뜬 뒤 질의를 고치면 지난 AI 결과가 사라진다 (프로토타입 onQ)', async () => {
+    fetchMock.mockResolvedValue(aiResponse(AI_HIT));
+    openAndType('문서');
+    pressAi();
+    await flush();
+    expect(screen.getByText('AI가 의미로 찾은 링크 1건')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '문서함' } });
+
+    expect(screen.queryByText('AI가 의미로 찾은 링크 1건')).not.toBeInTheDocument();
+  });
+
+  it('닫았다 다시 열면 지난 AI 결과가 남아 있지 않다', async () => {
+    fetchMock.mockResolvedValue(aiResponse(AI_HIT));
+    const { searchTrigger } = renderHost();
+    fireEvent.click(searchTrigger());
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '문서' } });
+    pressAi();
+    await flush();
+    expect(screen.getByText('AI가 의미로 찾은 링크 1건')).toBeInTheDocument();
+
+    press('Escape');
+    press('k', { metaKey: true });
+
+    expect(screen.getByRole('textbox')).toHaveValue('');
+    expect(screen.queryByText('AI가 의미로 찾은 링크 1건')).not.toBeInTheDocument();
   });
 });
