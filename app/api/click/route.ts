@@ -32,12 +32,15 @@ export async function POST(request: Request): Promise<Response> {
   if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
 
   // 솔트가 없으면 해시를 만들 수 없다. 임의의 대체값으로 넘어가면 그 순간부터 판정이
-  // 조용히 무력화되므로, 무엇이 비었는지 밝히고 멈춘다(.env.local 의 CLICK_SALT).
+  // 조용히 무력화되므로 멈춘다.
+  //
+  // 응답 본문에는 **어떤 환경변수가 비었는지 적지 않는다** — 공개 엔드포인트라 서버 설정의
+  // 형태를 그대로 알려 줄 이유가 없다. 무엇이 비었는지는 아래 서버 로그가 담당한다.
   const salt = process.env.CLICK_SALT;
   if (salt === undefined || salt.trim() === '') {
     console.error('[api/click] 환경변수 CLICK_SALT 가 비어 있어 클릭을 기록할 수 없습니다.');
 
-    return Response.json({ error: '서버에 CLICK_SALT 가 설정되지 않았습니다.' }, { status: 500 });
+    return Response.json({ error: '서버 설정 오류로 클릭을 기록하지 못했습니다.' }, { status: 500 });
   }
 
   const { bookmarkId, visitorId, isBulk } = parsed.body;
