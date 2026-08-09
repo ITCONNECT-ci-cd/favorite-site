@@ -18,6 +18,7 @@ import {
 } from '@/components/admin/CategoryPanel';
 import { Toaster } from '@/components/Toast';
 import { createCategory, reorderCategories } from '@/lib/mutations';
+import { pendingResult } from '@/test/pending';
 import { setupToastTimers } from '@/test/toast';
 
 vi.mock('@/lib/mutations', () => ({ createCategory: vi.fn(), reorderCategories: vi.fn() }));
@@ -257,12 +258,8 @@ describe('CategoryPanel — 카테고리 추가', () => {
   });
 
   it('요청이 끝날 때까지 추가 버튼을 잠근다 — 같은 이름이 두 번 들어가지 않게', async () => {
-    let finish!: () => void;
-    vi.mocked(createCategory).mockReturnValue(
-      new Promise((resolve) => {
-        finish = () => resolve({ ok: true });
-      }),
-    );
+    const add = pendingResult();
+    vi.mocked(createCategory).mockReturnValue(add.promise);
     renderPanel();
 
     fireEvent.change(nameField(), { target: { value: '리서치' } });
@@ -270,16 +267,15 @@ describe('CategoryPanel — 카테고리 추가', () => {
 
     expect(addButton()).toBeDisabled();
 
-    await act(async () => {
-      finish();
-    });
+    await add.finish();
     expect(addButton()).toBeEnabled();
   });
 
   it('같은 틱에 제출이 두 번 들어와도 요청은 한 번만 나간다', async () => {
     // `disabled` 는 다시 그려진 뒤에야 걸리므로 같은 틱의 두 번째 제출을 막지 못한다
     // (Enter 를 튕기는 키보드·더블클릭). 빗장이 ref 여야 여기서 걸린다.
-    vi.mocked(createCategory).mockReturnValue(new Promise(() => {}));
+    const add = pendingResult();
+    vi.mocked(createCategory).mockReturnValue(add.promise);
     renderPanel();
 
     fireEvent.change(nameField(), { target: { value: '리서치' } });
@@ -289,6 +285,8 @@ describe('CategoryPanel — 카테고리 추가', () => {
     });
 
     expect(createCategory).toHaveBeenCalledTimes(1);
+
+    await add.finish();
   });
 
   it('요청 자체가 거부되면 잠금을 풀고 재시도 문구를 띄운다', async () => {
@@ -433,7 +431,8 @@ describe('CategoryPanel — 드래그 정렬 (DESIGN_SPEC 6장 "draggable 로 �
 
   it('앞선 정렬이 끝나기 전의 두 번째 드롭은 버린다', async () => {
     // 겹쳐 보내면 두 요청이 각각 자기가 본 순서 **전체**를 보내므로 나중 응답이 먼저 것을 덮는다.
-    vi.mocked(reorderCategories).mockReturnValue(new Promise(() => {}));
+    const order = pendingResult();
+    vi.mocked(reorderCategories).mockReturnValue(order.promise);
     renderPanel();
 
     await dragOnto('마케팅', 'AI 도구 모음');
@@ -441,6 +440,8 @@ describe('CategoryPanel — 드래그 정렬 (DESIGN_SPEC 6장 "draggable 로 �
 
     expect(reorderCategories).toHaveBeenCalledTimes(1);
     expect(reorderCategories).toHaveBeenCalledWith(['cat-mkt', 'cat-ai', 'cat-dev']);
+
+    await order.finish();
   });
 });
 

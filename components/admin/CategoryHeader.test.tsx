@@ -18,6 +18,7 @@ import {
 } from '@/components/admin/CategoryPanel';
 import { Toaster } from '@/components/Toast';
 import { deleteCategory, renameCategory } from '@/lib/mutations';
+import { pendingResult } from '@/test/pending';
 import { setupToastTimers } from '@/test/toast';
 
 vi.mock('@/lib/mutations', () => ({
@@ -191,7 +192,8 @@ describe('CategoryHeader — 이름 인라인 수정', () => {
   it('같은 틱에 제출이 두 번 들어와도 요청은 한 번만 나간다', async () => {
     // `disabled` 는 다시 그려진 뒤에야 걸리므로 같은 틱의 두 번째 제출을 막지 못한다
     // (Enter 를 튕기는 키보드). 빗장이 ref 여야 여기서 걸린다.
-    vi.mocked(renameCategory).mockReturnValue(new Promise(() => {}));
+    const save = pendingResult();
+    vi.mocked(renameCategory).mockReturnValue(save.promise);
     renderHeader();
 
     await startRename('AI 도구');
@@ -201,6 +203,28 @@ describe('CategoryHeader — 이름 인라인 수정', () => {
     });
 
     expect(renameCategory).toHaveBeenCalledTimes(1);
+
+    await save.finish();
+  });
+
+  it('보내는 중임을 잠금과 함께 보조기기에도 알린다', async () => {
+    // 흐려지는 모습만으로는 화면을 볼 수 없는 사용자에게 아무 일도 일어나지 않은 것과 같다
+    // (J2 InlineEdit·I3 LinkAddRow 와 같은 짝).
+    const save = pendingResult();
+    vi.mocked(renameCategory).mockReturnValue(save.promise);
+    renderHeader();
+
+    await startRename('AI 도구');
+    await click(button('저장'));
+
+    expect(button('저장')).toBeDisabled();
+    expect(button('저장')).toHaveAttribute('aria-busy', 'true');
+
+    // 거절로 끝내면 줄이 그대로 남아 풀리는 쪽까지 볼 수 있다.
+    await save.finish({ ok: false, error: '같은 이름의 카테고리가 이미 있습니다.' });
+
+    expect(button('저장')).toBeEnabled();
+    expect(button('저장')).toHaveAttribute('aria-busy', 'false');
   });
 
   it('요청 자체가 거부되면 잠금을 풀고 재시도 문구를 띄운다', async () => {
@@ -216,6 +240,7 @@ describe('CategoryHeader — 이름 인라인 수정', () => {
     );
     // 잠긴 채 남으면 저장·취소·Esc 가 전부 막혀 새로고침 말고는 나갈 길이 없다.
     expect(button('저장')).toBeEnabled();
+    expect(button('저장')).toHaveAttribute('aria-busy', 'false');
     expect(nameField()).toHaveValue('AI 도구');
 
     // 빗장(ref)도 함께 풀렸는지 — 같은 자리에서 곧바로 다시 낼 수 있어야 한다.
@@ -292,7 +317,8 @@ describe('CategoryHeader — 카테고리 삭제', () => {
 
   it('같은 틱에 두 번 눌러도 삭제 요청은 한 번만 나간다', async () => {
     // 두 번째 요청은 "카테고리를 찾을 수 없습니다."로 돌아와, 지워 놓고 실패를 말하는 화면이 된다.
-    vi.mocked(deleteCategory).mockReturnValue(new Promise(() => {}));
+    const remove = pendingResult();
+    vi.mocked(deleteCategory).mockReturnValue(remove.promise);
     renderHeader();
 
     await click(button('카테고리 삭제'));
@@ -303,6 +329,23 @@ describe('CategoryHeader — 카테고리 삭제', () => {
     });
 
     expect(deleteCategory).toHaveBeenCalledTimes(1);
+
+    await remove.finish();
+  });
+
+  it('지우는 중임을 잠금과 함께 보조기기에도 알린다', async () => {
+    const remove = pendingResult();
+    vi.mocked(deleteCategory).mockReturnValue(remove.promise);
+    renderHeader();
+
+    await click(button('카테고리 삭제'));
+    await click(button('삭제'));
+
+    expect(button('삭제')).toBeDisabled();
+    expect(button('삭제')).toHaveAttribute('aria-busy', 'true');
+
+    // 풀리는 쪽은 아래 거부 테스트가 본다 — 서버가 답한 경로에서는 확인 줄 자체가 걷힌다.
+    await remove.finish();
   });
 
   it('요청 자체가 거부되면 확인 줄을 열어 둔 채 재시도 문구를 띄운다', async () => {
@@ -318,6 +361,7 @@ describe('CategoryHeader — 카테고리 삭제', () => {
     );
     // 서버가 판단한 결과가 아니라 닿지도 않은 요청이라, 같은 자리에서 그대로 다시 누를 수 있어야 한다.
     expect(button('삭제')).toBeEnabled();
+    expect(button('삭제')).toHaveAttribute('aria-busy', 'false');
 
     vi.mocked(deleteCategory).mockResolvedValue({ ok: true });
     await click(button('삭제'));

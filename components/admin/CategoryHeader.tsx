@@ -279,7 +279,11 @@ function HeaderRow({ category, divided }: { category: AdminCategory; divided: bo
           onChange={(event) => setDraft(event.target.value)}
           className="h-[34px] w-[240px] flex-none rounded-[6px] border-[1.5px] border-ink bg-card px-[10px] text-[15px] font-bold text-ink"
         />
-        <button type="submit" disabled={busy} className={`${SOLID_BUTTON} bg-ink`}>
+        {/* `aria-busy` 는 '눌렀고 지금 처리 중'을 보조 기술에도 알린다 — 흐려지는 모습만으로는
+            화면을 볼 수 없는 사용자에게 아무 일도 일어나지 않은 것과 같다(J2 InlineEdit·I3
+            LinkAddRow·LoginForm 과 같은 짝). 짝인 `취소` 에는 붙이지 않는다: 도는 요청은 저장
+            하나이고, 취소는 그 요청의 주인이 아니라 그동안 잠겨 있을 뿐이다. */}
+        <button type="submit" disabled={busy} aria-busy={busy} className={`${SOLID_BUTTON} bg-ink`}>
           저장
         </button>
         {/* `type="button"` 이어야 한다 — 폼 안의 버튼 기본값은 submit 이라 그대로 두면 취소가 저장이 된다. */}
@@ -307,9 +311,11 @@ function HeaderRow({ category, divided }: { category: AdminCategory; divided: bo
           <p role="alert" className="text-[11.5px] text-desc">
             비어 있는 카테고리만 삭제됩니다. 삭제할까요?
           </p>
+          {/* 위 `저장` 과 같은 짝 — 도는 요청의 주인에게만 `aria-busy` 를 붙인다. */}
           <button
             type="button"
             disabled={busy}
+            aria-busy={busy}
             onClick={() => void remove()}
             className={`${SOLID_BUTTON} ml-auto bg-danger`}
           >
