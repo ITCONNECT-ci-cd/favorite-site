@@ -8,10 +8,16 @@
  * 판정(형식 검증·해시·쿨다운·상한)은 전부 `./logic.ts` 의 순수 함수다.
  * 여기 남은 일은 요청에서 값을 꺼내고, DB 를 두 번 치고, 계약대로 응답하는 것뿐이다.
  *
- * 계약:
- *   200 `{ counted: true }` | `{ counted: false, reason: 'cooldown' | 'daily-cap' }`
- *   400 body 형식 오류
- *   ('rate-limit' 은 4단계 L1 예약 — 지금은 내보내지 않는다)
+ * 계약 (§2.4 + 아래 세부):
+ *   200 `{ counted: true }`
+ *       `{ counted: false, reason: 'cooldown' | 'daily-cap' }`
+ *   400 `{ error: string }`                           — body 형식 오류(비uuid·누락·깨진 본문)
+ *       `{ error: string, code: 'unknown-bookmark' }` — 없는 bookmarkId (아래 insert 분기 참조)
+ *   500 `{ error: string }`                           — CLICK_SALT 부재 · clicks 조회/insert 실패
+ *
+ * **비200 은 모두 `{ error }` 봉투다 — `counted` 가 실리지 않는다.** 소비자는 `res.ok` 로 먼저
+ * 갈라야 하고, 갈래를 구분해야 한다면 `error` 문자열이 아니라 `code` 를 봐라(문구는 바뀔 수 있다).
+ * `reason: 'rate-limit'` 은 4단계 L1 예약 — 지금은 내보내지 않는다.
  *
  * 클라이언트(F3)는 `keepalive: true` 로 던지고 기다리지 않는다. 응답 본문은 진단용이다.
  */
@@ -31,6 +37,12 @@ export async function POST(request: Request): Promise<Response> {
   const parsed = parseClickBody(raw);
   if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
 
+  const { bookmarkId, visitorId, isBulk } = parsed.body;
+  const ip = clientIp(request.headers.get('x-forwarded-for'));
+
+  // ⓘ 4단계 L1 의 "ip 당 분당 30회" rate limit 이 들어올 자리다 — ip 가 정해진 직후이자
+  //   DB 를 치기 전. 초과 시 `{ counted: false, reason: 'rate-limit' }` 을 200 으로 돌린다.
+
   // 솔트가 없으면 해시를 만들 수 없다. 임의의 대체값으로 넘어가면 그 순간부터 판정이
   // 조용히 무력화되므로 멈춘다.
   //
@@ -43,8 +55,7 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: '서버 설정 오류로 클릭을 기록하지 못했습니다.' }, { status: 500 });
   }
 
-  const { bookmarkId, visitorId, isBulk } = parsed.body;
-  const hash = visitorHash(visitorId, clientIp(request.headers.get('x-forwarded-for')), salt);
+  const hash = visitorHash(visitorId, ip, salt);
   const now = new Date();
 
   const supabase = createAdminSupabaseClient();
@@ -78,8 +89,14 @@ export async function POST(request: Request): Promise<Response> {
   if (inserted.error !== null) {
     // 없는 북마크를 가리키는 요청은 서버 고장이 아니라 클라이언트가 낡은 id 를 들고 있는 것이다
     // (북마크 삭제는 clicks 까지 cascade 로 지운다). 500 으로 올리면 진짜 장애에 묻힌다.
+    //
+    // `code` 를 함께 싣는다 — F3 가 이 갈래("낡은 목록이니 새로고침")를 알아보려면 기계가 읽을
+    // 필드가 있어야 한다. 한국어 문구를 파싱하게 두면 문구를 다듬는 순간 조용히 깨진다.
     if (inserted.error.code === FOREIGN_KEY_VIOLATION) {
-      return Response.json({ error: '존재하지 않는 bookmarkId 입니다.' }, { status: 400 });
+      return Response.json(
+        { error: '존재하지 않는 bookmarkId 입니다.', code: 'unknown-bookmark' },
+        { status: 400 },
+      );
     }
 
     console.error('[api/click] clicks insert 실패', inserted.error);

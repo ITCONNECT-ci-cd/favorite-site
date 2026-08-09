@@ -18,7 +18,15 @@ export type ClickBody = {
 
 export type ParseResult = { ok: true; body: ClickBody } | { ok: false; error: string };
 
-/** 계약(§2.4)의 200 응답. `reason` 은 counted:false 일 때만 붙는다. */
+/**
+ * 계약(§2.4)의 200 응답. `reason` 은 counted:false 일 때만 붙는다.
+ *
+ * ⚠️ 클라이언트(F3·G4)가 이 타입을 쓸 거라면 **반드시 `import type` 으로** 가져가라.
+ * 이 모듈은 맨 위에서 `node:crypto` 를 부르므로 값 import 로 적으면 tsconfig 의
+ * `isolatedModules` 때문에 번들러가 런타임 import 로 남겨 브라우저 번들이 깨진다.
+ * (`import type` 은 완전히 지워진다.) 값이 필요해지면 그때 `lib/types.ts` 로 옮겨라 —
+ * 지금은 소비자가 없어 공유 파일을 건드릴 이유가 없다.
+ */
 export type ClickDecision =
   | { counted: true }
   | { counted: false; reason: 'cooldown' | 'daily-cap' };

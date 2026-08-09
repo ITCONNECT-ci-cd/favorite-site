@@ -201,7 +201,7 @@ describe('judgeClick', () => {
     expect(judgeClick(now, today)).toEqual({ counted: false, reason: 'daily-cap' });
   });
 
-  it('상한 직전(9건)까지는 센다', () => {
+  it(`상한 직전(${CLICK_DAILY_CAP - 1}건)까지는 센다`, () => {
     const today = Array.from({ length: CLICK_DAILY_CAP - 1 }, (_, index) =>
       ago(now, CLICK_COOLDOWN_MS + index * 60_000),
     );
