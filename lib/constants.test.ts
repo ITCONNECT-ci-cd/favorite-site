@@ -1,3 +1,4 @@
+/** 공유 계약(계획서 §2.6) 잠금 테스트 — 값 변경은 의존 스토리 전수 확인이 필요하다는 신호. */
 import { describe, expect, it } from 'vitest';
 import {
   BREAKPOINT_NARROW,
