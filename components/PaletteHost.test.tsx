@@ -152,7 +152,7 @@ describe('PaletteHost — 셸이 준 값의 통과', () => {
     expect(screen.getByText('12개 · 파비콘 3개 내장')).toBeInTheDocument();
   });
 
-  it('나머지 헤더 props 도 그대로 흘려보낸다 (isAdmin — 3단계 J1 이 채운다)', () => {
+  it('나머지 헤더 props 도 그대로 흘려보낸다 (isAdmin — J1 이 셸에서 채운다)', () => {
     renderHost({ isAdmin: true });
 
     expect(screen.getByText('관리자 편집 모드')).toBeInTheDocument();

@@ -5,7 +5,7 @@ export type HeaderProps = {
   totalCount: number;
   /** favicon_url을 가진 링크 수. */
   faviconCount: number;
-  /** 관리자 로그인 여부 — 세션 확인·배선은 3단계 J1. */
+  /** 관리자 로그인 여부 — 세션 확인·배선은 J1 이 마쳤다(`app/(public)/layout.tsx`의 `getAdminSession()`). */
   isAdmin?: boolean;
   /**
    * 검색 트리거 클릭 — ⌘K 팔레트를 연다 (G5 PaletteHost).

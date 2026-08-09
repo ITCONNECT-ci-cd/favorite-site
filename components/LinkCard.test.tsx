@@ -440,6 +440,140 @@ describe('LinkCard 관리자 — 연필·휴지통 (J1)', () => {
   });
 });
 
+/**
+ * J1 픽스업. 카드가 J2·J3 에게 열어 주는 **상태 슬롯 둘** — 계획서 5장 3단계 주의 칸의
+ * "LinkCard.tsx의 연필·휴지통 배선(핸들러·상태 슬롯)은 J1 산출물"을 지키는 자리다.
+ *
+ * 두 스토리가 이 파일을 다시 열지 않아야 서로 병렬 안전하므로, 여기서 계약을 못 박는다:
+ * `editSlot` 은 본문+하단 줄을 **교체**하고, `deleteSlot` 은 마지막 자식으로 **덧댄다**.
+ */
+describe('LinkCard 상태 슬롯 (J2·J3 인계)', () => {
+  const PENCIL_PATH = 'M4 20.5h4L20 8.5l-4-4L4 16.5v4z';
+  const TRASH_PATH = 'M6.5 6.5l1 13.5h9l1-13.5';
+
+  const editForm = () => <div data-testid="edit-slot">편집 폼</div>;
+  const deleteOverlay = () => (
+    <div data-testid="delete-slot" className="absolute inset-0 z-[6]">
+      이 링크를 삭제할까요
+    </div>
+  );
+
+  describe('editSlot — 본문 + 하단 줄 교체', () => {
+    it('isEditing + editSlot 이면 본문 블록과 하단 줄이 슬롯으로 바뀐다', () => {
+      renderCard({ isEditing: true, editSlot: editForm() });
+
+      expect(screen.getByTestId('edit-slot')).toBeInTheDocument();
+      // 교체 범위: 이름·설명이 든 본문 앵커 + 주소·클릭 수가 든 하단 줄.
+      expect(screen.queryByRole('link')).not.toBeInTheDocument();
+      expect(screen.queryByText('ChatGPT')).not.toBeInTheDocument();
+      expect(screen.queryByText('AI 대화·문서 초안')).not.toBeInTheDocument();
+      expect(screen.queryByText('chat.openai.com')).not.toBeInTheDocument();
+      expect(screen.queryByText('3')).not.toBeInTheDocument();
+    });
+
+    it('교체해도 상단 줄은 남는다 — 스펙 2-1 이 바꾸라는 것은 본문·하단뿐이다', () => {
+      // 파비콘 타일·체크·핀·연필·휴지통은 편집 중에도 그대로다. 액션 줄을 isEditing 으로
+      // 감추려면 DESIGN_SPEC 2-1 "인라인 편집"부터 고쳐야 한다.
+      renderCard({ isEditing: true, editSlot: editForm(), isAdmin: true, showCheck: true });
+
+      expect(faviconLink()).toBeInTheDocument();
+      expect(checkButton()).toBeInTheDocument();
+      expect(pinButton()).toBeInTheDocument();
+      expect(editButton()).toBeInTheDocument();
+      expect(deleteButton()).toBeInTheDocument();
+    });
+
+    it('editSlot 만 주고 isEditing 이 없으면 무시한다', () => {
+      renderCard({ editSlot: editForm() });
+
+      expect(screen.queryByTestId('edit-slot')).not.toBeInTheDocument();
+      expect(screen.getByText('ChatGPT')).toBeInTheDocument();
+      expect(screen.getByText('chat.openai.com')).toBeInTheDocument();
+    });
+
+    it('isEditing 만 주고 editSlot 이 없으면 본문을 지우지 않는다 (빈 카드 금지)', () => {
+      renderCard({ isEditing: true });
+
+      expect(screen.getByText('ChatGPT')).toBeInTheDocument();
+      expect(screen.getByText('AI 대화·문서 초안')).toBeInTheDocument();
+      expect(screen.getByText('chat.openai.com')).toBeInTheDocument();
+      expect(screen.getByText('3')).toBeInTheDocument();
+    });
+  });
+
+  describe('deleteSlot — 카드 위 오버레이 자리', () => {
+    it('주면 카드 컨테이너의 마지막 자식으로 그린다', () => {
+      const card = renderCard({ deleteSlot: deleteOverlay() });
+
+      expect(card.lastElementChild).toBe(screen.getByTestId('delete-slot'));
+    });
+
+    it('카드는 위치·스타일을 강제하지 않는다 — 준 노드를 그대로 둔다', () => {
+      // `absolute inset-0 z-[6]` 은 스펙 2-1 "삭제 확인"이 오버레이 자신의 것으로 적은 값이라
+      // J3 의 컴포넌트가 갖는다. 카드가 감싸거나 클래스를 얹으면 그 계약이 깨진다.
+      renderCard({ deleteSlot: deleteOverlay() });
+      const overlay = screen.getByTestId('delete-slot');
+
+      expect(overlay).toHaveClass('absolute', 'inset-0', 'z-[6]');
+      expect(overlay.parentElement).toHaveClass('relative', 'overflow-hidden');
+    });
+
+    it('덧대기라서 본문을 지우지 않는다 — 오버레이가 배경으로 덮는다', () => {
+      renderCard({ deleteSlot: deleteOverlay() });
+
+      expect(screen.getByText('ChatGPT')).toBeInTheDocument();
+      expect(screen.getByText('chat.openai.com')).toBeInTheDocument();
+    });
+
+    it('편집 슬롯과 동시에 열려도 서로를 밀어내지 않는다', () => {
+      const card = renderCard({
+        isEditing: true,
+        editSlot: editForm(),
+        deleteSlot: deleteOverlay(),
+      });
+
+      expect(screen.getByTestId('edit-slot')).toBeInTheDocument();
+      expect(card.lastElementChild).toBe(screen.getByTestId('delete-slot'));
+    });
+  });
+
+  describe('슬롯을 쓰지 않은 렌더는 슬롯이 없던 때와 같다', () => {
+    it('카드의 자식은 상단 줄·본문·하단 줄 셋뿐이다 — 빈 슬롯이 노드를 남기지 않는다', () => {
+      // 교체 분기의 프래그먼트도, 비어 있는 deleteSlot 도 DOM 에 아무것도 만들지 않아야 한다.
+      const card = renderCard();
+
+      expect(card.children).toHaveLength(3);
+      expect(card.lastElementChild).toBe(screen.getByText('chat.openai.com').parentElement);
+    });
+
+    it('슬롯 prop 을 비워 넘겨도 마크업 원문이 한 글자도 달라지지 않는다', () => {
+      const plain = renderCard();
+      const withEmptySlots = renderCard({
+        isEditing: false,
+        editSlot: undefined,
+        deleteSlot: undefined,
+      });
+
+      expect(withEmptySlots.outerHTML).toBe(plain.outerHTML);
+    });
+  });
+
+  it('슬롯은 관리자 판정을 건드리지 않는다 — 비관리자 마크업은 여전히 0이다', () => {
+    // 슬롯을 열어 준 것과 연필·휴지통을 그리는 조건은 별개다(README 주의사항 7).
+    const card = renderCard({
+      isEditing: true,
+      editSlot: editForm(),
+      deleteSlot: deleteOverlay(),
+      showCheck: true,
+    });
+
+    expect(screen.queryByRole('button', { name: /수정$/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /삭제$/ })).not.toBeInTheDocument();
+    expect(card.innerHTML).not.toContain(PENCIL_PATH);
+    expect(card.innerHTML).not.toContain(TRASH_PATH);
+  });
+});
+
 describe('LinkCard 수치 (DESIGN_SPEC 2-1)', () => {
   it('컨테이너: relative·overflow hidden·radius 10px·min-h 126px(모바일 104px)·패딩 12px(모바일 10px)', () => {
     const card = renderCard();

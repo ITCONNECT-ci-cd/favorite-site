@@ -8,8 +8,9 @@ import type { SiteData } from '@/lib/types';
 /**
  * 헤더가 받던 것 그대로 + 팔레트가 검색할 한 벌.
  *
- * 헤더 props 를 나열하지 않고 `Omit` 으로 잇는 것은, 3단계 J1 이 `isAdmin` 을 채울 때
- * 셸에서 한 줄만 더하면 되게 하기 위해서다. 빼는 셋은 이 호스트가 직접 채우는 값들이다.
+ * 헤더 props 를 나열하지 않고 `Omit` 으로 잇는다. 그래서 J1 이 `isAdmin` 을 채울 때 셸
+ * (`app/(public)/layout.tsx`)에 `isAdmin={isAdmin}` 한 줄만 더하면 됐고, 이 파일은 손대지
+ * 않았다. 빼는 셋은 이 호스트가 직접 채우는 값들이다.
  */
 export type PaletteHostProps = Omit<HeaderProps, 'onSearchClick' | 'onAiClick' | 'isSearchOpen'> & {
   /** 팔레트가 훑을 데이터 — 셸이 서버에서 읽은 그대로다. */

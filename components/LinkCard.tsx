@@ -1,6 +1,6 @@
 'use client';
 
-import type { MouseEvent } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
 import { CheckIcon, EyeIcon, PencilIcon, PinIcon, TrashIcon } from '@/components/icons';
 import { faviconSrc } from '@/lib/favicon';
 import type { BookmarkWithCount } from '@/lib/types';
@@ -31,6 +31,8 @@ export type LinkCardProps = {
    *
    * J2(`components/card/InlineEdit.tsx`)가 배선할 자리다. 그때 이 카드가 할 일은 콜백을 부르는
    * 것까지이고, '한 번에 한 장만 편집' 같은 규칙은 여러 카드를 아는 화면 쪽이 든다.
+   *
+   * 폼이 **그려질** 자리는 따로 있다 — 아래 `isEditing`·`editSlot`.
    */
   onEdit?: (id: string) => void;
   /**
@@ -39,8 +41,51 @@ export type LinkCardProps = {
    * J3(`components/card/DeleteConfirm.tsx`)가 배선할 자리다. **누르는 즉시 지우지 않는다** —
    * 확인 오버레이를 거치는 것이 이 제품의 규칙이라(DESIGN_SPEC 2-1) 이 콜백은 '삭제'가 아니라
    * '삭제를 묻기'다.
+   *
+   * 그 오버레이가 **그려질** 자리는 따로 있다 — 아래 `deleteSlot`.
    */
   onDelete?: (id: string) => void;
+  /**
+   * 이 카드가 지금 편집 중인가 — **소유자 J2**(`components/card/InlineEdit.tsx`).
+   *
+   * `editSlot` 과 **둘 다** 갖춰졌을 때에만 본문 블록 + 하단 줄이 슬롯으로 **교체**된다.
+   * 하나만 준 경우(플래그만 · 노드만)는 무시하고 평소대로 그린다 — 편집 폼 없이 본문만 사라지는
+   * 반쪽 상태를 만들지 않기 위해서다. 두 값을 한 곳에서 같이 내려보내라.
+   *
+   * 판정도 상태도 이 카드가 갖지 않는다. '한 번에 한 장만 편집' 같은 규칙은 여러 카드를 아는
+   * 화면(HomeView·ListView)이 들고, 카드는 받은 값대로 자리만 바꾼다.
+   */
+  isEditing?: boolean;
+  /**
+   * 편집 폼이 들어갈 자리 — **소유자 J2**(`components/card/InlineEdit.tsx`).
+   *
+   * 교체 범위는 DESIGN_SPEC 2-1 "인라인 편집"이 정한 그대로 **본문 블록 + 하단 줄**이다.
+   * 상단 줄(파비콘 타일 · 체크 · 핀 · 연필 · 휴지통)은 **편집 중에도 그대로 남는다** — 스펙이
+   * 교체 대상으로 적은 것이 그 둘뿐이고, 카드 밖 모달을 쓰지 않는 이상 나가는 길(취소)은
+   * 폼 자신이 들기 때문이다. 액션 줄을 `isEditing` 으로 감추는 변경은 스펙 2-1장을 먼저 고쳐라.
+   *
+   * **병렬 안전 계약**: J2 는 자기 컴포넌트 파일(`components/card/InlineEdit.tsx`)을 만들고
+   * 화면에서 `editSlot={<InlineEdit …/>}` 로 주입하기만 한다. 이 파일(LinkCard.tsx)을 다시
+   * 열 필요가 없다 — 그래야 J3 과 파일이 겹치지 않는다(계획서 5장 3단계 주의 칸).
+   */
+  editSlot?: ReactNode;
+  /**
+   * 삭제 확인 오버레이가 들어갈 자리 — **소유자 J3**(`components/card/DeleteConfirm.tsx`).
+   *
+   * 주면 **카드 컨테이너의 마지막 자식**으로 그대로 렌더한다. 카드는 위치도 크기도 강제하지
+   * 않는다 — 자리만 준다. `position:absolute; inset:0; z-index:6` 은 스펙 2-1 "삭제 확인"이
+   * 오버레이 자신의 것으로 적어 둔 값이라 J3 의 컴포넌트가 갖는다.
+   *
+   * 자식이어야 하는 이유는 컨테이너가 `relative overflow-hidden` 이기 때문이다. 카드 밖에서
+   * 띄우면 기준 상자가 달라져 `inset-0` 이 이 카드를 덮지 않는다.
+   *
+   * 본문을 지우지 않는 것도 스펙대로다 — 오버레이가 배경 `rgba(251,250,248,.97)` 로 덮는다.
+   * 그래서 `editSlot` 과 달리 교체가 아니라 **덧대기**이고, 편집 슬롯과 동시에 열려도 서로를
+   * 밀어내지 않는다.
+   *
+   * **병렬 안전 계약**: J3 도 자기 컴포넌트 파일 + 화면 배선만 한다. LinkCard.tsx 재수정 없음.
+   */
+  deleteSlot?: ReactNode;
   /** 링크를 여는 순간 호출 — F3이 클릭 기록에 배선한다 */
   onOpen?: (id: string) => void;
 };
@@ -130,6 +175,9 @@ export function LinkCard({
   isAdmin = false,
   onEdit,
   onDelete,
+  isEditing = false,
+  editSlot,
+  deleteSlot,
   onOpen,
 }: LinkCardProps) {
   const { id, title, url, description } = bookmark;
@@ -156,6 +204,10 @@ export function LinkCard({
   const isChecked = showCheck && checked;
   // 체크는 즐겨찾기보다 앞선다 — 선택한 카드를 한눈에 구분하는 쪽이 우선이다.
   const border = isChecked ? 'border-ink' : isFaved ? 'border-fav-border' : 'border-card-border';
+
+  // 플래그와 노드가 **둘 다** 있을 때에만 교체한다 — 하나만 온 요청은 무시하고 평소대로 그린다
+  // (isEditing·editSlot JSDoc). 편집 폼이 없는데 본문만 지워지는 빈 카드를 만들지 않기 위해서다.
+  const showEditSlot = isEditing && editSlot !== undefined && editSlot !== null;
 
   return (
     <div className={`${CARD} ${border}`}>
@@ -225,28 +277,40 @@ export function LinkCard({
         </span>
       </div>
 
-      {/* ↓ J2(인라인 편집)가 통째로 교체할 범위: 본문 블록 + 하단 줄 ↓ */}
-      <a {...openLink} className="mt-auto block w-full cursor-pointer">
-        {/* button과 달리 a는 흐름 콘텐츠를 담을 수 있지만, 스펙의 2줄 말줄임
-            (max-height + overflow)만 필요하므로 span + block으로 충분하다. */}
-        <span className="block max-h-[2.6em] overflow-hidden text-[13px] leading-[1.3] font-semibold tracking-[-0.01em] min-[820px]:text-[13.5px]">
-          {title}
-        </span>
-        {description !== null && description !== '' && (
-          <span className="mt-[4px] block max-h-[2.8em] overflow-hidden text-[12px] leading-[1.4] text-desc">
-            {description}
-          </span>
-        )}
-      </a>
+      {/* ↓ J2(인라인 편집)가 통째로 교체하는 범위: 본문 블록 + 하단 줄 ↓
+          교체가 아닐 때 이 프래그먼트는 DOM 에 아무 노드도 만들지 않는다 — 슬롯을 쓰지 않는
+          렌더 결과는 슬롯이 없던 때(b2957ad)와 마크업이 한 글자도 다르지 않아야 한다. */}
+      {showEditSlot ? (
+        editSlot
+      ) : (
+        <>
+          <a {...openLink} className="mt-auto block w-full cursor-pointer">
+            {/* button과 달리 a는 흐름 콘텐츠를 담을 수 있지만, 스펙의 2줄 말줄임
+                (max-height + overflow)만 필요하므로 span + block으로 충분하다. */}
+            <span className="block max-h-[2.6em] overflow-hidden text-[13px] leading-[1.3] font-semibold tracking-[-0.01em] min-[820px]:text-[13.5px]">
+              {title}
+            </span>
+            {description !== null && description !== '' && (
+              <span className="mt-[4px] block max-h-[2.8em] overflow-hidden text-[12px] leading-[1.4] text-desc">
+                {description}
+              </span>
+            )}
+          </a>
 
-      <div className="mt-[5px] flex items-center gap-[8px]">
-        <span className="min-w-0 flex-1 truncate text-[10.5px] text-muted">{hostOf(url)}</span>
-        <span className="flex shrink-0 items-center gap-[4px] text-[11px] font-semibold text-faint">
-          <EyeIcon />
-          {bookmark.click_count}
-        </span>
-      </div>
+          <div className="mt-[5px] flex items-center gap-[8px]">
+            <span className="min-w-0 flex-1 truncate text-[10.5px] text-muted">{hostOf(url)}</span>
+            <span className="flex shrink-0 items-center gap-[4px] text-[11px] font-semibold text-faint">
+              <EyeIcon />
+              {bookmark.click_count}
+            </span>
+          </div>
+        </>
+      )}
       {/* ↑ J2 교체 범위 끝 ↑ */}
+
+      {/* J3(삭제 확인)의 자리 — 카드의 마지막 자식. 스타일도 위치도 얹지 않는다:
+          `absolute inset-0 z-[6]` 은 오버레이 자신의 것이다(deleteSlot JSDoc). */}
+      {deleteSlot}
     </div>
   );
 }
