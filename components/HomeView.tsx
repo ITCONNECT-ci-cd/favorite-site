@@ -1,15 +1,17 @@
 'use client';
 
 import Link from 'next/link';
+import { useState } from 'react';
 
 import { CardGrid } from '@/components/CardGrid';
 import { EmptyBox } from '@/components/EmptyBox';
 import { LinkCard } from '@/components/LinkCard';
 import { SectionHeader } from '@/components/SectionHeader';
+import { InlineEdit } from '@/components/card/InlineEdit';
 import { useCardHandlers } from '@/components/useCardHandlers';
 import { DAILY_TITLE, FAVORITES_TITLE, OPERATING_CATEGORY_NAME } from '@/lib/constants';
 import { pickFavorites } from '@/lib/favorites';
-import type { Category, SiteData } from '@/lib/types';
+import type { BookmarkWithCount, Category, SiteData } from '@/lib/types';
 
 export type HomeViewProps = {
   /** 서버(app/page.tsx)가 getAllData 로 읽어 넘긴 전체 데이터. 두 배열 모두 sort_order 순이다. */
@@ -19,8 +21,14 @@ export type HomeViewProps = {
    *
    * 이 화면은 판정하지 않고 나르기만 한다. 참이면 카드가 연필·휴지통을 **렌더**하고,
    * 거짓이면 그 마크업이 응답에 실리지 않는다(LinkCard 의 isAdmin JSDoc).
+   *
+   * **필수다 — 기본값을 두지 않는다.** 기본값이 있으면 이 화면을 새로 쓰는 서버 컴포넌트가
+   * `getAdminSession()` 배선을 빠뜨려도 아무것도 실패하지 않고 조용히 '관리자 아님'으로 그려진다.
+   * 그 화면에서는 관리자가 로그인해도 연필이 영영 안 나오는데, 테스트도 타입도 알려 주지 않는다
+   * (Header 의 `onSearchClick` 을 필수로 둔 것과 같은 판단이다). 카드(LinkCard)의 같은 이름 prop 은
+   * 반대로 선택이다 — 거기서는 기본값 자체가 안전한 쪽(fail-closed)이고, 카드를 쓰는 자리가 많다.
    */
-  isAdmin?: boolean;
+  isAdmin: boolean;
 };
 
 /** 빈 즐겨찾기 안내 — DESIGN_SPEC 3장의 문구를 그대로 옮긴다. */
@@ -66,12 +74,39 @@ function findOperatingIds(categories: readonly Category[]): { id: string; ids: S
  * 세 섹션이 모두 같은 배선을 쓴다: 즐겨찾기든 관리자가 정한 자리든 클릭 집계 대상인 것은 같다.
  *
  * `isAdmin` 도 세 섹션 모두에 같이 준다 — 관리자가 고칠 수 있는 대상은 '어느 섹션에 놓였는가'와
- * 무관하다. 연필·휴지통이 실제로 무엇을 하는지는 J2·J3 이 채운다(그때 콜백은 이 자리에서 카드로
- * 내려간다 — LinkCard 의 onEdit·onDelete).
+ * 무관하다. 연필이 하는 일(J2 인라인 편집)은 아래 `editingId` 가 들고, 휴지통(J3)은 아직 no-op 이다.
  */
-export function HomeView({ data, isAdmin = false }: HomeViewProps) {
+export function HomeView({ data, isAdmin }: HomeViewProps) {
   const { categories, bookmarks } = data;
   const { favs, handleToggleFav, handleOpen, openMany } = useCardHandlers(bookmarks);
+
+  /**
+   * 지금 편집 중인 카드 (J2). **'동시에 한 장만'은 이 값이 하나뿐이라는 데서 그대로 나온다** —
+   * 다른 카드의 연필을 누르면 id 가 덮여 앞 카드의 폼이 사라진다. 카드는 이 규칙을 모른다
+   * (LinkCard 의 isEditing JSDoc: 판정도 상태도 여러 카드를 아는 화면이 든다).
+   *
+   * 섹션이 셋이어도 상태는 **하나**다. 같은 화면 안에서 섹션을 넘나들어도 폼은 한 장이어야 한다.
+   */
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  /**
+   * 세 섹션이 카드에 똑같이 내려보내는 편집 배선 한 벌. 렌더 지점이 셋이라 여기 모아 둔다 —
+   * 한 곳만 고쳐지면 그 섹션에서만 '한 장만' 규칙이 깨진다.
+   *
+   * 플래그와 노드를 **함께** 넘긴다. 하나만 주면 카드가 무시하도록 되어 있는데(폼 없는 빈 카드
+   * 금지), 그 계약에 기대지 않고 애초에 같은 조건에서 둘 다 만든다.
+   */
+  function editing(bookmark: BookmarkWithCount) {
+    const isEditing = editingId === bookmark.id;
+
+    return {
+      onEdit: setEditingId,
+      isEditing,
+      editSlot: isEditing ? (
+        <InlineEdit bookmark={bookmark} onDone={() => setEditingId(null)} />
+      ) : undefined,
+    };
+  }
 
   // 담은 순서 유지 · 죽은 id 제외는 `/favorites` 와 같은 규칙이라 lib/favorites 의 순수 함수를 쓴다.
   const favItems = pickFavorites(bookmarks, favs);
@@ -114,6 +149,7 @@ export function HomeView({ data, isAdmin = false }: HomeViewProps) {
                 onToggleFav={handleToggleFav}
                 onOpen={handleOpen}
                 isAdmin={isAdmin}
+                {...editing(bookmark)}
               />
             ))}
           </CardGrid>
@@ -139,6 +175,7 @@ export function HomeView({ data, isAdmin = false }: HomeViewProps) {
               showPin={false}
               onOpen={handleOpen}
               isAdmin={isAdmin}
+              {...editing(bookmark)}
             />
           ))}
         </CardGrid>
@@ -169,6 +206,7 @@ export function HomeView({ data, isAdmin = false }: HomeViewProps) {
                 showPin={false}
                 onOpen={handleOpen}
                 isAdmin={isAdmin}
+                {...editing(bookmark)}
               />
             ))}
           </CardGrid>

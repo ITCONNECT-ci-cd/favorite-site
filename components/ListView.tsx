@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import { CardGrid } from '@/components/CardGrid';
 import { EmptyBox } from '@/components/EmptyBox';
 import { LinkCard } from '@/components/LinkCard';
+import { InlineEdit } from '@/components/card/InlineEdit';
 import { useCardHandlers } from '@/components/useCardHandlers';
 import type { BookmarkWithCount } from '@/lib/types';
 
@@ -35,8 +36,14 @@ export type ListViewProps = {
    *
    * 이 화면은 판정하지 않고 나르기만 한다. 참이면 카드가 연필·휴지통을 **렌더**하고,
    * 거짓이면 그 마크업이 응답에 실리지 않는다(LinkCard 의 isAdmin JSDoc).
+   *
+   * **필수다 — 기본값을 두지 않는다.** 기본값이 있으면 이 화면을 새로 쓰는 서버 컴포넌트가
+   * `getAdminSession()` 배선을 빠뜨려도 아무것도 실패하지 않고 조용히 '관리자 아님'으로 그려진다.
+   * 그 화면에서는 관리자가 로그인해도 연필이 영영 안 나오는데, 테스트도 타입도 알려 주지 않는다
+   * (Header 의 `onSearchClick` 을 필수로 둔 것과 같은 판단이다). 카드(LinkCard)의 같은 이름 prop 은
+   * 반대로 선택이다 — 거기서는 기본값 자체가 안전한 쪽(fail-closed)이고, 카드를 쓰는 자리가 많다.
    */
-  isAdmin?: boolean;
+  isAdmin: boolean;
 };
 
 /** 칩 — 12.5px, 패딩 6px 12px, 라운드 7px (DESIGN_SPEC 1장 "칩 6~7px" · 4장). */
@@ -88,7 +95,7 @@ export function ListView({
   subTabs,
   initialSubId = null,
   emptyMessage,
-  isAdmin = false,
+  isAdmin,
 }: ListViewProps) {
   // 핀 토글(D6)·카드 열기(F3)·한 번에 열기(G4)는 홈과 글자 하나까지 같은 배선이라 훅 하나가
   // 들고 있다. `useFavorites` 도 그 안에서 뷰당 한 번만 불린다(lib/favorites.ts 사용 규칙).
@@ -110,6 +117,18 @@ export function ListView({
   const clearChecked = useCallback(() => {
     setChecked((prev) => (prev.size === 0 ? prev : new Set()));
   }, []);
+
+  /**
+   * 지금 편집 중인 카드 (J2). **'동시에 한 장만'은 이 값이 하나뿐이라는 데서 그대로 나온다** —
+   * 다른 카드의 연필을 누르면 id 가 덮여 앞 카드의 폼이 사라진다. 카드는 이 규칙을 모른다
+   * (LinkCard 의 isEditing JSDoc: 판정도 상태도 여러 카드를 아는 화면이 든다).
+   *
+   * 탭을 옮길 때 비우지 않는다 — 체크(`checked`)와 사정이 다르다. 안 보이는 카드의 체크는
+   * '선택 N개 열기'가 실제로 집어 가지만(그래서 비운다), 안 보이는 편집 대상은 아무도 집어 가지
+   * 않는다. 폼은 그 카드가 목록에서 빠지는 순간 함께 사라진다. 프로토타입도 탭 이동에서
+   * `editId` 를 건드리지 않는다.
+   */
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const handleToggleCheck = useCallback((id: string) => {
     setChecked((prev) => {
@@ -241,9 +260,17 @@ export function ListView({
               isFaved={favs.has(bookmark.id)}
               onToggleFav={handleToggleFav}
               onOpen={handleOpen}
-              // 관리자 전용 연필·휴지통 (J1). 눌렀을 때의 동작은 J2·J3 이 채운다 — 그때 콜백
-              // (onEdit·onDelete)이 이 자리에서 카드로 내려간다.
+              // 관리자 전용 연필·휴지통 (J1). 휴지통이 눌렸을 때의 동작은 J3 이 채운다.
               isAdmin={isAdmin}
+              // 연필 → 이 카드의 본문·하단을 편집 폼으로 교체 (J2). 플래그와 노드를 함께 준다 —
+              // 하나만 주면 카드가 무시하도록 되어 있지만(폼 없는 빈 카드 금지) 애초에 어긋나지 않게 한다.
+              onEdit={setEditingId}
+              isEditing={editingId === bookmark.id}
+              editSlot={
+                editingId === bookmark.id ? (
+                  <InlineEdit bookmark={bookmark} onDone={() => setEditingId(null)} />
+                ) : undefined
+              }
             />
           ))}
         </CardGrid>

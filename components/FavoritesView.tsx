@@ -8,8 +8,13 @@ import type { BookmarkWithCount } from '@/lib/types';
 export type FavoritesViewProps = {
   /** 서버(app/favorites/page.tsx)가 getAllData 로 읽어 넘긴 **전체** 북마크 — sort_order 순. */
   bookmarks: BookmarkWithCount[];
-  /** 서버가 관리자 세션을 확인했는가 (J1) — 목록 화면에 그대로 넘긴다. 여기서 판정하지 않는다. */
-  isAdmin?: boolean;
+  /**
+   * 서버가 관리자 세션을 확인했는가 (J1) — 목록 화면에 그대로 넘긴다. 여기서 판정하지 않는다.
+   *
+   * **필수다 — 기본값을 두지 않는다.** 배선을 빠뜨린 화면이 조용히 '관리자 아님'으로 그려지면
+   * 관리자가 로그인해도 연필이 영영 안 나오는데 타입도 테스트도 알려 주지 않는다(ListView 와 같은 판단).
+   */
+  isAdmin: boolean;
 };
 
 /**
@@ -35,7 +40,7 @@ const EMPTY_MESSAGE = '아직 담은 즐겨찾기가 없습니다. 목록에서 
  * 코로케이트 테스트가 없는 것은 의도다 — `app/favorites/page.test.tsx` 가 이 컴포넌트를 통과해
  * 검증하므로 같은 계약을 두 번 적지 마라.
  */
-export function FavoritesView({ bookmarks, isAdmin = false }: FavoritesViewProps) {
+export function FavoritesView({ bookmarks, isAdmin }: FavoritesViewProps) {
   const { favs } = useFavorites();
 
   // 담은 순서 유지 · 죽은 id 제외 — 홈의 즐겨찾기 섹션과 같은 규칙이라 두 화면이 같은 순수 함수를

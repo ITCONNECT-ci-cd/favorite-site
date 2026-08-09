@@ -5,11 +5,12 @@
  * 카드 내부 DOM(열기 영역이 버튼인지 앵커인지 등)에는 기대지 않는다 — 카드는 C2 의 계약대로
  * 제목을 그리고, 여기서는 '어떤 카드가 몇 장 보이는가'만 본다.
  */
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ListView, type ListViewProps } from '@/components/ListView';
 import { Toaster } from '@/components/Toast';
 import { recordClick } from '@/lib/clicks';
+import { updateBookmark } from '@/lib/mutations';
 import type { BookmarkWithCount } from '@/lib/types';
 import { middleClick } from '@/test/events';
 import { setFavs, storedFavs } from '@/test/favs';
@@ -24,6 +25,12 @@ vi.mock('@/lib/clicks', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/clicks')>()),
   recordClick: vi.fn(),
 }));
+
+/**
+ * 쓰기 서버 액션(J2 인라인 편집)도 갈아 끼운다 — 액션의 검사·문구는 `lib/mutations.test.ts` 몫이고,
+ * 여기서는 이 화면이 어느 링크에 무엇을 보내는지만 본다.
+ */
+vi.mock('@/lib/mutations', () => ({ updateBookmark: vi.fn() }));
 
 function makeBookmark(
   over: Partial<BookmarkWithCount> & Pick<BookmarkWithCount, 'id'>,
@@ -61,6 +68,8 @@ function renderList(props: Partial<ListViewProps> = {}) {
     title: 'AI 도구 모음',
     bookmarks: BOOKMARKS,
     emptyMessage: '이 분류에 링크가 없습니다.',
+    // 필수 prop 이라 기본값을 여기서 명시한다 — 관리자 화면을 보는 테스트만 true 로 덮는다.
+    isAdmin: false,
     ...props,
   };
 
@@ -774,5 +783,89 @@ describe('ListView — 관리자 편집 노출 (J1)', () => {
 
     expect(edits()).toHaveLength(1);
     expect(deletes()).toHaveLength(1);
+  });
+});
+
+/**
+ * J2. 카드 인라인 편집 — 목록 화면(카테고리·즐겨찾기·매일)의 카드 렌더 지점 한 곳에 배선한다.
+ *
+ * 폼 자체(필드 구성·수치·저장 실패 처리)는 `components/card/InlineEdit.test.tsx` 가 고정한다.
+ * 여기서 보는 것은 화면의 몫 — **어느 카드가 폼으로 바뀌는가**와 **동시에 한 장만**인가다.
+ */
+describe('ListView — 카드 인라인 편집 (J2)', () => {
+  const pencil = (title: string) => screen.getByRole('button', { name: `${title} 수정` });
+  const forms = () => screen.queryAllByRole('form');
+  const field = (name: string) => screen.getByRole('textbox', { name });
+  const button = (name: string) => screen.getByRole('button', { name });
+
+  beforeEach(() => {
+    vi.mocked(updateBookmark).mockReset();
+    vi.mocked(updateBookmark).mockResolvedValue({ ok: true });
+  });
+
+  it('연필을 누르면 그 카드의 본문·하단이 편집 폼으로 바뀐다', () => {
+    renderList({ isAdmin: true });
+
+    fireEvent.click(pencil('대화A'));
+
+    expect(screen.getByRole('form', { name: '대화A 편집' })).toBeInTheDocument();
+    expect(field('이름')).toHaveValue('대화A');
+    // 교체 범위는 본문 + 하단 줄이다 — 그 카드의 열기 앵커만 사라지고 나머지 카드는 그대로다.
+    expect(screen.queryByRole('link', { name: '대화A' })).not.toBeInTheDocument();
+    expect(openLink('대화B')).toBeInTheDocument();
+    // 상단 액션 줄은 남는다(LinkCard J1 계약).
+    expect(pencil('대화A')).toBeInTheDocument();
+    expect(check('대화A')).toBeInTheDocument();
+  });
+
+  it('다른 카드의 연필을 누르면 앞 카드의 폼이 닫힌다 — 동시에 한 장만', () => {
+    renderList({ isAdmin: true });
+
+    fireEvent.click(pencil('대화A'));
+    fireEvent.click(pencil('영상A'));
+
+    expect(forms()).toHaveLength(1);
+    expect(screen.getByRole('form', { name: '영상A 편집' })).toBeInTheDocument();
+    expect(openLink('대화A')).toBeInTheDocument();
+  });
+
+  it('저장에 성공하면 그 링크의 patch 를 보내고 폼이 닫힌다', async () => {
+    renderList({ isAdmin: true });
+
+    fireEvent.click(pencil('대화A'));
+    fireEvent.change(field('한 줄 설명'), { target: { value: '고친 설명' } });
+    await act(async () => {
+      fireEvent.click(button('저장'));
+    });
+
+    expect(updateBookmark).toHaveBeenCalledWith('대화A', { description: '고친 설명' });
+    expect(forms()).toHaveLength(0);
+    expect(openLink('대화A')).toBeInTheDocument();
+  });
+
+  it('취소하면 아무것도 보내지 않고 폼이 닫힌다', () => {
+    renderList({ isAdmin: true });
+
+    fireEvent.click(pencil('대화A'));
+    fireEvent.click(button('취소'));
+
+    expect(updateBookmark).not.toHaveBeenCalled();
+    expect(forms()).toHaveLength(0);
+  });
+
+  it('하위 탭으로 좁혀 그 카드가 빠지면 폼도 함께 사라진다', () => {
+    renderList({ isAdmin: true, subTabs: SUB_TABS });
+
+    fireEvent.click(pencil('대화A'));
+    fireEvent.click(chip('영상 1'));
+
+    expect(forms()).toHaveLength(0);
+  });
+
+  it('비관리자 화면에는 폼을 여는 길이 없다', () => {
+    renderList();
+
+    expect(screen.queryAllByRole('button', { name: /.+ 수정$/ })).toHaveLength(0);
+    expect(forms()).toHaveLength(0);
   });
 });
