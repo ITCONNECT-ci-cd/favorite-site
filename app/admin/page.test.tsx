@@ -127,6 +127,19 @@ describe('AdminPage — 카테고리 · 링크 (I1 2단)', () => {
     // 하위 개수는 그 하위에 달린 링크 수다 (bm-2 · bm-3).
     expect(within(subRow).getByText('2개')).toBeInTheDocument();
   });
+
+  /**
+   * I3 — 링크 추가 줄은 헤더 패널 **다음 상자**이고, 선택 상태를 헤더와 함께 본다(prop 이 아니다).
+   * 줄이 무엇을 하는지는 `components/admin/LinkAddRow.test.tsx` 가 본다.
+   */
+  it('헤더 패널 다음 상자로 링크 추가 줄이 선다', async () => {
+    render((await AdminPage()) as ReactElement);
+
+    const linkBox = screen.getByRole('region', { name: '링크' });
+
+    expect(headerPanel().compareDocumentPosition(linkBox)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(within(linkBox).getByRole('button', { name: '‘AI 도구 모음’에 추가' })).toBeInTheDocument();
+  });
 });
 
 /** K2·M2 가 통째로 교체할 자리다. 탭이 404 가 되지 않도록 자리만 잡아 둔다. */

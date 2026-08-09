@@ -1,0 +1,231 @@
+'use client';
+
+import { useId, useState, type FormEvent, type ReactNode } from 'react';
+
+import { useSelectedCategory } from '@/components/admin/CategoryPanel';
+import { toast } from '@/components/Toast';
+import { collectFavicon, type FaviconResult } from '@/lib/favicon-collect';
+import { createBookmark, type ActionResult } from '@/lib/mutations';
+import { hostOf } from '@/lib/url';
+
+/** 줄 — 프로토타입 원문 `display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:12px 16px`. */
+const ROW = 'flex flex-wrap items-center gap-[8px] px-[16px] py-[12px]';
+
+/** 세 입력의 공통 몸통 — 높이 32px, 라운드 6px, 좌우 10px, 12.5px (프로토타입 362–364행). */
+const FIELD = 'h-[32px] rounded-[6px] border border-border-strong bg-card px-[10px] text-[12.5px] text-ink';
+
+/** 검은 확정 버튼 — 높이 32px, 좌우 14px. 줄바꿈을 막는 것은 flex-wrap 줄에서 라벨이 길기 때문이다. */
+const BUTTON =
+  'flex h-[32px] flex-none items-center rounded-[6px] bg-ink px-[14px] text-[12px] font-semibold whitespace-nowrap text-white hover:bg-ink-hover disabled:opacity-60';
+
+/**
+ * 요청 자체가 **거부됐을 때** 보여 줄 문구 — 아래 `submit` 의 catch.
+ *
+ * `lib/mutations.ts` 의 `RETRY_LATER` 와 같은 문장을 한 벌 더 적었다. 그 파일은 `'use server'` 라
+ * **상수를 내보낼 수 없다**(export 는 전부 async 함수여야 한다). 저쪽 문구를 고치면 여기도
+ * 함께 고쳐라 — `components/card/InlineEdit.tsx` 도 같은 이유로 같은 문장을 들고 있다.
+ */
+const REQUEST_FAILED = '저장하지 못했습니다. 잠시 후 다시 시도해 주세요.';
+
+/** 파비콘 수집 **요청 자체가** 거부된 경우. 서버가 준 사유가 없으니 여기서 한 문장을 만든다. */
+const FAVICON_REQUEST_FAILED = '파비콘을 가져오지 못했습니다.';
+
+/**
+ * 링크 추가 줄 — DESIGN_SPEC 6장, 프로토타입 359–366행.
+ *
+ * 주소·이름·설명 세 칸과 "‘○○’에 추가" 버튼 하나다. 어디에 넣을지는 prop 이 아니라 좌측 패널과
+ * 공유하는 선택 상태에서 온다(`useSelectedCategory`).
+ *
+ * ## 등록 한 번의 순서 — 파비콘 먼저, 그다음 행 하나
+ *
+ * `collectFavicon(url)` → `createBookmark({ ..., faviconUrl })` 다. 행을 먼저 만들면 파비콘을
+ * 채우려고 한 번 더 써야 하고(그사이 화면에는 회색 타일이 스친다), 무엇보다 `createBookmark` 는
+ * insert 전에 `favicon_url` 을 받도록 만들어져 있다(lib/mutations.ts "favicon_url 계약").
+ *
+ * **파비콘 실패는 등록을 막지 않는다.** 카드는 `favicon_url = null` 을 회색 타일로 그리므로
+ * (lib/favicon.ts), 못 구했으면 그 사실만 알림에 덧붙이고 등록은 그대로 간다.
+ *
+ * ## 문구는 서버가 정한다
+ *
+ * 주소 검증(http/https)·이름 자동 채움(`hostOf`)은 `createBookmark` 가 한다. 이 줄은 같은 규칙을
+ * **미리 보여 주기만** 한다 — 이름 칸의 placeholder 가 "비우면 perplexity.ai" 로 바뀌는 것이
+ * 그것이고, 거절 문구는 서버가 준 것을 그대로 토스트에 넣는다(화면이 한 벌 더 적으면 조용히 갈라진다).
+ * 프로토타입은 자기 정규식으로 "https:// 로 시작하는 주소를 넣어주세요" 를 직접 띄웠지만,
+ * 이제 판정하는 곳이 서버라 그 문장은 서버 것을 쓴다. 자동 이름도 프로토타입은 `host.split('.')[0]`
+ * (= `perplexity`)이었으나 서버 규칙인 `hostOf`(= `perplexity.ai`)를 따른다.
+ *
+ * ## 상자를 이 컴포넌트가 갖는다 (I4·I5 와의 계약)
+ *
+ * 프로토타입에서 흰 상자 하나가 **추가 줄 + 필터 줄 + 링크 표**를 함께 담는다(359–412행). 그래서
+ * 상자는 여기 있고, 필터 줄(I5)·표(I4)는 `children` 으로 들어와 추가 줄 **아래**에 붙는다
+ * (`components/admin/CategoryHeader.tsx` 가 I2 에 대해 하는 것과 같은 모양). 추가 줄의 아래
+ * 구분선은 그 아래에 무언가 붙을 때만 그린다.
+ *
+ * 카테고리가 하나도 없으면 **아무것도 그리지 않는다** — 등록할 곳이 없고, 무엇을 하면 되는지는
+ * 바로 위 헤더 패널이 이미 알린다. 카테고리가 없으면 링크도 없으므로 children 도 그릴 것이 없다.
+ */
+export function LinkAddRow({ children }: { children?: ReactNode }) {
+  const { selected } = useSelectedCategory();
+  const labelId = useId();
+
+  const [url, setUrl] = useState('');
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  /** 등록 요청이 나가 있는 동안 — 같은 링크가 두 번 들어가는 것을 막는 빗장이다. */
+  const [busy, setBusy] = useState(false);
+
+  if (selected === null) return null;
+
+  /**
+   * 위 관문을 지난 뒤의 선택. 이름을 새로 잡는 이유는 타입 때문이다 — 아래 `submit` 은 함수
+   * 선언이라 TypeScript 가 "그 전에 불릴 수도 있다"고 보아 좁혀진 타입을 물려주지 않는다.
+   */
+  const category = selected;
+
+  /** 이름 칸을 비웠을 때 서버가 채울 이름. 주소가 아직 주소 꼴이 아니면 `null`. */
+  const autoTitle = autoTitleOf(url);
+
+  async function submit(): Promise<void> {
+    if (busy) return;
+
+    // 빈 주소는 서버까지 가지 않는다(프로토타입 `if (!url) return` 과 같은 자리) — 아무것도 적지
+    // 않고 누른 사람에게는 오류가 아니라 "아직 아무 일도 없음"이 맞다. 형식이 틀린 주소는
+    // 여기서 막지 않는다: 그 판정과 문구는 서버 하나가 갖는다.
+    const cleanUrl = url.trim();
+    if (cleanUrl === '') return;
+
+    const cleanTitle = title.trim();
+    const cleanDescription = description.trim();
+    const shownTitle = cleanTitle === '' ? hostOf(cleanUrl) : cleanTitle;
+
+    setBusy(true);
+
+    const favicon = await collect(cleanUrl);
+
+    let result: ActionResult;
+    try {
+      result = await createBookmark({
+        url: cleanUrl,
+        title: cleanTitle === '' ? undefined : cleanTitle,
+        description: cleanDescription === '' ? undefined : cleanDescription,
+        categoryId: category.id,
+        faviconUrl: favicon.ok ? favicon.faviconUrl : undefined,
+      });
+    } catch (error) {
+      // 액션이 **거부로 끝난** 경우다(네트워크 단절, 배포로 액션 id 가 바뀜 등). 잡지 않으면
+      // 빗장이 선 채로 남아 이 줄이 통째로 잠긴다 — 나갈 길이 새로고침뿐인 화면이 된다.
+      console.error('[LinkAddRow] 링크 추가 요청이 거부됐다', error);
+      setBusy(false);
+      toast(REQUEST_FAILED);
+
+      return;
+    }
+
+    setBusy(false);
+
+    if (!result.ok) {
+      // 적은 것은 지우지 않는다 — 거절 사유를 보고 이어서 고칠 값이다.
+      toast(result.error);
+
+      return;
+    }
+
+    setUrl('');
+    setTitle('');
+    setDescription('');
+    // 프로토타입 `say(title + ' 추가됨 · ' + g)`. 파비콘을 못 구했으면 그 한 마디를 덧붙인다 —
+    // 토스트는 한 번에 하나뿐이라 두 번 띄우면 앞엣것이 지워진다(components/Toast.tsx).
+    toast(
+      favicon.ok
+        ? `${shownTitle} 추가됨 · ${category.name}`
+        : `${shownTitle} 추가됨 · ${category.name} — ${favicon.error}`,
+    );
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>): void {
+    event.preventDefault(); // 폼 제출로 페이지가 이동하는 것을 막는다.
+    void submit();
+  }
+
+  return (
+    <section
+      aria-label="링크"
+      className="overflow-hidden rounded-[9px] border border-border bg-card"
+    >
+      {/* 폼으로 낸다 — 어느 칸에서든 Enter 가 곧 추가다(프로토타입 `onNewLinkKey`). keydown 을
+          직접 듣지 않는 이유는 조합 입력(IME)이다: 한글을 확정하는 Enter 로 등록이 일어나면
+          안 되는데, 그 판정은 브라우저가 이미 한다(CategoryPanel·InlineEdit 과 같은 근거). */}
+      <form
+        aria-labelledby={labelId}
+        onSubmit={handleSubmit}
+        className={`${ROW} ${children === undefined ? '' : 'border-b border-border'}`}
+      >
+        <span id={labelId} className="w-[56px] flex-none text-[11.5px] font-bold text-ink">
+          링크 추가
+        </span>
+
+        {/* placeholder 는 값이 들어가면 사라져 이름 역할을 못 하므로 접근성 이름을 따로 준다
+            (프로토타입에는 눈에 보이는 라벨 줄이 없다 — 맨 앞 '링크 추가'가 줄 전체의 이름이다). */}
+        <input
+          aria-label="주소"
+          placeholder="https://"
+          value={url}
+          onChange={(event) => setUrl(event.target.value)}
+          className={`${FIELD} min-w-[200px] flex-[1_1_220px]`}
+        />
+        <input
+          aria-label="이름"
+          /* 비워 두면 무엇이 들어갈지 이 자리에서 미리 보여 준다. 값을 적는 순간 사라지지만,
+             그때는 미리보기가 필요 없다 — 사람이 이름을 정한 뒤다. */
+          placeholder={autoTitle === null ? '이름 (비우면 주소에서)' : `이름 (비우면 ${autoTitle})`}
+          value={title}
+          onChange={(event) => setTitle(event.target.value)}
+          className={`${FIELD} w-[180px] flex-none`}
+        />
+        <input
+          aria-label="한 줄 설명"
+          placeholder="한 줄 설명"
+          value={description}
+          onChange={(event) => setDescription(event.target.value)}
+          className={`${FIELD} min-w-[180px] flex-[1_1_200px]`}
+        />
+
+        <button type="submit" disabled={busy} className={BUTTON}>
+          ‘{category.name}’에 추가
+        </button>
+      </form>
+      {children}
+    </section>
+  );
+}
+
+/**
+ * 파비콘을 구해 온다. **거부는 여기서 실패로 접는다** — 파비콘 한 장 때문에 등록 전체가
+ * 멈추면 안 되고, 잡지 않으면 `submit` 이 거부로 끝나 빗장이 선 채 남는다.
+ */
+async function collect(url: string): Promise<FaviconResult> {
+  try {
+    return await collectFavicon(url);
+  } catch (error) {
+    console.error('[LinkAddRow] 파비콘 수집 요청이 거부됐다', error);
+
+    return { ok: false, error: FAVICON_REQUEST_FAILED };
+  }
+}
+
+/**
+ * 이름 칸을 비웠을 때 서버가 채울 이름(`createBookmark` → `hostOf`). 주소가 http/https 로
+ * 해석되지 않으면 `null` — 그때는 서버도 이 주소를 거절하므로 미리 보여 줄 이름이 없다.
+ */
+function autoTitleOf(url: string): string | null {
+  const clean = url.trim();
+
+  try {
+    const parsed = new URL(clean);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+
+    return hostOf(clean);
+  } catch {
+    return null;
+  }
+}

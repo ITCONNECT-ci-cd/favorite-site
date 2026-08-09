@@ -4,6 +4,7 @@ import {
   SelectedCategoryProvider,
   type AdminCategory,
 } from '@/components/admin/CategoryPanel';
+import { LinkAddRow } from '@/components/admin/LinkAddRow';
 import {
   SubCategoryRow,
   type AdminSubCategory,
@@ -66,8 +67,12 @@ export default async function AdminPage() {
             <SubCategoryRow subsByCategory={subRows(categories, bookmarks)} />
           </CategoryHeader>
 
-          {/* 여기부터는 헤더 패널 **다음 상자**다(프로토타입 359행부터):
-              I3 링크 추가 줄 · I5 필터 줄 · I4 표 헤더와 행. 순서대로 이 자리에 붙인다. */}
+          {/* 헤더 패널 **다음 상자**다(프로토타입 359행부터). 상자는 `LinkAddRow` 가 갖고,
+              필터 줄(I5)·링크 표(I4)는 그 `children` 으로 들어와 추가 줄 아래에 붙는다
+              (그쪽 JSDoc "I4·I5 와의 계약" — 위 `CategoryHeader` 와 같은 모양이다).
+              여기서도 조건부로 넘기지 마라: 구분선 판정이 `!== undefined` 라 `false` 가
+              들어가면 아무것도 없는 아래에 선만 남는다. */}
+          <LinkAddRow />
         </div>
       </SelectedCategoryProvider>
     </main>
