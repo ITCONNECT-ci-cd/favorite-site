@@ -31,6 +31,11 @@
 --      이 겹은 0002 마이그레이션 적용 여부와 무관하게 성립한다 — 함수가 스스로 신원을 본다.
 --   3) **앱 겹** — `lib/stats.ts` 가 rpc 전에 `getAdminSession()` 으로 한 번 더 거른다.
 --
+-- 여기에 더해 각 definer 함수는 `set search_path = public, pg_temp` 로 검색 경로를 고정한다.
+-- `pg_temp` 를 **맨 끝**에 두는 게 핵심이다: 세션 소유자가 `pg_temp.clicks` 같은 임시 테이블을
+-- 만들어 관계 검색을 가로채(temp table shadowing) definer 함수가 그걸 보게 하는 걸 막는다 —
+-- pg_temp 가 마지막이라 실제 `public.clicks` 가 항상 먼저 잡힌다(defense-in-depth, 삼중 겹과 별개).
+--
 -- visitor_hash 원본은 어떤 함수도 반환하지 않는다 — 순위는 `count(distinct visitor_hash)`(수)만
 -- 돌려주고 해시 값 자체는 결과 밖으로 나가지 않는다.
 --
@@ -60,7 +65,7 @@
 create or replace function public.assert_admin_stats() returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, pg_temp
 as $$
 begin
   if lower(coalesce(auth.jwt() ->> 'email', '')) <> 'contact@itconnect.dev' then
@@ -78,7 +83,7 @@ create or replace function public.admin_stats_kpi()
 returns table (total_clicks int, today_clicks int, unused_links int)
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, pg_temp
 as $$
 begin
   perform public.assert_admin_stats();
@@ -102,16 +107,24 @@ grant  execute on function public.admin_stats_kpi() to authenticated;
 
 -- ── ② 일별 추이 ────────────────────────────────────────────────────────────
 -- 최근 `days` 일(오늘 포함)의 일별 bulk 제외 클릭 수. 클릭이 없는 날도 0 행으로 채워
--- K2 가 빈 자리 없이 막대를 그릴 수 있게 한다. days 는 래퍼가 14·30·90·180·365 로 제한한다.
+-- K2 가 빈 자리 없이 막대를 그릴 수 있게 한다. days 는 14·30·90·180·365 로 제한한다 —
+-- 래퍼(lib/stats.ts)와 함수 본문이 둘 다 화이트리스트로 막는다(rpc 직접 호출 방어).
 create or replace function public.admin_stats_daily(days int)
 returns table (day date, clicks int)
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, pg_temp
 as $$
 #variable_conflict use_column
 begin
   perform public.assert_admin_stats();
+
+  -- days 화이트리스트 이중화(defense-in-depth): 앱은 lib/stats.ts 의 STATS_PERIODS 로 이미
+  -- 막지만, rpc 를 직접 부르면 임의 값이 들어와 거대한 generate_series 를 돌릴 수 있다.
+  -- 여기 값 5종은 STATS_PERIODS(14·30·90·180·365)와 반드시 같아야 한다 — 한쪽만 바꾸면 어긋난다.
+  if days not in (14, 30, 90, 180, 365) then
+    raise exception '허용되지 않은 기간입니다: %', days using errcode = '22023';
+  end if;
 
   return query
   with span as (
@@ -159,7 +172,7 @@ returns table (
 )
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, pg_temp
 as $$
 #variable_conflict use_column
 begin
@@ -197,7 +210,7 @@ create or replace function public.admin_stats_by_category()
 returns table (category_id uuid, category_name text, clicks int)
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, pg_temp
 as $$
 #variable_conflict use_column
 begin
@@ -212,7 +225,14 @@ begin
     select a.cat_id, p.id, p.parent_id
     from ancestry a
     join categories p on p.id = a.parent_id
-  ),
+  )
+  -- 사이클 가드(defense-in-depth): 0001 스키마엔 A.parent=B, B.parent=A 같은 순환을
+  -- 막는 CHECK 가 없어 관리자 UPDATE 로 만들 수 있다. 그 경로가 생기면 위 재귀가 같은
+  -- node_id 를 무한히 되짚어 함수가 hang 한다. PG14+ CYCLE 절이 이미 지나온 node_id 를
+  -- 만나면(경로별로) 그 가지의 확장을 멈춘다 — is_cycle/path 두 컬럼은 추가되지만 아래
+  -- root_of 는 컬럼을 명시 선택하므로 결과는 그대로다. 순환뿐인 카테고리는 parent_id 가
+  -- null 인 조상이 없어 root_of 에서 자연히 빠진다(그 클릭은 어디에도 세지 않는다 — 고아 규칙).
+  cycle node_id set is_cycle using path,
   root_of as (
     -- parent_id 가 null 이 되는 지점이 그 카테고리의 최상위 조상이다.
     select cat_id, node_id as root_id from ancestry where parent_id is null
@@ -243,7 +263,7 @@ create or replace function public.admin_stats_recent(limit_n int default 14)
 returns table (id bigint, bookmark_id uuid, title text, url text, favicon_url text, clicked_at timestamptz)
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, pg_temp
 as $$
 #variable_conflict use_column
 begin
