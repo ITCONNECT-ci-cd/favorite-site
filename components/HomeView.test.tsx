@@ -1,4 +1,4 @@
-/** D2. 홈 화면 — DESIGN_SPEC 3장(섹션 3개 + 하단 안내). */
+/** D2. 홈 화면 — DESIGN_SPEC 3장(섹션 3개). */
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -14,7 +14,7 @@ import RAW_LINKS from '@/docs/data/links.json';
 /**
  * fixture 는 실제 `docs/data/links.json` 을 B3 의 `buildSeed` 로 돌려 만든다(B3·D1 관례).
  * 손으로 적은 숫자가 아니라 시드가 DB 에 넣을 바로 그 형태라, 화면에 적히는 실측치
- * (매일 12 · 운영 중 16 · 나머지 262)가 시드와 어긋나면 여기서 먼저 깨진다.
+ * (매일 12 · 운영 중 16)가 시드와 어긋나면 여기서 먼저 깨진다.
  *
  * 읽기는 fs 가 아니라 import 로 한다 — D1 테스트의 `import.meta.url` 방식은 jsdom 환경에서
  * 쓸 수 없고(jsdom 이 페이지 URL 로 바꾼다) `process.cwd()` 는 실행 위치에 기댄다.
@@ -107,6 +107,12 @@ describe('HomeView — 섹션 구성', () => {
     render(<HomeView data={DATA} />);
 
     expect(screen.getByRole('main')).toHaveClass('flex', 'flex-col', 'gap-[26px]');
+  });
+
+  it('스펙 3장의 하단 안내 박스는 두지 않는다 (계획서 V6 편차 — 사용자 결정)', () => {
+    render(<HomeView data={DATA} />);
+
+    expect(screen.queryByText(/왼쪽 사이드바에서 분류별로/)).not.toBeInTheDocument();
   });
 
   it('홈에서는 체크 아이콘을 쓰지 않는다 (목록 화면 전용)', () => {
@@ -378,37 +384,5 @@ describe('HomeView — 핀 토글 (D6)', () => {
     expect(pins('내 즐겨찾기')).toHaveLength(3);
     expect(pins('매일 사용하는 사이트')).toHaveLength(0);
     expect(pins('현재 운영 중인 사이트')).toHaveLength(0);
-  });
-});
-
-describe('HomeView — 하단 안내', () => {
-  it('사이드바로 넘긴 나머지 개수를 적는다 (290 - 매일 12 - 운영 중 16)', () => {
-    render(<HomeView data={DATA} />);
-
-    expect(
-      screen.getByText(
-        '나머지 262개는 왼쪽 사이드바에서 분류별로 들어갑니다. 홈에는 즐겨찾기와 매일 사용하는 사이트, 현재 운영 중인 사이트를 둡니다.',
-      ),
-    ).toBeInTheDocument();
-  });
-
-  it('빈 즐겨찾기 안내(EmptyBox)와 값이 다르다 — 라운드 9px · 패딩 14px 16px · line-height 1.7', () => {
-    render(<HomeView data={DATA} />);
-
-    const notice = screen.getByText(/^나머지 262개는/);
-
-    expect(notice).toHaveClass(
-      'rounded-[9px]',
-      'border-dashed',
-      'border-dash',
-      'bg-side',
-      'px-[16px]',
-      'py-[14px]',
-      'text-[11.5px]',
-      'leading-[1.7]',
-      'text-desc',
-    );
-    // EmptyBox 를 재사용하면 따라붙는 값들 — 여기서는 나오면 안 된다.
-    expect(notice).not.toHaveClass('rounded-[10px]', 'p-[16px]', 'leading-[1.6]');
   });
 });

@@ -17,7 +17,7 @@ export type HomeViewProps = {
   data: SiteData;
 };
 
-/** 빈 즐겨찾기 안내 · 하단 안내 — DESIGN_SPEC 3장의 문구를 그대로 옮긴다. */
+/** 빈 즐겨찾기 안내 — DESIGN_SPEC 3장의 문구를 그대로 옮긴다. */
 const EMPTY_FAVS_TEXT =
   '다른 화면에서 카드 오른쪽 위의 핀을 누르면 이 자리에 모입니다. 매일 사용하는 사이트와 달리 내가 직접 담고 빼는 목록입니다.';
 
@@ -47,7 +47,10 @@ function findOperatingIds(categories: readonly Category[]): { id: string; ids: S
 
 /**
  * 홈 — DESIGN_SPEC 3장. 섹션 세 개(내 즐겨찾기 · 매일 사용하는 사이트 · 현재 운영 중인 사이트)를
- * 위에서 아래로 두고 마지막에 하단 안내를 붙인다.
+ * 위에서 아래로 둔다.
+ *
+ * 스펙 3장 "하단 안내"(`나머지 N개는 왼쪽 사이드바에서…` 점선 박스)는 **의도적으로 빼 둔 것**이다
+ * (계획서 V6 편차 — 사용자 결정). 스펙만 보고 되살리지 마라.
  *
  * 즐겨찾기는 브라우저에만 있으므로 뷰 전체가 클라이언트 컴포넌트다. `useFavorites` 는 여기서
  * **한 번만** 부르고 카드에는 계산된 값을 내린다 — 카드마다 부르면 렌더 때마다 카드 수만큼
@@ -83,12 +86,6 @@ export function HomeView({ data }: HomeViewProps) {
       : bookmarks.filter(
           (bookmark) => bookmark.category_id !== null && operating.ids.has(bookmark.category_id),
         );
-
-  // 하단 안내에 적는 "나머지 N개" — DESIGN_SPEC 3장·프로토타입(1126행)의 셈을 그대로 옮겼다.
-  // 겹침을 보정하지 않는 산식이다: 즐겨찾기는 아예 빼지 않고, 매일과 운영 중 양쪽에 있는
-  // 링크(시드 실측 3건)는 두 번 빠진다. 그래서 실제로 홈에 안 나오는 링크는 265개지만 스펙이
-  // 적는 값은 262다 — '고치면' 스펙·프로토타입 패리티가 깨지므로 이대로 둔다.
-  const restCount = bookmarks.length - daily.length - operatingItems.length;
 
   return (
     <main className="flex flex-col gap-[26px]">
@@ -159,13 +156,6 @@ export function HomeView({ data }: HomeViewProps) {
           </CardGrid>
         </section>
       )}
-
-      {/* 하단 안내 — 빈 즐겨찾기 안내(EmptyBox)와 라운드·패딩·행간이 다르므로 재사용하지 않는다
-          (DESIGN_SPEC 3장 "하단 안내": 라운드 9px · 패딩 14px 16px · line-height 1.7). */}
-      <p className="rounded-[9px] border border-dashed border-dash bg-side px-[16px] py-[14px] text-[11.5px] leading-[1.7] text-desc">
-        나머지 {restCount}개는 왼쪽 사이드바에서 분류별로 들어갑니다. 홈에는 즐겨찾기와 매일
-        사용하는 사이트, 현재 운영 중인 사이트를 둡니다.
-      </p>
     </main>
   );
 }
