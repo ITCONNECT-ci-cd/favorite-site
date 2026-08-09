@@ -88,7 +88,7 @@ describe('CategoryHeader — 보기 줄 (프로토타입 331–336행)', () => {
   it('카테고리가 하나도 없으면 이름 자리에 안내를 낸다', () => {
     renderHeader([]);
 
-    expect(screen.getByText('카테고리가 없습니다. 왼쪽에서 먼저 추가하세요.')).toBeInTheDocument();
+    expect(screen.getByText('카테고리가 없습니다. ‘상위 카테고리’에서 먼저 추가하세요.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '이름 수정' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '카테고리 삭제' })).not.toBeInTheDocument();
   });

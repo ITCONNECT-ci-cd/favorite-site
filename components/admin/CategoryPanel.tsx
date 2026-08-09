@@ -68,6 +68,13 @@ const SelectedCategoryContext = createContext<SelectedCategoryValue | null>(null
  *
  * children 을 그대로 돌려준다 — 2단 배치(좌 270px / 우 flex-1)는 화면(page)의 `<main>` 이 갖고,
  * 이 provider 는 그 flex 컨테이너와 자식들 사이에 상자를 끼워 넣지 않는다.
+ *
+ * ## 왜 이 파일에 있나
+ *
+ * 선택을 **만드는** 것이 좌측 패널이라 선택 상태도 그 모듈에 둔다 — 헤더·하위 줄·링크 표는 전부
+ * 읽기만 한다. 파일을 따로 파면 "패널이 고르고, 제3의 파일이 그 결과를 들고, 아무도 소유하지
+ * 않는" 모양이 된다. 읽는 쪽은 `useSelectedCategory()` 하나만 알면 되므로 import 경로가
+ * 패널 파일인 것은 소비자에게 부담이 되지 않는다.
  */
 export function SelectedCategoryProvider({
   categories,
