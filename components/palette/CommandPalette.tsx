@@ -148,21 +148,27 @@ export type CommandPaletteProps = {
   /**
    * N3(AI 의미 검색)이 끼울 자리. 결과 목록 아래·하단 바 위, 즉 프로토타입 197~228행의
    * 로딩 점·"AI가 의미로 찾은 링크 N건" 블록이 있던 그 위치다.
-   *
-   * N3 이 여기에 내용을 넣을 때 함께 손봐야 하는 것 하나: 아래 `showEmpty` 는 지금
-   * "질의가 있는데 키워드 결과가 0건"만 본다. 프로토타입 1002행은 AI 가 도는 중이거나
-   * AI 결과가 있으면 0건 안내를 감췄으므로, 그 조건을 N3 이 되살려야 한다.
    */
   aiSlot?: ReactNode;
+  /**
+   * AI 가 도는 중이거나 이미 결과를 내놓았는지. **0건 안내를 감추는 데만 쓴다.**
+   *
+   * 프로토타입 1002행 `showEmpty` 는 `st.ai !== 'loading' && !(st.ai === 'done' && …)` 까지
+   * 보고 있었다. 우리는 AI 상태를 모르므로(그 상태는 N3 의 것이다) 그 두 조건을 이 한 값으로
+   * 받는다 — N3 은 `aiSlot` 에 내용을 넣을 때 이 prop 도 함께 켜면 된다.
+   */
+  aiBusy?: boolean;
   /**
    * AI 의미 검색 실행 — 하단 "AI 검색" 버튼 · `⌘↵` · **결과 0건에서의 `↵`**(프로토타입
    * 646~651행 `if (r) this.open(r); else this.runAi()`)가 모두 이 하나로 들어온다.
    * 지금은 부르기만 하고 실동작은 N3 이 채운다.
    *
-   * 세 자리 모두 **질의가 비었는지 보지 않고 부른다** — 프로토타입도 `runAi()` 안에서
-   * `if (!q) return;` 로 한 번만 막았다(849~851행). 그 가드는 N3 이 같은 자리에 둔다.
+   * **질의는 팔레트가 인자로 준다**(공백을 턴 값이다). 입력을 이 컴포넌트가 들고 있어
+   * 소비자가 알 길이 없기 때문이다. 세 자리 모두 **비었는지 보지 않고 부른다** —
+   * 프로토타입도 `runAi()` 안에서 `if (!q) return;` 로 한 번만 막았다(849~851행).
+   * N3 은 그 가드를 이 콜백 안에 그대로 두면 된다.
    */
-  onAiSearch?: () => void;
+  onAiSearch?: (query: string) => void;
 };
 
 /**
@@ -184,7 +190,7 @@ export type CommandPaletteProps = {
  * **아직 없는 것과 그 자리**
  * - G5(헤더): 이 컴포넌트를 마운트하고 `open`/`onClose`/`onOpenRequest` 를 헤더의 검색창에 잇는다.
  *   그때 헤더의 `aria-expanded` 도 함께 스레딩한다(components/Header.tsx JSDoc).
- * - N3(AI): `aiSlot` 과 `onAiSearch`.
+ * - N3(AI): `aiSlot`(내용) · `aiBusy`(0건 안내 감추기) · `onAiSearch`(질의를 인자로 받는다).
  */
 export function CommandPalette({
   open,
@@ -193,6 +199,7 @@ export function CommandPalette({
   data,
   onOpenLink,
   aiSlot,
+  aiBusy,
   onAiSearch,
 }: CommandPaletteProps) {
   // 훅은 아래 조기 반환보다 앞이어야 한다 — 닫혀 있을 때도 같은 순서로 불려야 하고,
@@ -228,6 +235,7 @@ export function CommandPalette({
       data={data}
       onOpenLink={onOpenLink}
       aiSlot={aiSlot}
+      aiBusy={aiBusy}
       onAiSearch={onAiSearch}
     />
   );
@@ -242,6 +250,7 @@ function PalettePanel({
   data,
   onOpenLink,
   aiSlot,
+  aiBusy = false,
   onAiSearch,
 }: Omit<CommandPaletteProps, 'open' | 'onOpenRequest'>) {
   const [query, setQuery] = useState('');
@@ -294,16 +303,29 @@ function PalettePanel({
 
   const trimmed = query.trim();
   const showRecent = trimmed === '' && pinned.length > 0;
-  const showEmpty = trimmed !== '' && results.length === 0;
+  // AI 가 도는 중이거나 결과를 내놓았으면 0건 안내를 감춘다(프로토타입 1002행).
+  const showEmpty = trimmed !== '' && results.length === 0 && !aiBusy;
+
+  /**
+   * 실제로 선택된 행 — `selected` 를 지금 결과 길이 안으로 접은 값이다.
+   *
+   * 질의를 고치면 선택이 첫 행으로 돌아가지만(입력 onChange), **`data` 가 바뀌어 결과만 줄어드는
+   * 경로**는 그 리셋을 지나지 않는다. 그때 `selected` 가 목록 밖을 가리키면 하이라이트도 `↵` 도
+   * 갈 곳이 없어져 ↵ 가 조용히 AI 검색으로 새어 버린다. 표시·ref·이동이 모두 이 값을 기준으로
+   * 삼아 한 자리를 가리키게 한다.
+   */
+  const activeIndex = results.length === 0 ? -1 : Math.min(selected, results.length - 1);
+  /** 선택 행 제목 — 살아 있는 영역이 소리로 읽어 주는 값이다(아래 결과 수 옆). */
+  const activeTitle = activeIndex === -1 ? '' : results[activeIndex].bookmark.title;
 
   /** 선택 이동 — 끝에서 반대편으로 돈다(프로토타입 840행 `(s.sel + d + n) % n`). */
   const moveSelection = useCallback(
     (delta: number) => {
-      setSelected((current) =>
-        results.length === 0 ? current : (current + delta + results.length) % results.length,
-      );
+      if (results.length === 0) return;
+
+      setSelected((activeIndex + delta + results.length) % results.length);
     },
-    [results.length],
+    [activeIndex, results.length],
   );
 
   /**
@@ -351,12 +373,12 @@ function PalettePanel({
     const row = selectedRowRef.current;
 
     if (row === null) {
-      onAiSearch?.();
+      onAiSearch?.(trimmed);
       return;
     }
 
     row.click();
-  }, [onAiSearch]);
+  }, [onAiSearch, trimmed]);
 
   /**
    * Tab 가둠 — `aria-modal="true"` 로 "뒤는 없는 셈"이라고 알린 이상 Tab 도 뒤로 새면 안 된다.
@@ -418,7 +440,7 @@ function PalettePanel({
       // AI 검색 대신 그 링크가 뒤 탭으로 열린다(⌘+클릭 = 새 탭).
       if (event.metaKey || event.ctrlKey) {
         event.preventDefault();
-        onAiSearch?.();
+        onAiSearch?.(trimmed);
         return;
       }
 
@@ -434,7 +456,7 @@ function PalettePanel({
     window.addEventListener('keydown', handleKeyDown);
 
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [moveSelection, onAiSearch, onClose, openSelected, trapTab]);
+  }, [moveSelection, onAiSearch, onClose, openSelected, trapTab, trimmed]);
 
   /**
    * 선택 행을 목록 안으로 끌어온다 — 결과는 50건까지라 ↓ 를 몇 번만 눌러도 화면 밖으로 나간다.
@@ -443,7 +465,7 @@ function PalettePanel({
    */
   useEffect(() => {
     selectedRowRef.current?.scrollIntoView?.({ block: 'nearest' });
-  }, [selected, results]);
+  }, [activeIndex, results]);
 
   return (
     <>
@@ -491,24 +513,35 @@ function PalettePanel({
             className="flex-none text-[11px] text-faint"
           >
             {trimmed === '' ? '' : `${results.length}건`}
+            {/* ↑↓ 로 옮긴 선택은 배경색 하나로만 보인다 — 화면을 못 보는 사람에게는 아무 일도
+                일어나지 않은 것과 같다. 이미 살아 있는 이 영역에 선택 행 제목을 얹어 "9건 ·
+                ChatGPT" 로 읽히게 한다. **눈에 보이는 글자는 그대로 "N건" 이다**(스펙 5장의
+                "우측 결과 수 11px" · 프로토타입 `resultLabel`) — 제목은 sr-only 로만 붙는다.
+                행마다 `role="option"` 을 주는 listbox 로 바꾸는 편이 정석이지만, 그러면 결과가
+                링크가 아니게 되어 새 탭·가운데 클릭·주소 미리보기를 잃는다. */}
+            {activeTitle !== '' && <span className="sr-only">{` · ${activeTitle}`}</span>}
           </span>
         </div>
 
         {/* 결과 목록 — 패널에서 유일하게 스크롤하는 영역 */}
         <div data-testid="palette-scroll" className="min-h-0 flex-1 overflow-y-auto">
-          {results.map((match, index) => (
-            <ResultRow
-              key={match.bookmark.id}
-              match={match}
-              categoryName={categoryLabel(match.bookmark.category_id, categoryNames)}
-              selected={index === selected}
-              // 선택된 행만 ref 를 받는다. 선택이 옮겨가는 커밋에서 React 가 옛 행에서 떼고
-              // 새 행에 붙이므로, 그 뒤에 도는 위 effect 는 늘 새 행을 본다.
-              rowRef={index === selected ? selectedRowRef : undefined}
-              onHover={() => setSelected(index)}
-              anchor={anchorProps(match.bookmark)}
-            />
-          ))}
+          {/* 키워드 결과만 담는 껍데기. 이 줄들만 ↑↓·↵ 의 대상이라, 아래 고정 링크 행·N3 의 AI
+              결과 행과 섞이지 않게 경계를 남긴다(테스트가 "결과 행"을 이 안에서만 센다). */}
+          <div data-testid="palette-results">
+            {results.map((match, index) => (
+              <ResultRow
+                key={match.bookmark.id}
+                match={match}
+                categoryName={categoryLabel(match.bookmark.category_id, categoryNames)}
+                selected={index === activeIndex}
+                // 선택된 행만 ref 를 받는다. 선택이 옮겨가는 커밋에서 React 가 옛 행에서 떼고
+                // 새 행에 붙이므로, 그 뒤에 도는 위 effect 는 늘 새 행을 본다.
+                rowRef={index === activeIndex ? selectedRowRef : undefined}
+                onHover={() => setSelected(index)}
+                anchor={anchorProps(match.bookmark)}
+              />
+            ))}
+          </div>
 
           {/* N3 자리 — 로딩 점 · "AI가 의미로 찾은 링크 N건" 블록 */}
           {aiSlot}
@@ -543,7 +576,7 @@ function PalettePanel({
 
           <button
             type="button"
-            onClick={onAiSearch}
+            onClick={() => onAiSearch?.(trimmed)}
             aria-keyshortcuts="Meta+Enter"
             className="ml-auto flex h-[30px] flex-none cursor-pointer items-center gap-[8px] rounded-[6px] bg-ink px-[13px] hover:bg-ink-hover"
           >

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Header, type HeaderProps } from '@/components/Header';
 import { CommandPalette } from '@/components/palette/CommandPalette';
 import type { SiteData } from '@/lib/types';
@@ -44,13 +44,16 @@ export type PaletteHostProps = Omit<HeaderProps, 'onSearchClick' | 'onAiClick' |
 export function PaletteHost({ data, ...header }: PaletteHostProps) {
   const [open, setOpen] = useState(false);
 
-  function openPalette() {
+  // 둘 다 `useCallback` 인 것은 팔레트 때문이다. 게이트의 전역 ⌘K 리스너는 `onOpenRequest` 를,
+  // 패널의 키 리스너는 `onClose` 를 의존성으로 잡고 있어, 렌더마다 새 함수가 내려가면
+  // window 리스너를 붙였다 떼는 일이 그만큼 반복된다(CommandPalette 의 두 useEffect).
+  const openPalette = useCallback(() => {
     setOpen(true);
-  }
+  }, []);
 
-  function closePalette() {
+  const closePalette = useCallback(() => {
     setOpen(false);
-  }
+  }, []);
 
   return (
     <>

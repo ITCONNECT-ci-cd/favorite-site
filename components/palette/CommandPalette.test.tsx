@@ -6,7 +6,8 @@
  * 여기서 보지 않는 것(후속 스토리 몫): 헤더 연결과 열림 상태의 소유(G5) ·
  * AI 영역의 실동작(N3). 아래 "후속 자리" describe 가 그 이음매만 확인한다.
  */
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommandPalette, type CommandPaletteProps } from '@/components/palette/CommandPalette';
 import { Toaster } from '@/components/Toast';
@@ -63,10 +64,18 @@ function renderPalette(props: Partial<CommandPaletteProps> = {}) {
 
 const panel = () => screen.getByRole('dialog');
 const input = () => screen.getByRole('textbox');
-/** 결과 행과 고정 링크 행은 둘 다 앵커다. 둘은 동시에 보이지 않으므로 섞이지 않는다. */
-const rows = () => screen.getAllByRole('link');
 /**
- * 패널의 세 영역은 testid 로 잡는다 — `panel().children[n]` 은 G3·N3 이 영역을 하나
+ * 스크롤 영역 안의 앵커 — 결과 행이거나(질의가 있을 때) 고정 링크 행이다(빈 입력일 때).
+ * 둘은 동시에 보이지 않으므로 섞이지 않는다.
+ *
+ * `screen` 전체가 아니라 패널 안으로 스코프를 좁힌다: 이 파일은 `<Toaster />` 나 트리거 버튼을
+ * 함께 마운트하는 테스트가 있고, N3 이 붙일 AI 결과 행도 앵커라 곧 이웃이 늘어난다.
+ */
+const rows = () => within(scrollArea()).getAllByRole('link');
+/** 키워드 결과 행만 — AI 결과·고정 링크와 섞이지 않는 그 목록이다(↑↓·↵ 의 대상). */
+const resultRows = () => within(screen.getByTestId('palette-results')).queryAllByRole('link');
+/**
+ * 패널의 세 영역은 testid 로 잡는다 — `panel().children[n]` 은 N3 이 영역을 하나
  * 끼워 넣는 순간 조용히 다른 것을 가리킨다. 반면 행 안쪽 칸 순서 단언은 그대로 둔다:
  * 그 순서 자체가 DESIGN_SPEC 5장의 나열 순서를 인코딩한 것이라 바뀌면 깨져야 맞다.
  */
@@ -74,7 +83,7 @@ const inputRow = () => screen.getByTestId('palette-input-row');
 const scrollArea = () => screen.getByTestId('palette-scroll');
 const footer = () => screen.getByTestId('palette-footer');
 /** 입력 줄 우측 "N건" — 타자마다 바뀌므로 살아 있는 영역(role=status)이다. */
-const countLabel = () => screen.getByRole('status');
+const countLabel = () => screen.getByTestId('palette-count');
 
 function type(text: string) {
   fireEvent.change(input(), { target: { value: text } });
@@ -83,6 +92,9 @@ function type(text: string) {
 /**
  * 키는 `window` 가 듣는다(프로토타입 653행 `window.addEventListener('keydown', …)`).
  * 실제로는 입력에 포커스가 있으므로 기본값은 입력이다 — 거기서 쏜 이벤트가 window 까지 올라온다.
+ *
+ * **돌려주는 값은 `fireEvent` 의 것이다: `preventDefault` 를 불렀으면 `false`, 아니면 `true`.**
+ * 즉 `toBe(false)` 는 "우리가 이 키를 가져갔다", `toBe(true)` 는 "브라우저에 맡겼다"는 뜻이다.
  */
 function press(
   key: string,
@@ -94,7 +106,7 @@ function press(
 
 /** 선택 행 번호. 배경(`#f0eee9`)과 `↵` 가 같은 행을 가리키는지까지 함께 본다 — 갈라지면 둘 다 못 믿는다. */
 function selectedIndex(): number {
-  const list = rows();
+  const list = resultRows();
   const byBackground = list.findIndex((row) => row.classList.contains('bg-[#f0eee9]'));
   const byEnter = list.findIndex((row) => row.textContent?.endsWith('↵') === true);
 
@@ -104,13 +116,15 @@ function selectedIndex(): number {
 }
 
 /** 열기 경로(기록·토스트)를 보는 테스트 — 토스트를 그리는 `<Toaster />` 를 함께 마운트한다. */
+const paletteWithToaster = (props: Partial<CommandPaletteProps>) => (
+  <>
+    <CommandPalette open onClose={vi.fn()} data={REAL} {...props} />
+    <Toaster />
+  </>
+);
+
 function renderWithToaster(props: Partial<CommandPaletteProps> = {}) {
-  return render(
-    <>
-      <CommandPalette open onClose={vi.fn()} data={REAL} {...props} />
-      <Toaster />
-    </>,
-  );
+  return render(paletteWithToaster(props));
 }
 
 describe('열기 · 닫기', () => {
@@ -446,6 +460,23 @@ describe('결과 0건', () => {
 
     expect(screen.queryByText('이름이 일치하는 링크가 없습니다')).not.toBeInTheDocument();
   });
+
+  it('aiBusy 면 감춘다 — AI 가 도는 중이거나 이미 찾아 놓았다 (프로토타입 1002행)', () => {
+    renderPalette({ aiBusy: true });
+    type('존재하지않는말');
+
+    expect(screen.queryByText('이름이 일치하는 링크가 없습니다')).not.toBeInTheDocument();
+  });
+
+  it('aiBusy 가 꺼지면 다시 뜬다 (N3 이 이 한 값만 켜고 끄면 된다)', () => {
+    const { rerender } = render(
+      <CommandPalette open onClose={vi.fn()} data={REAL} aiBusy />,
+    );
+    type('존재하지않는말');
+    rerender(<CommandPalette open onClose={vi.fn()} data={REAL} aiBusy={false} />);
+
+    expect(screen.getByText('이름이 일치하는 링크가 없습니다')).toBeInTheDocument();
+  });
 });
 
 describe('수치 (DESIGN_SPEC 5장)', () => {
@@ -622,6 +653,9 @@ const THREE = site([
   makeBookmark({ id: 'c', title: '문서 셋' }),
 ]);
 
+/** 같은 질의(`문서`)에 결과만 하나로 줄어든 한 벌 — 선택이 목록 밖으로 밀리는 상황을 만든다. */
+const THREE_TO_ONE = site([makeBookmark({ id: 'a', title: '문서 하나' })]);
+
 describe('전역 ⌘K · Ctrl+K', () => {
   function renderGate(props: Partial<CommandPaletteProps> = {}) {
     return render(<CommandPalette open={false} onClose={vi.fn()} data={REAL} {...props} />);
@@ -762,11 +796,63 @@ describe('↑↓ 이동 (순환)', () => {
     expect(selectedIndex()).toBe(0);
   });
 
+  it('결과가 줄어 선택이 목록 밖을 가리켜도 마지막 행으로 접힌다', () => {
+    const { rerender } = render(<CommandPalette open onClose={vi.fn()} data={THREE} />);
+    type('문서');
+    press('ArrowDown');
+    press('ArrowDown');
+    expect(selectedIndex()).toBe(2);
+
+    // 질의는 그대로 두고 data 만 줄인다 — 입력 onChange 의 선택 리셋을 지나지 않는 유일한 경로다.
+    rerender(<CommandPalette open onClose={vi.fn()} data={THREE_TO_ONE} />);
+
+    expect(resultRows()).toHaveLength(1);
+    expect(selectedIndex()).toBe(0);
+  });
+
   it('닫힌 뒤에는 화살표를 듣지 않는다', () => {
     const { rerender } = renderPalette();
     rerender(<CommandPalette open={false} onClose={vi.fn()} data={REAL} />);
 
     expect(fireEvent.keyDown(window, { key: 'ArrowDown' })).toBe(true);
+  });
+});
+
+describe('선택 이동을 소리로 알리기', () => {
+  it('결과 수 옆에 선택 행 제목을 얹어 읽어 준다 (배경색은 소리가 나지 않는다)', () => {
+    renderPalette({ data: THREE });
+    type('문서');
+    expect(countLabel()).toHaveTextContent('3건 · 문서 하나');
+
+    press('ArrowDown');
+
+    expect(countLabel()).toHaveTextContent('3건 · 문서 둘');
+  });
+
+  it('보이는 글자는 "N건" 그대로다 — 제목은 sr-only 로만 붙는다 (스펙 5장 "우측 결과 수")', () => {
+    renderPalette({ data: THREE });
+    type('문서');
+
+    expect(countLabel().firstChild?.textContent).toBe('3건');
+    const forScreenReader = countLabel().querySelector('span');
+    expect(forScreenReader).toHaveClass('sr-only');
+    expect(forScreenReader).toHaveTextContent('· 문서 하나');
+  });
+
+  it('읽어 주는 자리는 그대로 살아 있는 영역이다', () => {
+    renderPalette({ data: THREE });
+    type('문서');
+
+    expect(countLabel()).toHaveAttribute('role', 'status');
+    expect(countLabel()).toHaveAttribute('aria-live', 'polite');
+  });
+
+  it('결과가 0건이면 제목 없이 건수만 읽는다', () => {
+    renderPalette();
+    type('존재하지않는말');
+
+    expect(countLabel()).toHaveTextContent('0건');
+    expect(countLabel().querySelector('span')).toBeNull();
   });
 });
 
@@ -847,6 +933,21 @@ describe('↵ 열기 · 행 클릭 = ↵', () => {
     expect(screen.getByText('문서 하나 · 새 탭으로 이동')).toBeInTheDocument();
     expect(onOpenLink).toHaveBeenCalledWith('a');
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('결과가 줄어 선택이 목록 밖을 가리켜도 ↵ 는 남은 행을 연다 (AI 로 새지 않는다)', () => {
+    const onAiSearch = vi.fn();
+    const { rerender } = render(paletteWithToaster({ data: THREE, onAiSearch }));
+    type('문서');
+    press('ArrowDown');
+    press('ArrowDown');
+
+    rerender(paletteWithToaster({ data: THREE_TO_ONE, onAiSearch }));
+    press('Enter');
+
+    expect(recordClick).toHaveBeenCalledWith('a');
+    expect(screen.getByText('문서 하나 · 새 탭으로 이동')).toBeInTheDocument();
+    expect(onAiSearch).not.toHaveBeenCalled();
   });
 
   it('↑↓ 로 옮긴 뒤의 ↵ 는 그 행을 연다', () => {
@@ -961,7 +1062,7 @@ describe('결과 0건에서의 ↵ · ⌘↵ (AI 검색 자리 — 실동작은 
     vi.mocked(recordClick).mockClear();
   });
 
-  it('결과가 없으면 ↵ 가 AI 검색을 부른다 (프로토타입 `if (r) open else runAi`)', () => {
+  it('결과가 없으면 ↵ 가 AI 검색을 부른다 — 질의를 인자로 준다 (프로토타입 `if (r) open else runAi`)', () => {
     const onAiSearch = vi.fn();
     const onClose = vi.fn();
     renderWithToaster({ onAiSearch, onClose });
@@ -969,9 +1070,35 @@ describe('결과 0건에서의 ↵ · ⌘↵ (AI 검색 자리 — 실동작은 
 
     press('Enter');
 
+    // 입력을 팔레트가 들고 있어 소비자(N3)가 알 길이 없다 — 공백을 턴 값으로 넘긴다.
+    expect(onAiSearch).toHaveBeenCalledWith('존재하지않는말');
     expect(onAiSearch).toHaveBeenCalledTimes(1);
     expect(recordClick).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('빈 입력에서의 ↵ 도 AI 검색이다 — 고정 링크는 선택 대상이 아니다', () => {
+    const onAiSearch = vi.fn();
+    const onClose = vi.fn();
+    renderWithToaster({ onAiSearch, onClose });
+    expect(screen.getByText('고정해 둔 링크')).toBeInTheDocument();
+
+    press('Enter');
+
+    // 빈 질의를 막는 것은 프로토타입처럼 `runAi` 안(N3)이다 — 팔레트는 그대로 넘긴다.
+    expect(onAiSearch).toHaveBeenCalledWith('');
+    expect(recordClick).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('공백만 친 질의도 턴 값으로 넘어간다', () => {
+    const onAiSearch = vi.fn();
+    renderWithToaster({ onAiSearch });
+    type('   ');
+
+    press('Enter');
+
+    expect(onAiSearch).toHaveBeenCalledWith('');
   });
 
   it('결과가 있어도 ⌘↵ 는 AI 검색이다 (하단 버튼의 aria-keyshortcuts 와 같은 약속)', () => {
@@ -981,8 +1108,19 @@ describe('결과 0건에서의 ↵ · ⌘↵ (AI 검색 자리 — 실동작은 
 
     press('Enter', { metaKey: true });
 
+    expect(onAiSearch).toHaveBeenCalledWith('문서');
     expect(onAiSearch).toHaveBeenCalledTimes(1);
     expect(recordClick).not.toHaveBeenCalled();
+  });
+
+  it('하단 AI 검색 버튼도 같은 질의를 넘긴다 (세 자리가 한 계약이다)', () => {
+    const onAiSearch = vi.fn();
+    renderWithToaster({ data: THREE, onAiSearch });
+    type('문서');
+
+    fireEvent.click(screen.getByRole('button', { name: 'AI 검색' }));
+
+    expect(onAiSearch).toHaveBeenCalledWith('문서');
   });
 
   it('Ctrl+↵ 도 같다', () => {
@@ -1027,6 +1165,73 @@ describe('결과 0건에서의 ↵ · ⌘↵ (AI 검색 자리 — 실동작은 
     type('존재하지않는말');
 
     expect(() => press('Enter')).not.toThrow();
+  });
+});
+
+/**
+ * 키 하나짜리 단위 테스트만으로는 "⌘K 를 눌러 링크 하나를 여는 데까지" 가 이어지는지 알 수 없다.
+ * PaletteHost(G5) 스위트는 ⌘K 열기와 마우스 클릭 열기를 각각 보지만 키보드로만 끝까지 가는 길은
+ * 없어, 열림 상태를 쥔 작은 래퍼로 여기서 한 번 통과시킨다(PRD 성공 기준 5 의 자동화된 몫).
+ */
+function StatefulPalette({ data }: { data: SiteData }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <CommandPalette
+        open={open}
+        onOpenRequest={() => setOpen(true)}
+        onClose={() => setOpen(false)}
+        data={data}
+      />
+      <Toaster />
+    </>
+  );
+}
+
+describe('이어지는 시나리오 — ⌘K → 타자 → ↓ → ↵', () => {
+  setupToastTimers();
+
+  beforeEach(() => {
+    vi.mocked(recordClick).mockClear();
+  });
+
+  it('키보드만으로 팔레트를 열어 두 번째 결과를 열고 팔레트가 닫힌다', () => {
+    render(<StatefulPalette data={THREE} />);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    press('k', { metaKey: true }, window);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(input()).toHaveFocus();
+
+    type('문서');
+    expect(resultRows()).toHaveLength(3);
+
+    press('ArrowDown');
+    expect(selectedIndex()).toBe(1);
+
+    press('Enter');
+
+    expect(recordClick).toHaveBeenCalledWith('b');
+    expect(screen.getByText('문서 둘 · 새 탭으로 이동')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    // 문서 스크롤도 함께 풀린다 — 닫힌 화면에 잠금이 남으면 페이지가 굳는다.
+    expect(document.body.style.overflow).toBe('');
+  });
+
+  it('esc 로 닫았다가 ⌘K 로 다시 열면 지난 질의가 남아 있지 않다', () => {
+    // 고정 링크 줄까지 확인하려고 실시드를 쓴다 (THREE 에는 고정된 링크가 없다).
+    render(<StatefulPalette data={REAL} />);
+    press('k', { metaKey: true }, window);
+    type('문서');
+
+    press('Escape');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    press('k', { metaKey: true }, window);
+
+    expect(input()).toHaveValue('');
+    expect(screen.getByText('고정해 둔 링크')).toBeInTheDocument();
   });
 });
 
