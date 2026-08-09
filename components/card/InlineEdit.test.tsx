@@ -621,6 +621,51 @@ describe('InlineEdit — 포커스', () => {
     expect(titleField()).toHaveFocus();
   });
 
+  /**
+   * 저장 중에는 두 버튼이 잠기고, 브라우저는 **잠긴 요소에서 포커스를 떼어** 문서 뿌리로 보낸다.
+   * 실패하면 폼은 남는데 포커스는 카드 밖이라, 다시 시도하려면 화면 맨 앞에서 걸어와야 한다
+   * (J3 DeleteConfirm 이 실패 경로에서 `취소` 로 되돌리는 것과 같은 처방 · G 스윕).
+   */
+  it('저장이 실패해 잠금이 풀리면 포커스가 저장 버튼으로 돌아온다', async () => {
+    vi.mocked(updateBookmark).mockResolvedValue({ ok: false, error: '이름을 입력하세요.' });
+    renderForm();
+
+    fireEvent.change(titleField(), { target: { value: '실패할 이름' } });
+    // 실제 브라우저에서는 누른 저장이 그 자리에서 잠기며 포커스가 떨어진다. jsdom 의 클릭은
+    // 포커스를 옮기지 않으므로 그 결과 상태를 손으로 만든다.
+    titleField().blur();
+    await save();
+
+    expect(saveButton()).toHaveFocus();
+  });
+
+  it('요청이 거부돼 잠금이 풀려도 마찬가지다', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(updateBookmark).mockRejectedValue(new Error('Failed to fetch'));
+    renderForm();
+
+    fireEvent.change(titleField(), { target: { value: '실패할 이름' } });
+    titleField().blur();
+    await save();
+
+    expect(saveButton()).toHaveFocus();
+
+    spy.mockRestore();
+  });
+
+  it('실패해도 이미 다른 곳에 있는 포커스는 뺏지 않는다', async () => {
+    // 이름 칸에서 Enter 로 저장한 경우다 — 입력이 `readOnly` 라 포커스가 그 자리에 남아 있고,
+    // 뺏으면 거절 사유를 보고 이어 고칠 자리를 잃는다.
+    vi.mocked(updateBookmark).mockResolvedValue({ ok: false, error: '이름을 입력하세요.' });
+    renderForm();
+
+    fireEvent.change(titleField(), { target: { value: '실패할 이름' } });
+    titleField().focus();
+    await pressEnter(titleField());
+
+    expect(titleField()).toHaveFocus();
+  });
+
   it('닫힐 때 폼을 열어 준 자리로 돌려준다', () => {
     // 폼은 연필의 ref 를 모르므로(그 버튼은 LinkCard 의 것이다) 렌더 시점의 activeElement 를
     // 붙드는 것이 최선이다. jsdom 의 클릭은 포커스를 옮기지 않아 여기서는 손으로 맞춰 둔다.

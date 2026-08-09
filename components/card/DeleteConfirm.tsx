@@ -5,6 +5,7 @@ import { startTransition, useEffect, useId, useRef, useState, type KeyboardEvent
 import { toast } from '@/components/Toast';
 import { REQUEST_FAILED } from '@/lib/constants';
 import { useFavorites } from '@/lib/favorites';
+import { isFocusNowhere } from '@/lib/focus';
 import { deleteBookmark, type ActionResult } from '@/lib/mutations';
 import type { BookmarkWithCount } from '@/lib/types';
 
@@ -177,9 +178,10 @@ export function DeleteConfirm({ bookmark, onDone }: DeleteConfirmProps) {
    * 안에 있는가"로 가릴 수 있다 — 기준 상자는 오버레이의 부모, 곧 카드다(LinkCard 의 `deleteSlot`
    * 은 오버레이를 카드 컨테이너의 마지막 자식으로 놓는다).
    *
-   * 붙든 것이 `<body>` 뿐이면(클릭이 버튼에 포커스를 주지 않는 환경 — macOS Safari 기본값 · jsdom)
-   * 누가 눌렀는지 알 길이 없으므로 가리지 않고 데려온다. 확인창이 떠 있는데 포커스가 카드 밖에
-   * 남는 쪽이 더 나쁘다.
+   * 붙든 것이 문서 뿌리(`<body>`·`<html>`·없음)뿐이면(클릭이 버튼에 포커스를 주지 않는 환경 —
+   * macOS Safari 기본값 · jsdom) 누가 눌렀는지 알 길이 없으므로 가리지 않고 데려온다. 확인창이
+   * 떠 있는데 포커스가 카드 밖에 남는 쪽이 더 나쁘다. 셋을 한 판정으로 묶은 것이
+   * `lib/focus.ts` 의 `isFocusNowhere` 다 — `<body>` 만 세면 나머지 둘에서 이 갈래가 새어 나간다.
    *
    * 돌려줄 때 `isConnected` 를 보는 것은 삭제 성공 경로 때문이다 — 그때는 카드가 통째로 사라져
    * 휴지통도 문서에 없다. 떨어져 나간 노드에 `focus()` 를 불러 봐야 포커스는 `<body>` 로 간다.
@@ -187,7 +189,7 @@ export function DeleteConfirm({ bookmark, onDone }: DeleteConfirmProps) {
   useEffect(() => {
     const card = overlayRef.current?.parentElement;
     const owned = trigger instanceof HTMLElement && card?.contains(trigger) === true;
-    const orphan = !(trigger instanceof HTMLElement) || trigger === document.body;
+    const orphan = !(trigger instanceof HTMLElement) || isFocusNowhere(trigger);
 
     if (owned || orphan) cancelRef.current?.focus({ preventScroll: true });
 

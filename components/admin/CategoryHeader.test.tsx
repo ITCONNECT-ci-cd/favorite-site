@@ -445,6 +445,59 @@ describe('CategoryHeader — 포커스가 가는 자리', () => {
     expect(button('카테고리 삭제')).toHaveFocus();
   });
 
+  /**
+   * 잠긴 동안 브라우저는 **잠긴 버튼에서 포커스를 떼어** 문서 뿌리로 보낸다. 실패하면 줄은
+   * 그대로 남는데 포커스는 여기에 없어, 다시 시도하려면 화면 맨 앞에서 Tab 으로 걸어와야 한다
+   * (J3 DeleteConfirm 이 실패 경로에서 `취소` 로 되돌리는 것과 같은 처방 · G 스윕).
+   */
+  it('이름 저장이 거절돼 잠금이 풀리면 포커스가 저장 버튼으로 돌아온다', async () => {
+    vi.mocked(renameCategory).mockResolvedValue({
+      ok: false,
+      error: '같은 이름의 카테고리가 이미 있습니다.',
+    });
+    renderHeader();
+
+    await startRename('개발 도구');
+    // 실제 브라우저에서는 누른 저장이 그 자리에서 잠기며 포커스가 떨어진다. jsdom 의 클릭은
+    // 포커스를 옮기지 않으므로 그 결과 상태를 손으로 만든다.
+    nameField().blur();
+    await click(button('저장'));
+
+    expect(button('저장')).toHaveFocus();
+  });
+
+  it('삭제 요청이 거부돼 잠금이 풀리면 포커스가 삭제 버튼으로 돌아온다', async () => {
+    const spy = silenceConsoleError();
+    vi.mocked(deleteCategory).mockRejectedValue(REJECTION);
+    renderHeader();
+
+    await click(button('카테고리 삭제'));
+    (document.activeElement as HTMLElement).blur();
+    await click(button('삭제'));
+
+    expect(button('삭제')).toHaveFocus();
+
+    spy.mockRestore();
+  });
+
+  it('실패해도 이미 다른 곳에 있는 포커스는 뺏지 않는다', async () => {
+    // 이름 칸에서 Enter 로 저장한 경우다 — 포커스가 입력에 그대로 있고, 뺏으면 거절 사유를 보고
+    // 이어 고칠 자리를 잃는다.
+    vi.mocked(renameCategory).mockResolvedValue({
+      ok: false,
+      error: '같은 이름의 카테고리가 이미 있습니다.',
+    });
+    renderHeader();
+
+    await startRename('개발 도구');
+    expect(nameField()).toHaveFocus();
+    await act(async () => {
+      fireEvent.submit(renameForm());
+    });
+
+    expect(nameField()).toHaveFocus();
+  });
+
   it('삭제한 카테고리가 목록에서 빠져도 포커스 되돌리기가 터지지 않는다', async () => {
     // 성공 경로에서는 이 줄이 통째로 사라진다(revalidatePath 로 새 목록이 온다). 사라진 노드에
     // focus() 를 부르지 않도록 `isConnected` 를 본다 — 안 보면 떨어져 나간 버튼을 부른다.

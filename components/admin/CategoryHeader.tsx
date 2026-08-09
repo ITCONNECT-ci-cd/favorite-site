@@ -13,6 +13,7 @@ import {
 import { useSelectedCategory, type AdminCategory } from '@/components/admin/CategoryPanel';
 import { toast } from '@/components/Toast';
 import { REQUEST_FAILED } from '@/lib/constants';
+import { isFocusNowhere } from '@/lib/focus';
 import { deleteCategory, renameCategory, type ActionResult } from '@/lib/mutations';
 import { rendersSomething } from '@/lib/slots';
 
@@ -117,6 +118,9 @@ function HeaderRow({ category, divided }: { category: AdminCategory; divided: bo
   const renameButtonRef = useRef<HTMLButtonElement>(null);
   const deleteButtonRef = useRef<HTMLButtonElement>(null);
   const cancelDeleteRef = useRef<HTMLButtonElement>(null);
+  /** 실패로 잠금이 풀렸을 때 포커스를 돌려줄 두 자리 — 각 갈래에서 **다시 누를** 버튼이다. */
+  const saveButtonRef = useRef<HTMLButtonElement>(null);
+  const confirmDeleteRef = useRef<HTMLButtonElement>(null);
   /** 직전 갈래. 보기 줄로 **어디서** 돌아왔는지가 포커스를 돌려줄 버튼을 정한다. */
   const cameFrom = useRef<Mode>(mode);
 
@@ -155,6 +159,38 @@ function HeaderRow({ category, divided }: { category: AdminCategory; divided: bo
     const trigger = from === 'rename' ? renameButtonRef.current : deleteButtonRef.current;
     if (trigger !== null && trigger.isConnected) trigger.focus();
   }, [mode]);
+
+  /**
+   * 요청이 **실패해 잠금이 풀린 순간** 포커스를 다시 누를 버튼으로 돌려준다.
+   *
+   * 잠긴 동안 브라우저는 **잠긴 요소에서 포커스를 떼어** 문서 뿌리로 보낸다. 저장이나 삭제를
+   * 눌러 실패한 사용자는 줄이 그대로 남았는데도 포커스가 여기에 없어, 다시 시도하려면 화면 맨
+   * 앞에서 Tab 으로 걸어와야 한다(J3 DeleteConfirm·J2 InlineEdit 과 같은 처방 — 받는 쪽만 다르다).
+   *
+   * 위 갈래 effect 와 나눠 두는 이유는 **갈래가 바뀌지 않는 실패**를 다루기 때문이다. 서버가
+   * 답한 삭제 거절은 확인 줄을 걷으므로(`remove`) 갈래가 `view` 로 바뀌어 위쪽이 처리하고,
+   * 여기서 남는 것은 이름 저장 실패·거부와 삭제 요청 거부 — 갈래가 그대로인 셋이다.
+   *
+   * 가드가 둘이다.
+   *
+   * 1. **잠금이 풀린 그 순간에만** 움직인다(`wasBusy`). 전이를 보지 않으면 `rename`·`confirm`
+   *    으로 갓 들어선 커밋(그때도 `busy` 는 false 다)에서 이 effect 가 먼저 돌아, 입력의
+   *    `autoFocus` 나 위 effect 가 `취소` 에 준 포커스를 뺏는다.
+   * 2. 그때도 포커스가 정말 떨어져 있을 때만 가져온다 — 이름 칸에서 Enter 로 저장한 사용자의
+   *    포커스는 입력에 그대로 남아 있는데, 뺏으면 이어 고칠 자리를 잃는다.
+   */
+  const wasBusy = useRef(false);
+
+  useEffect(() => {
+    const before = wasBusy.current;
+    wasBusy.current = busy;
+
+    if (busy || !before) return;
+    if (!isFocusNowhere(document.activeElement)) return;
+
+    if (mode === 'rename') saveButtonRef.current?.focus();
+    else if (mode === 'confirm') confirmDeleteRef.current?.focus();
+  }, [busy, mode]);
 
   const rowClass = `${ROW} ${divided ? 'border-b border-line' : ''}`;
 
@@ -283,7 +319,13 @@ function HeaderRow({ category, divided }: { category: AdminCategory; divided: bo
             화면을 볼 수 없는 사용자에게 아무 일도 일어나지 않은 것과 같다(J2 InlineEdit·I3
             LinkAddRow·LoginForm 과 같은 짝). 짝인 `취소` 에는 붙이지 않는다: 도는 요청은 저장
             하나이고, 취소는 그 요청의 주인이 아니라 그동안 잠겨 있을 뿐이다. */}
-        <button type="submit" disabled={busy} aria-busy={busy} className={`${SOLID_BUTTON} bg-ink`}>
+        <button
+          ref={saveButtonRef}
+          type="submit"
+          disabled={busy}
+          aria-busy={busy}
+          className={`${SOLID_BUTTON} bg-ink`}
+        >
           저장
         </button>
         {/* `type="button"` 이어야 한다 — 폼 안의 버튼 기본값은 submit 이라 그대로 두면 취소가 저장이 된다. */}
@@ -313,6 +355,7 @@ function HeaderRow({ category, divided }: { category: AdminCategory; divided: bo
           </p>
           {/* 위 `저장` 과 같은 짝 — 도는 요청의 주인에게만 `aria-busy` 를 붙인다. */}
           <button
+            ref={confirmDeleteRef}
             type="button"
             disabled={busy}
             aria-busy={busy}

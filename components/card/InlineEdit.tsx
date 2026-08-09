@@ -11,6 +11,7 @@ import {
 
 import { toast } from '@/components/Toast';
 import { REQUEST_FAILED } from '@/lib/constants';
+import { isFocusNowhere } from '@/lib/focus';
 import { updateBookmark, type ActionResult, type BookmarkPatch } from '@/lib/mutations';
 import type { BookmarkWithCount } from '@/lib/types';
 
@@ -117,6 +118,8 @@ export function InlineEdit({ bookmark, onDone }: InlineEditProps) {
   const [baseline] = useState(bookmark);
   const formRef = useRef<HTMLFormElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
+  /** 실패로 잠금이 풀렸을 때 포커스를 돌려줄 자리 — 다시 누를 컨트롤이다(아래 두 번째 effect). */
+  const saveRef = useRef<HTMLButtonElement>(null);
   /**
    * 이 폼을 **연 자리** — 렌더 시점의 `document.activeElement` 다. 정상 경로에서는 방금 누른
    * 연필이고(클릭이 포커스를 옮긴 직후에 이 렌더가 일어난다), 아래 두 가지의 근거가 된다:
@@ -145,22 +148,23 @@ export function InlineEdit({ bookmark, onDone }: InlineEditProps) {
    * 돌려줄 자리는 위 `trigger` 다. 폼은 연필의 ref 를 모르므로(그 버튼은 LinkCard 의 것이고 J1b 의
    * 병렬 계약상 이 트랙이 건드리지 않는다) 붙들어 둔 것으로 가늠한다. 그래서 한계가 둘 남는다.
    *
-   * - 클릭으로 버튼에 포커스가 가지 않는 환경(macOS Safari 기본값 · jsdom)에서는 붙들 것이
-   *   `<body>` 라 되돌릴 것도 없다. 포커스는 폼이 사라진 자리, 즉 `<body>` 에 남는다.
+   * - 클릭으로 버튼에 포커스가 가지 않는 환경(macOS Safari 기본값 · jsdom)에서는 붙들 것이 문서
+   *   뿌리라 되돌릴 것도 없다. 포커스는 폼이 사라진 자리에 그대로 남는다. 그 "아무 데도 아닌
+   *   자리"(`<body>`·`<html>`·없음)의 판정은 `lib/focus.ts` 의 `isFocusNowhere` 한곳에 있다.
    * - 되돌릴 때 `isConnected` 를 본다 — 그 사이 카드가 사라졌다면(다른 창의 삭제 등) 떨어져 나간
    *   노드에 `focus()` 를 불러 봐야 포커스는 `<body>` 로 간다.
    *
    * ⚠️ 같은 링크가 홈의 두 섹션에 놓이면 폼도 두 벌 열린다(위 draft 소유권). 그때 이름 입력을
    * 데려가는 것은 **연필이 눌린 카드의 폼 하나**다 — 트리거를 렌더 시점에 붙들어 두었으므로
    * "그 연필이 내 카드 안에 있는가"로 가릴 수 있다. 기준 상자는 폼의 부모, 곧 카드다(LinkCard 는
-   * 본문 블록 자리에 `editSlot` 을 끼우고 연필은 같은 카드의 상단 줄에 있다). 붙든 것이 `<body>`
-   * 뿐이면 누가 눌렀는지 알 길이 없으므로 가리지 않고 데려온다 — 그때는 종전대로 나중에 마운트된
-   * 쪽이 이긴다.
+   * 본문 블록 자리에 `editSlot` 을 끼우고 연필은 같은 카드의 상단 줄에 있다). 붙든 것이 문서
+   * 뿌리뿐이면 누가 눌렀는지 알 길이 없으므로 가리지 않고 데려온다 — 그때는 종전대로 나중에
+   * 마운트된 쪽이 이긴다.
    */
   useEffect(() => {
     const card = formRef.current?.parentElement;
     const owned = trigger instanceof HTMLElement && card?.contains(trigger) === true;
-    const orphan = !(trigger instanceof HTMLElement) || trigger === document.body;
+    const orphan = !(trigger instanceof HTMLElement) || isFocusNowhere(trigger);
 
     if (owned || orphan) titleRef.current?.focus({ preventScroll: true });
 
@@ -169,6 +173,35 @@ export function InlineEdit({ bookmark, onDone }: InlineEditProps) {
         trigger.focus({ preventScroll: true });
     };
   }, [trigger]);
+
+  /**
+   * 저장이 **실패해 잠금이 풀린 순간** 포커스를 저장 버튼으로 돌려준다.
+   *
+   * 저장 중에는 두 버튼이 잠기는데 브라우저는 **잠긴 요소에서 포커스를 떼어** 문서 뿌리로
+   * 보낸다. 저장을 눌러 실패한 사용자는 고치던 값이 그대로 남은 폼을 보면서도 포커스는 카드
+   * 밖에 있어, 다시 시도하려면 화면 맨 앞에서 Tab 으로 걸어와야 한다 — 실패 문구를 읽고 곧바로
+   * 다시 누를 수 있어야 하는 자리다(J3 DeleteConfirm 이 실패 경로에서 `취소` 로 되돌리는 것과
+   * 같은 처방이고, 받는 쪽만 다르다: 여기는 되돌릴 수 없는 동작을 묻는 자리가 아니라 **재시도할
+   * 컨트롤**인 저장이 맞다).
+   *
+   * 가드가 둘이다.
+   *
+   * 1. **잠금이 풀린 그 순간에만** 움직인다(`wasSaving`). 마운트 때도 `saving` 은 false 라,
+   *    전이를 보지 않으면 남의 카드에서 열린 폼(위 `owned` 가 거르는 경우)이 포커스를 채 간다.
+   * 2. 그때도 포커스가 정말 떨어져 있을 때만 가져온다. 이름 칸에서 Enter 로 저장한 사용자의
+   *    포커스는 입력이 `readOnly` 라 그 자리에 남아 있는데, 뺏으면 고치던 곳을 잃는다.
+   */
+  const wasSaving = useRef(false);
+
+  useEffect(() => {
+    const before = wasSaving.current;
+    wasSaving.current = saving;
+
+    if (saving || !before) return;
+    if (!isFocusNowhere(document.activeElement)) return;
+
+    saveRef.current?.focus({ preventScroll: true });
+  }, [saving]);
 
   /**
    * **바뀐 키만** 담는다. `updateBookmark` 는 준 키만 쓰므로(BookmarkPatch), 건드리지 않은
@@ -314,7 +347,7 @@ export function InlineEdit({ bookmark, onDone }: InlineEditProps) {
       <div className="flex gap-[5px]">
         {/* `aria-busy` 는 '눌렀고 지금 처리 중'을 보조 기술에도 알린다 — 흐려지는 모습만으로는
             화면을 볼 수 없는 사용자에게 아무 일도 일어나지 않은 것과 같다(LoginForm 과 같은 짝). */}
-        <button type="submit" disabled={saving} aria-busy={saving} className={SAVE}>
+        <button ref={saveRef} type="submit" disabled={saving} aria-busy={saving} className={SAVE}>
           저장
         </button>
         {/* `type="button"` 이어야 한다 — 폼 안의 버튼 기본값은 submit 이라 그대로 두면 취소가 저장이 된다. */}
