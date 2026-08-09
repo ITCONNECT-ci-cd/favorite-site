@@ -25,6 +25,10 @@ import { getVisitorId } from '@/lib/visitor';
  * @param isBulk '한 번에 열기'로 열린 것인지 (2단계 G4). 기본은 사람이 카드를 누른 경우다.
  */
 export function recordClick(bookmarkId: string, isBulk = false): void {
+  // try 가 fetch 호출뿐 아니라 **인자를 만드는 일까지** 감싼다: 방문자 id 를 얻는 일
+  // (`getVisitorId` — localStorage 접근)과 본문 직렬화(`JSON.stringify`)가 모두 이 안에서 일어난다.
+  // 셋 중 하나라도 동기적으로 던지면 링크를 여는 이벤트 핸들러가 예외로 끝나므로 여기서 막는다
+  // (`.catch` 는 이미 시작된 요청의 거절만 잡는다 — 아래 참조).
   try {
     fetch('/api/click', {
       method: 'POST',
@@ -36,7 +40,8 @@ export function recordClick(bookmarkId: string, isBulk = false): void {
       // 삼키지 않으면 unhandled rejection 이 콘솔에 쌓인다.
     });
   } catch {
-    // fetch 가 아예 없는 환경. 던지면 링크를 여는 이벤트 핸들러가 예외로 끝나므로 여기서 막는다.
+    // fetch 가 아예 없는 환경, localStorage 접근이 막힌 브라우저, 직렬화 실패 — 어느 쪽이든
+    // 집계 하나를 잃을 뿐이므로 조용히 넘어간다. 링크는 그대로 열린다.
   }
 }
 
