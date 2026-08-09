@@ -74,8 +74,7 @@ function makeBookmark(title: string, categoryId: string): BookmarkWithCount {
 }
 
 const chip = (name: string | RegExp) => screen.getByRole('button', { name });
-const chipRow = () =>
-  screen.getByRole('button', { name: /^전체 \d+$/ }).parentElement as HTMLElement;
+const chipRow = () => screen.getByRole('group', { name: '하위 분류' });
 
 beforeEach(() => {
   localStorage.clear();
@@ -111,7 +110,7 @@ describe('상위 카테고리로 들어왔을 때', () => {
 
     expect(screen.getByRole('heading', { name: '마케팅' })).toBeInTheDocument();
     expect(screen.getByText('21개')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^전체 \d+$/ })).toBeNull();
+    expect(screen.queryByRole('group', { name: '하위 분류' })).toBeNull();
     expect(container.querySelector('p')).toBeNull(); // 설명도 없다 (스크린샷 01-shot)
     expect(cardCount(container)).toBe(21);
   });
@@ -197,7 +196,7 @@ describe('그 밖의 계약', () => {
     const { container } = await renderPage('고아');
 
     expect(screen.getByRole('heading', { name: '고아 분류' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^전체 \d+$/ })).toBeNull();
+    expect(screen.queryByRole('group', { name: '하위 분류' })).toBeNull();
     expect(screen.getByText('1개')).toBeInTheDocument();
     expect(cardCount(container)).toBe(1);
   });

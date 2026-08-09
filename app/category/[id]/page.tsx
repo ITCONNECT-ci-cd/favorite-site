@@ -45,12 +45,14 @@ export default async function CategoryPage({ params }: CategoryPageProps) {
     <ListView
       // 분류가 바뀌면 화면의 정체성도 바뀐다 — 키로 리마운트해 앞 분류에서 고른 하위 탭이
       // 남지 않게 한다(프로토타입도 이동할 때마다 sub 를 비웠다).
+      // 왕복 회귀(cdae2eb) 방지용이다 — ListView 안의 다른 두 장치로는 대체되지 않으니 지우지 마라.
       key={root.id}
       title={root.name}
       description={descriptionOf(root, categories, subs.length > 0)}
       bookmarks={own}
       // 칩의 개수는 사이드바와 같은 값이어야 하므로 D1 의 롤업을 그대로 쓴다.
-      subTabs={subs.map((sub) => ({ id: sub.id, name: sub.name, count: counts[sub.id] ?? 0 }))}
+      // rollupCounts 는 모든 카테고리를 키로 남기므로(D1 계약) 없는 키를 걱정하지 않는다.
+      subTabs={subs.map((sub) => ({ id: sub.id, name: sub.name, count: counts[sub.id] }))}
       initialSubId={target.id === root.id ? null : target.id}
       emptyMessage={EMPTY_MESSAGE}
     />

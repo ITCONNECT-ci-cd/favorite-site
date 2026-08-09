@@ -78,8 +78,7 @@ function shownTitles(container: HTMLElement): string[] {
 
 const chip = (name: string) => screen.getByRole('button', { name });
 const chips = () => screen.getAllByRole('button', { name: /^(전체|대화·검색|영상) \d+$/ });
-const chipRow = () =>
-  screen.getByRole('button', { name: /^전체 \d+$/ }).parentElement as HTMLElement;
+const chipRow = () => screen.getByRole('group', { name: '하위 분류' });
 
 beforeEach(() => {
   localStorage.clear();
@@ -121,13 +120,13 @@ describe('ListView — 하위 탭 칩 줄', () => {
   it('하위가 없으면 칩 줄 자체를 렌더하지 않는다', () => {
     renderList();
 
-    expect(screen.queryByRole('button', { name: /^전체 \d+$/ })).toBeNull();
+    expect(screen.queryByRole('group', { name: '하위 분류' })).toBeNull();
   });
 
   it('빈 배열도 하위가 없는 것으로 본다', () => {
     renderList({ subTabs: [] });
 
-    expect(screen.queryByRole('button', { name: /^전체 \d+$/ })).toBeNull();
+    expect(screen.queryByRole('group', { name: '하위 분류' })).toBeNull();
   });
 
   it('전체(개수) + 하위별(개수) 순으로 칩을 만든다', () => {
@@ -214,11 +213,13 @@ describe('ListView — 탭 필터링', () => {
 });
 
 describe('ListView — 본문 (홈과 같은 카드 그리드)', () => {
+  // 그리드의 수치(열 규칙·gap)는 CardGrid 의 계약이라 그쪽 테스트가 지킨다.
+  // 여기서는 '행 목록이 아니라 그리드에 카드가 한 장씩 깔렸는가'만 본다.
   it('행 목록이 아니라 CardGrid 로 깐다', () => {
     const { container } = renderList();
 
     const grid = container.querySelector('.grid');
-    expect(grid).toHaveClass('grid-cols-[repeat(auto-fill,minmax(158px,1fr))]', 'gap-[10px]');
+    expect(grid).not.toBeNull();
     expect(grid?.children).toHaveLength(4);
   });
 
@@ -247,11 +248,11 @@ describe('ListView — 본문 (홈과 같은 카드 그리드)', () => {
 });
 
 describe('ListView — 빈 상태', () => {
-  it('링크가 없으면 점선 안내 박스를 대신 놓는다', () => {
+  // 점선 박스의 생김새는 EmptyBox 의 계약이다 — 여기서는 그리드 대신 안내문이 놓였는지만 본다.
+  it('링크가 없으면 안내 박스를 대신 놓는다', () => {
     const { container } = renderList({ bookmarks: [] });
 
-    const box = screen.getByText('이 분류에 링크가 없습니다.');
-    expect(box).toHaveClass('border-dashed', 'border-dash', 'bg-side');
+    expect(screen.getByText('이 분류에 링크가 없습니다.')).toBeInTheDocument();
     expect(container.querySelector('.grid')).toBeNull();
   });
 

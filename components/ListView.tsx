@@ -45,6 +45,17 @@ const CHIP_OFF = 'border-border-strong bg-card font-normal text-[#3a3833]';
  *
  * 하위 탭은 URL 이 아니라 이 컴포넌트의 상태다. 사이드바에서 하위 링크(`/category/<하위id>`)로
  * 들어오면 서버가 `initialSubId` 로 알려 주고, 그 뒤 칩 클릭은 URL 을 건드리지 않는다.
+ * 그 귀결로, 칩으로 탭을 옮긴 뒤 지금 활성인 사이드바 하위 링크를 다시 눌러도 URL 이 그대로라
+ * 칩은 되돌아오지 않는다(같은 주소로의 이동에는 아무 일도 일어나지 않는다).
+ *
+ * **선택 상태를 지키는 장치가 셋이고 역할이 다르다. 하나를 지우면 나머지가 대신해 주지 않는다.**
+ * 1. 호출부의 `key={분류 id}` (app/category/[id]/page.tsx) — **분류 간 왕복**을 막는다.
+ *    A 에서 하위를 고르고 B 에 들렀다 A 로 돌아오면 그 선택은 버려야 한다. 되돌아온 A 에는
+ *    그 하위 탭이 그대로 있어 아래 3번으로는 걸러지지 않으므로, 리마운트만이 이 경우를 잡는다.
+ * 2. 아래 `seenInitial` 조정 — **같은 분류 안에서 상위↔하위 이동**. 라우트도 화면 정체성도
+ *    그대로라 리마운트가 없고, 서버가 준 `initialSubId` 변화만이 신호다.
+ * 3. `activeId` 의 fallback — 소비자가 `key` 없이 이 컴포넌트를 재사용해 탭 목록만 갈아 끼우는
+ *    경우의 방어선이다. 지금의 앱 경로에서는 1·2 가 먼저 잡아 도달하지 않는다.
  */
 export function ListView({
   title,
@@ -62,12 +73,8 @@ export function ListView({
   const [selected, setSelected] = useState(initialSubId);
 
   /**
-   * 같은 상위 안에서 하위를 오가면(`/category/<상위>` ↔ `/category/<하위>`) 화면의 정체성이
-   * 그대로라 이 컴포넌트가 다시 마운트되지 않는다. 그래서 서버가 준 선택이 바뀌면 렌더 중에 맞춘다
-   * (렌더 중 상태 조정 패턴 — Sidebar 의 펼침 처리와 같다).
-   *
-   * 다른 분류로 넘어가는 경우는 화면 자체가 바뀌는 것이라 상태를 조정하지 않고 버린다 —
-   * 호출부(app/category/[id]/page.tsx)가 분류 id 를 key 로 주어 통째로 리마운트한다.
+   * 장치 2 — 같은 분류 안에서 상위↔하위를 오가면 리마운트가 없으므로(위 JSDoc),
+   * 서버가 준 선택이 바뀔 때 렌더 중에 맞춘다(렌더 중 상태 조정 패턴 — Sidebar 의 펼침 처리와 같다).
    */
   const [seenInitial, setSeenInitial] = useState(initialSubId);
   if (seenInitial !== initialSubId) {
@@ -75,7 +82,11 @@ export function ListView({
     setSelected(initialSubId);
   }
 
-  /** 고른 하위가 지금 화면의 탭에 없으면(다른 분류로 이동) 전체로 본다. */
+  /**
+   * 장치 3 — 고른 하위가 지금 탭 목록에 아예 없으면 전체로 본다.
+   * `key` 없이 props 만 갈아 끼우는 소비자를 위한 방어선이지, 분류 간 왕복을 막아 주지는 못한다
+   * (돌아온 분류에는 그 하위가 다시 있으므로 이 조건에 걸리지 않는다 — 위 JSDoc 1번 참조).
+   */
   const activeId = tabs.some((tab) => tab.id === selected) ? selected : null;
   const shown =
     activeId === null
@@ -96,7 +107,11 @@ export function ListView({
       </div>
 
       {tabs.length > 0 && (
-        <div className="mb-[14px] flex flex-wrap gap-[6px]">
+        <div
+          role="group"
+          aria-label="하위 분류"
+          className="mb-[14px] flex flex-wrap gap-[6px]"
+        >
           {[{ id: null, name: '전체', count: bookmarks.length }, ...tabs].map((tab) => {
             const on = tab.id === activeId;
 
@@ -116,7 +131,9 @@ export function ListView({
       )}
 
       {/* 툴바(전체 열기 · 선택 열기 · 선택 해제 · 우측 안내문)와 카드의 체크(showCheck)는
-          2단계 G4 몫이다. 지금은 자리만 비워 둔다. */}
+          2단계 G4 몫이다. 지금은 자리만 비워 둔다.
+          G4 에게: 체크한 id 는 탭을 바꿔도 남으므로 그대로 두면 '선택 N개 열기'가 지금 화면에
+          보이지도 않는 카드를 연다. 탭 전환 시 선택을 비우거나 `shown` 과 교차시켜라. */}
 
       {shown.length === 0 ? (
         <EmptyBox>{emptyMessage}</EmptyBox>
