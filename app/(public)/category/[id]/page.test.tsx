@@ -6,7 +6,7 @@
  */
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import CategoryPage, { generateMetadata } from '@/app/category/[id]/page';
+import CategoryPage, { generateMetadata } from '@/app/(public)/category/[id]/page';
 import { OPERATING_CATEGORY_NAME } from '@/lib/constants';
 import type { BookmarkWithCount, SiteData } from '@/lib/types';
 import { siteData, subId, topId } from '@/test/fixtures/seed';
@@ -219,7 +219,7 @@ describe('그 밖의 계약', () => {
   });
 
   it('revalidate 를 내보내지 않는다 — 이 페이지는 매 요청 렌더가 의도다 (lib/queries.ts)', async () => {
-    const pageModule = await import('@/app/category/[id]/page');
+    const pageModule = await import('@/app/(public)/category/[id]/page');
 
     expect(pageModule).not.toHaveProperty('revalidate');
   });

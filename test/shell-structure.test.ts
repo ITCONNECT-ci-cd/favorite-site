@@ -5,12 +5,18 @@ import { describe, expect, it } from 'vitest';
 /**
  * 셸 뼈대(C1)의 회귀 방지 — DESIGN_SPEC 2장 + 1장(본문 패딩).
  *
- * RootLayout 은 `<html>` 을 렌더하므로 RTL 로 마운트할 수 없다(jsdom 문서에 html 이 중첩된다).
+ * 두 파일을 나눠 읽는다 (H2 라우트 그룹 분리): 공개 셸은 `app/(public)/layout.tsx` 로
+ * 내려갔고, 문서 뼈대(html·body·폰트·Toaster)만 루트 `app/layout.tsx` 에 남았다.
+ * `(public)` 은 라우트 그룹이라 URL 에는 나타나지 않는다 — 아래 셸 단언이 지키는 화면의
+ * 주소는 예전 그대로다.
+ *
+ * 레이아웃은 async 서버 컴포넌트고 루트는 `<html>` 을 렌더하므로 RTL 로 마운트할 수 없다.
  * 그래서 design-tokens.test.ts 와 같은 방식으로 **소스 문자열을 검사**한다.
  * 이 방식은 "클래스가 적혀 있다"까지만 보증하고 화면에 실제로 그렇게 그려지는지는 못 본다 —
  * 시각 검증은 시드 투입(B5) 이후 O1 게이트에서 한다(계획서 기록).
  */
-const layoutSource = readFileSync(join(process.cwd(), 'app/layout.tsx'), 'utf8');
+const layoutSource = readFileSync(join(process.cwd(), 'app/(public)/layout.tsx'), 'utf8');
+const rootLayoutSource = readFileSync(join(process.cwd(), 'app/layout.tsx'), 'utf8');
 
 /**
  * 주석을 걷어낸 코드만 남긴다.
@@ -21,6 +27,7 @@ const layoutSource = readFileSync(join(process.cwd(), 'app/layout.tsx'), 'utf8')
  * Pretendard CDN 주소의 `//` 뒤가 함께 날아간다.
  */
 const layoutCode = layoutSource.replace(/\/\*[\s\S]*?\*\//g, '');
+const rootLayoutCode = rootLayoutSource.replace(/\/\*[\s\S]*?\*\//g, '');
 
 /** JSX 속성 문자열에서 지정한 컴포넌트/태그의 className 을 뽑는다. */
 function classNameOf(pattern: RegExp): string {
@@ -30,7 +37,7 @@ function classNameOf(pattern: RegExp): string {
   return match![1];
 }
 
-describe('셸 레이아웃 뼈대 (app/layout.tsx)', () => {
+describe('셸 레이아웃 뼈대 (app/(public)/layout.tsx)', () => {
   it('사이드바 자리가 240px 고정폭 + 우측 1px 테두리 + 사이드바 배경이다', () => {
     const className = classNameOf(/<aside className="([^"]*)"/);
 
@@ -73,19 +80,51 @@ describe('셸 레이아웃 뼈대 (app/layout.tsx)', () => {
     expect(layoutCode).not.toContain('h-[38px]');
   });
 
-  it('토스터를 딱 한 번 마운트한다', () => {
-    expect(layoutCode.match(/<Toaster\s*\/>/g)).toHaveLength(1);
-  });
-
   it('revalidate 를 내보내지 않는다 (매 요청 렌더가 의도 — getAllData JSDoc)', () => {
     expect(layoutCode).not.toMatch(/export\s+const\s+revalidate/);
   });
 });
 
 /**
+ * 라우트 그룹 분리 (H2) — 루트 레이아웃은 **문서 뼈대만** 진다.
+ *
+ * 셸이 루트에 있으면 `/admin` 이 공개 사이드바 안에 갇힌다. 되돌아가기 쉬운 구조라
+ * "루트에 무엇이 없어야 하는가"를 소스 수준에서 잠근다.
+ */
+describe('루트 레이아웃은 문서 뼈대만 진다 (app/layout.tsx)', () => {
+  it('공개 셸을 렌더하지 않는다 — 사이드바·헤더·칩 줄이 없다', () => {
+    expect(rootLayoutCode).not.toContain('<aside');
+    expect(rootLayoutCode).not.toContain('<header');
+    expect(rootLayoutCode).not.toContain('SidebarContainer');
+    expect(rootLayoutCode).not.toContain('PaletteHost');
+    expect(rootLayoutCode).not.toContain('MobileChips');
+  });
+
+  it('데이터를 조회하지 않는다 — 실패할 일이 없어야 문서 뼈대가 항상 선다', () => {
+    expect(rootLayoutCode).not.toContain('getAllData');
+    expect(rootLayoutCode).not.toContain('@/lib/queries');
+  });
+
+  it('html·body 와 h-full 계약을 든다 (셸·로그인 화면이 함께 쓴다)', () => {
+    expect(rootLayoutCode).toMatch(/<html lang="ko" className="h-full">/);
+    expect(rootLayoutCode).toMatch(/<body className="h-full">/);
+  });
+
+  it('토스터를 딱 한 번, 루트에서 마운트한다 (관리 화면에서도 토스트가 떠야 한다)', () => {
+    expect(rootLayoutCode.match(/<Toaster\s*\/>/g)).toHaveLength(1);
+    expect(layoutCode).not.toContain('<Toaster');
+  });
+
+  it('공개 셸은 자기 html·body 를 만들지 않는다 (중첩 문서 방지)', () => {
+    expect(layoutCode).not.toContain('<html');
+    expect(layoutCode).not.toContain('<body');
+  });
+});
+
+/**
  * 셸 데이터 조회가 실패해도 빈 500 이 아니라 안내 화면이 나가야 한다 (O1 게이트 F-1).
  *
- * 루트 레이아웃의 SSR 실패는 global-error.tsx 가 잡지 못한다 — Next 가 빈 500 셸
+ * 레이아웃의 SSR 실패는 global-error.tsx 가 잡지 못한다 — Next 가 빈 500 셸
  * (`__next_error__`)을 내보내고 클라이언트 청크가 로드되지 않기 때문이다. 그래서 셸이
  * 직접 try/catch 로 잡는데, **이 구조는 지우기 쉬운 종류의 코드**라 소스 수준에서 잠가 둔다.
  *
@@ -100,11 +139,6 @@ describe('셸 데이터 조회 실패 대비 (O1 게이트 F-1)', () => {
 
   it('실패해도 안내 문구를 내보낸다 (global-error 와 같은 문구)', () => {
     expect(layoutCode).toContain('일시적인 오류가 발생했습니다');
-  });
-
-  it('오류 화면도 자기 html·body 를 직접 렌더한다', () => {
-    // 루트 레이아웃 자리를 대신 채우는 화면이라 문서 뼈대를 스스로 갖춰야 한다.
-    expect(layoutCode.match(/<html lang="ko"/g)!.length).toBeGreaterThanOrEqual(2);
   });
 
   it('되돌리기는 reset() 이 아니라 문서 요청 링크다', () => {

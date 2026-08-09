@@ -10,7 +10,7 @@
  */
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import FavoritesPage, { metadata } from '@/app/favorites/page';
+import FavoritesPage, { metadata } from '@/app/(public)/favorites/page';
 import { Toaster } from '@/components/Toast';
 import type { BookmarkWithCount, SiteData } from '@/lib/types';
 import { setFavs } from '@/test/favs';
@@ -167,7 +167,7 @@ describe('내 즐겨찾기 — 핀 해제 (D6)', () => {
 
 describe('내 즐겨찾기 — 그 밖의 계약', () => {
   it('revalidate 를 내보내지 않는다 — 매 요청 렌더가 의도다 (lib/queries.ts)', async () => {
-    const pageModule = await import('@/app/favorites/page');
+    const pageModule = await import('@/app/(public)/favorites/page');
 
     expect(pageModule).not.toHaveProperty('revalidate');
   });

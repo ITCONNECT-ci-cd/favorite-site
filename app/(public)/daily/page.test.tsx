@@ -9,7 +9,7 @@
  */
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import DailyPage, { metadata } from '@/app/daily/page';
+import DailyPage, { metadata } from '@/app/(public)/daily/page';
 import type { BookmarkWithCount, SiteData } from '@/lib/types';
 import { setFavs } from '@/test/favs';
 import { BOOKMARKS, siteData } from '@/test/fixtures/seed';
@@ -158,7 +158,7 @@ describe('매일 사용하는 사이트 — 그 밖의 계약', () => {
   });
 
   it('revalidate 를 내보내지 않는다 — 매 요청 렌더가 의도다 (lib/queries.ts)', async () => {
-    const pageModule = await import('@/app/daily/page');
+    const pageModule = await import('@/app/(public)/daily/page');
 
     expect(pageModule).not.toHaveProperty('revalidate');
   });
