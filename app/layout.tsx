@@ -14,6 +14,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="ko" className="h-full">
       <head>
+        <link
+          rel="preconnect"
+          href="https://cdn.jsdelivr.net"
+          crossOrigin="anonymous"
+        />
         <link rel="stylesheet" href={PRETENDARD_CSS_URL} />
       </head>
       <body className="min-h-full flex flex-col">{children}</body>

@@ -4,6 +4,13 @@
    제품은 라이트 모드 전용(PRD 하드 제약)이므로 다크 모드 대응 토큰·미디어 쿼리를 두지 않는다.
    Tailwind v4는 아래 토큰으로 bg-, text-, border- 유틸을 생성한다. */
 @theme {
+  /* Tailwind 기본 팔레트를 통째로 제거한다. "색은 파비콘에서만 나온다"(DESIGN_SPEC 1장)는
+     무채색 제약을 컴파일 단계에서 강제하기 위한 것으로, text-gray-500·bg-blue-500 같은
+     클래스는 이제 유틸 자체가 생성되지 않는다. 아래 정의한 토큰만 쓸 수 있다.
+     (transparent·currentColor는 테마 변수가 아니라서 bg-transparent 등은 그대로 쓸 수 있다.) */
+  --color-*: initial;
+  --color-white: #ffffff; /* 다크 배경(#141516) 위 흰 글자·아이콘 */
+
   /* 배경 */
   --color-page: #f7f5f2; /* 페이지 배경, 헤더·툴바 */
   --color-surface: #fbfaf8; /* 본문 영역 배경 */
@@ -11,7 +18,7 @@
   --color-side: #f3f1ed; /* 사이드바, 검색창 배경 */
   --color-toolbar: #faf9f7; /* 보조 툴바 */
 
-  /* 텍스트 */
+  /* 텍스트 — 위에서 아래로 갈수록 옅어지는 하나의 램프다. 역할에 맞는 단계를 골라 쓴다. */
   --color-ink: #141516; /* 본문 텍스트, 선택(다크) 배경 */
   --color-ink-hover: #33352f; /* 다크 요소 호버 */
   --color-sub: #4a4844; /* 보조 텍스트 */
@@ -19,15 +26,17 @@
   --color-faint: #8b877f; /* 흐린 텍스트, 클릭 수 */
   --color-fainter: #9a9791; /* 더 흐린 텍스트 */
   --color-muted: #a5a29c; /* 카드 주소 */
-  --color-mist: #a8a49d; /* 사이드바 캡션·카운트 */
+  --color-mist: #a8a49d; /* 사이드바 캡션·카운트 — muted와 3/255 차이지만 스펙의 별도 행이다. 통합 금지. */
   --color-ghost: #b5b1aa; /* 핀 꺼짐 */
 
-  /* 테두리·구분선 */
+  /* 테두리·구분선 — 옅은 쪽에서 진한 쪽 순.
+     보조 구분선 #eeece8과 오버레이 rgba(20,21,22,.36)는 스펙상 사용처가 한정적이라
+     토큰화하지 않는다. 필요한 컴포넌트에서 값을 직접 쓴다. */
+  --color-line: #f2f0ec; /* 옅은 구분선 */
   --color-border: #e3dfd9; /* 기본 테두리 */
-  --color-border-strong: #ddd8d1; /* 입력 테두리 */
+  --color-border-strong: #ddd8d1; /* 입력 테두리 — card-border와 1/255 차이지만 스펙의 별도 행이다. 통합 금지. */
   --color-card-border: #dcd7cf; /* 카드 기본 테두리 */
   --color-dash: #d8d3cb; /* 점선 박스 */
-  --color-line: #f2f0ec; /* 옅은 구분선 */
 
   /* 상태 */
   --color-select: #e4e0d8; /* 선택 배경(라이트), 핀 켜짐 배경 */
@@ -40,7 +49,14 @@
   --font-sans: "Pretendard", system-ui, sans-serif;
 }
 
-/* 전역 타이포그래피 — DESIGN_SPEC 1장. 높이/레이아웃은 app/layout.tsx의 유틸 클래스가 담당한다. */
+/* 라이트 모드 전용 — 브라우저 기본 UI(스크롤바·폼 컨트롤)까지 라이트로 못박는다. */
+:root {
+  color-scheme: light;
+}
+
+/* 전역 타이포그래피 — DESIGN_SPEC 1장. 높이/레이아웃은 app/layout.tsx의 유틸 클래스가 담당한다.
+   body는 본문 영역 배경(surface)만 깔고, 페이지·사이드바 배경은 C1 셸이
+   bg-page / bg-side로 해당 영역에 직접 칠한다. */
 body {
   background: var(--color-surface);
   color: var(--color-ink);
