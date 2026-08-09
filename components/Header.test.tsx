@@ -15,6 +15,19 @@ describe('Header', () => {
     expect(trigger).toHaveAttribute('type', 'button');
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
     expect(screen.getByText('이름·설명·태그·주소로 바로 찾기')).toBeInTheDocument();
+    // 입력이 아니어도 "여기서 타이핑이 시작된다"는 신호는 남긴다.
+    expect(trigger).toHaveClass('cursor-text');
+  });
+
+  it('검색 트리거는 팔레트를 여는 버튼임을 보조기술에 알린다', () => {
+    render(<Header totalCount={290} faviconCount={262} />);
+
+    const trigger = searchTrigger();
+
+    expect(trigger).toHaveAttribute('aria-haspopup', 'dialog');
+    expect(trigger).toHaveAttribute('aria-keyshortcuts', 'Meta+K');
+    // ⌘ 기호는 스크린리더가 못 읽으므로 접근 이름에서 뺀다 — 단축키는 위 속성이 알린다.
+    expect(screen.getByText('⌘K')).toHaveAttribute('aria-hidden', 'true');
   });
 
   it('검색 트리거는 스펙 치수를 그대로 쓴다 (최대 620px · 38px · bg-side · border-border-strong · 라운드 7px)', () => {
@@ -79,13 +92,19 @@ describe('Header', () => {
       'font-semibold',
       'rounded-[7px]',
     );
-    // 호버는 배경만 #33352f로 바꾼다 — 테두리까지 같이 바꾸면 1px 외곽선이 사라진다.
-    expect(button).toHaveClass('border-ink', 'hover:bg-ink-hover');
-    expect(button.className).not.toMatch(/hover:border-/);
 
     fireEvent.click(button);
 
     expect(onAiClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('"AI 검색" 호버는 배경만 바꾼다 (테두리까지 바꾸면 1px 외곽선이 사라진다)', () => {
+    render(<Header totalCount={290} faviconCount={262} />);
+
+    const button = screen.getByRole('button', { name: 'AI 검색' });
+
+    expect(button).toHaveClass('border-ink', 'hover:bg-ink-hover');
+    expect(button.className).not.toMatch(/hover:border-(ink-hover|\[)/);
   });
 
   it('콜백을 주지 않아도 클릭이 터지지 않는다', () => {
@@ -152,6 +171,6 @@ describe('Header', () => {
     const { container } = render(<Header totalCount={290} faviconCount={262} />);
     const rootClass = container.firstElementChild?.className ?? '';
 
-    expect(rootClass).not.toMatch(/(^|\s)(bg-|h-\[60px\]|px-|border-b)/);
+    expect(rootClass).not.toMatch(/(^|\s)(bg-|h-|min-h-|p[xlr]?-|border-b)/);
   });
 });

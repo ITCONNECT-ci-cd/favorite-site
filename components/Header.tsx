@@ -21,7 +21,14 @@ export type HeaderProps = {
  * 패딩이 이중으로 먹는다.
  *
  * 검색창은 겉모습만 입력처럼 보이는 **버튼**이다. 실제 입력은 ⌘K 팔레트가 받으므로
- * 여기에 <input>을 두면 포커스가 두 군데로 갈라진다.
+ * 여기에 <input>을 두면 포커스가 두 군데로 갈라진다. 커서를 `cursor-text`로 두는 것도
+ * 같은 이유다 — "여기서 타이핑이 시작된다"는 신호는 남기되 입력은 팔레트가 받는다.
+ *
+ * G5 배선 시 할 일:
+ * - 팔레트 열림 상태를 `aria-expanded`로 스레딩한다 (선택적 `isSearchOpen?: boolean` prop 추가).
+ *   지금은 열림 상태를 알 수 없어 `aria-haspopup="dialog"`까지만 걸어 뒀다.
+ * - `onSearchClick`·`onAiClick`을 required로 승격한다. 콜백 없는 헤더는 C4 단독 렌더용
+ *   임시 상태이지 제품 상태가 아니다.
  */
 export function Header({
   totalCount,
@@ -35,6 +42,8 @@ export function Header({
       <button
         type="button"
         onClick={onSearchClick}
+        aria-haspopup="dialog"
+        aria-keyshortcuts="Meta+K"
         // 호버 두 색은 프로토타입 값 그대로다. #efede8은 DESIGN_SPEC 2-1장(카드 액션 버튼
         // 호버 배경)에도 나오는 정식 스펙 값이고, #b8b2a8은 1장 색상표에 없어 토큰이 없다.
         // 둘 다 arbitrary value로 적는다 — 팔레트 제거는 "토큰 클래스만 존재"라는 뜻이지
@@ -64,7 +73,12 @@ export function Header({
           이름·설명·태그·주소로 바로 찾기
         </span>
 
-        <kbd className="flex-none rounded-[4px] border border-border-strong bg-card px-[6px] py-[2px] font-sans text-[10.5px] font-semibold text-faint">
+        {/* 단축키는 aria-keyshortcuts로 이미 알렸다. U+2318(⌘)은 Windows 스크린리더가
+            읽지 않아 접근 이름만 어지럽히므로 시각 표시 전용으로 숨긴다. */}
+        <kbd
+          aria-hidden="true"
+          className="flex-none rounded-[4px] border border-border-strong bg-card px-[6px] py-[2px] font-sans text-[10.5px] font-semibold text-faint"
+        >
           ⌘K
         </kbd>
       </button>
