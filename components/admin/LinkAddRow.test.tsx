@@ -17,9 +17,17 @@ import { CategoryPanel } from '@/components/admin/CategoryPanel';
 import { Toaster } from '@/components/Toast';
 import { collectFavicon } from '@/lib/favicon-collect';
 import { createBookmark } from '@/lib/mutations';
+import { pendingResult } from '@/test/pending';
 import { setupToastTimers } from '@/test/toast';
 
-vi.mock('@/lib/mutations', () => ({
+/**
+ * 원본을 펼친 위에 이 화면이 부르는 것만 갈아 끼운다 — 팩토리로 통째 대체하면 나중에 액션이
+ * 하나 늘 때 **이 트리가 끌어오는 다른 액션이 undefined 가 되어** 엉뚱한 곳에서 터진다
+ * (HomeView.test·SubCategoryRow.test 와 같은 관례). createCategory·reorderCategories 는
+ * 아래 '선택한 카테고리로 들어간다' 가 함께 세우는 CategoryPanel 의 몫이다.
+ */
+vi.mock('@/lib/mutations', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/mutations')>()),
   createBookmark: vi.fn(),
   createCategory: vi.fn(),
   reorderCategories: vi.fn(),
@@ -61,11 +69,19 @@ function fill({ url = '', title = '', description = '' }) {
   if (description !== '') fireEvent.change(field('한 줄 설명'), { target: { value: description } });
 }
 
+/**
+ * 거부 경로가 남기는 진단 로그(사용자에게 보일 문장이 아니다) — **그 테스트에서만** 조용히
+ * 시킨다. 파일 전역으로 막아 두면 여기서 예상하지 않은 React 경고·오류까지 함께 삼켜,
+ * 화면이 조용히 망가져도 초록으로 지나간다(I1 CategoryHeader.test 와 같은 처리).
+ */
+function silenceConsoleError() {
+  return vi.spyOn(console, 'error').mockImplementation(() => {});
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(createBookmark).mockResolvedValue({ ok: true });
   vi.mocked(collectFavicon).mockResolvedValue({ ok: true, faviconUrl: ICON_URL });
-  vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 
 describe('LinkAddRow — 줄의 모습 (프로토타입 359–366행)', () => {
@@ -114,6 +130,14 @@ describe('LinkAddRow — 줄의 모습 (프로토타입 359–366행)', () => {
 
     expect(addButton()).toHaveTextContent('‘AI 도구 모음’에 추가');
     expect(addButton()).toHaveClass('bg-ink', 'h-[32px]', 'text-white', 'whitespace-nowrap');
+  });
+
+  it('검은 버튼도 손가락 커서를 쓰고 잠긴 동안에는 되돌린다', () => {
+    // Tailwind v4 preflight 에는 버튼 커서 규칙이 없어 적지 않으면 화살표로 남는다
+    // (J2 InlineEdit · J3 DeleteConfirm · I1 CategoryHeader 와 같은 관례).
+    renderRow();
+
+    expect(addButton()).toHaveClass('cursor-pointer', 'disabled:cursor-default');
   });
 
   it('아래에 붙는 줄(I4·I5)은 같은 상자 안 추가 줄 밑으로 들어간다', () => {
@@ -284,12 +308,8 @@ describe('LinkAddRow — 등록', () => {
   });
 
   it('보내는 중에 다시 눌러도 한 번만 나간다', async () => {
-    let release = (): void => {};
-    vi.mocked(createBookmark).mockReturnValue(
-      new Promise((resolve) => {
-        release = () => resolve({ ok: true });
-      }),
-    );
+    const add = pendingResult();
+    vi.mocked(createBookmark).mockReturnValue(add.promise);
     renderRow();
 
     fill({ url: 'https://perplexity.ai/' });
@@ -301,12 +321,33 @@ describe('LinkAddRow — 등록', () => {
     expect(addButton()).toBeDisabled();
     expect(addButton()).toHaveAttribute('aria-busy', 'true');
 
-    await act(async () => {
-      release();
-    });
+    await add.finish();
 
     expect(addButton()).not.toBeDisabled();
     expect(addButton()).toHaveAttribute('aria-busy', 'false');
+  });
+
+  it('왕복 중에는 세 칸을 readOnly 로 잠근다 — disabled 면 포커스가 줄 밖으로 튄다', async () => {
+    // 브라우저는 disabled 가 된 요소에서 포커스를 떼어 <body> 로 보낸다. 어느 칸에서 Enter 로
+    // 등록한 사용자의 포커스가 그 순간 줄 밖으로 튀고, 서버가 거절해 값이 남아도 이어 고칠
+    // 자리를 잃는다(J2 InlineEdit 의 두 입력과 같은 근거).
+    const add = pendingResult();
+    vi.mocked(createBookmark).mockReturnValue(add.promise);
+    renderRow();
+
+    fill({ url: 'https://perplexity.ai/', title: 'Perplexity', description: '검색형 AI' });
+    await click(addButton());
+
+    for (const name of ['주소', '이름', '한 줄 설명']) {
+      expect(field(name)).toHaveAttribute('readonly');
+      expect(field(name)).toBeEnabled();
+    }
+
+    await add.finish();
+
+    for (const name of ['주소', '이름', '한 줄 설명']) {
+      expect(field(name)).not.toHaveAttribute('readonly');
+    }
   });
 
   it('같은 틱에 두 번 눌러도 한 번만 나간다 (아직 다시 그려지기 전이다)', async () => {
@@ -347,6 +388,7 @@ describe('LinkAddRow — 파비콘을 못 구한 경우', () => {
   });
 
   it('수집 요청 자체가 거부돼도 등록은 그대로 진행한다', async () => {
+    const spy = silenceConsoleError();
     vi.mocked(collectFavicon).mockRejectedValue(new Error('fetch failed'));
     renderRow();
 
@@ -355,7 +397,9 @@ describe('LinkAddRow — 파비콘을 못 구한 경우', () => {
 
     expect(createBookmark).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('status')).toHaveTextContent('파비콘을 가져오지 못했습니다.');
-    expect(console.error).toHaveBeenCalled();
+    expect(spy).toHaveBeenCalled();
+
+    spy.mockRestore();
   });
 });
 
@@ -392,6 +436,7 @@ describe('LinkAddRow — 등록 실패', () => {
   });
 
   it('등록 요청이 거부되면 빗장을 풀어 다시 시도할 수 있게 한다', async () => {
+    const spy = silenceConsoleError();
     vi.mocked(createBookmark).mockRejectedValue(new Error('fetch failed'));
     renderRow();
 
@@ -400,11 +445,14 @@ describe('LinkAddRow — 등록 실패', () => {
 
     expect(screen.getByRole('status')).toHaveTextContent('저장하지 못했습니다. 잠시 후 다시 시도해 주세요.');
     expect(addButton()).not.toBeDisabled();
+    expect(spy).toHaveBeenCalled();
 
     vi.mocked(createBookmark).mockResolvedValue({ ok: true });
     await click(addButton());
 
     expect(createBookmark).toHaveBeenCalledTimes(2);
+
+    spy.mockRestore();
   });
 });
 

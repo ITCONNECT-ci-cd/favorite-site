@@ -16,9 +16,15 @@ const ROW = 'flex flex-wrap items-center gap-[8px] px-[16px] py-[12px]';
 /** 세 입력의 공통 몸통 — 높이 32px, 라운드 6px, 좌우 10px, 12.5px (프로토타입 362–364행). */
 const FIELD = 'h-[32px] rounded-[6px] border border-border-strong bg-card px-[10px] text-[12.5px] text-ink';
 
-/** 검은 확정 버튼 — 높이 32px, 좌우 14px. 줄바꿈을 막는 것은 flex-wrap 줄에서 라벨이 길기 때문이다. */
+/**
+ * 검은 확정 버튼 — 높이 32px, 좌우 14px. 줄바꿈을 막는 것은 flex-wrap 줄에서 라벨이 길기 때문이다.
+ *
+ * `cursor-pointer` 는 Tailwind v4 preflight 에 버튼 커서 규칙이 없어서다 — 적지 않으면 브라우저
+ * 기본값 `default` 라 눌리는 곳 위에서 화살표로 남는다. 잠긴 동안에는 되돌린다(J2 InlineEdit ·
+ * J3 DeleteConfirm · I1 CategoryHeader 와 같은 관례).
+ */
 const BUTTON =
-  'flex h-[32px] flex-none items-center rounded-[6px] bg-ink px-[14px] text-[12px] font-semibold whitespace-nowrap text-white hover:bg-ink-hover disabled:opacity-60';
+  'flex h-[32px] flex-none cursor-pointer items-center rounded-[6px] bg-ink px-[14px] text-[12px] font-semibold whitespace-nowrap text-white hover:bg-ink-hover disabled:cursor-default disabled:opacity-60';
 
 /** 파비콘 수집 **요청 자체가** 거부된 경우. 서버가 준 사유가 없으니 여기서 한 문장을 만든다. */
 const FAVICON_REQUEST_FAILED = '파비콘을 가져오지 못했습니다.';
@@ -188,11 +194,18 @@ export function LinkAddRow({ children }: { children?: ReactNode }) {
         </span>
 
         {/* placeholder 는 값이 들어가면 사라져 이름 역할을 못 하므로 접근성 이름을 따로 준다
-            (프로토타입에는 눈에 보이는 라벨 줄이 없다 — 맨 앞 '링크 추가'가 줄 전체의 이름이다). */}
+            (프로토타입에는 눈에 보이는 라벨 줄이 없다 — 맨 앞 '링크 추가'가 줄 전체의 이름이다).
+
+            왕복 중(최대 8초) 세 칸을 잠그는 것은 `disabled` 가 아니라 `readOnly` 다. 브라우저는
+            disabled 가 된 요소에서 **포커스를 떼어 `<body>` 로 보낸다** — 어느 칸에서 Enter 로
+            등록한 사용자의 포커스가 그 순간 줄 밖으로 튀고, 서버가 거절해 값이 그대로 남아도
+            (아래 `submit`) 이어 고칠 자리를 잃는다. readOnly 는 값만 잠그고 포커스·선택·복사는
+            그대로 둔다(J2 InlineEdit 의 두 입력과 같은 근거). */}
         <input
           aria-label="주소"
           placeholder="https://"
           value={url}
+          readOnly={busy}
           onChange={(event) => setUrl(event.target.value)}
           className={`${FIELD} min-w-[200px] flex-[1_1_220px]`}
         />
@@ -202,6 +215,7 @@ export function LinkAddRow({ children }: { children?: ReactNode }) {
              그때는 미리보기가 필요 없다 — 사람이 이름을 정한 뒤다. */
           placeholder={autoTitle === null ? '이름 (비우면 주소에서)' : `이름 (비우면 ${autoTitle})`}
           value={title}
+          readOnly={busy}
           onChange={(event) => setTitle(event.target.value)}
           className={`${FIELD} w-[180px] flex-none`}
         />
@@ -209,6 +223,7 @@ export function LinkAddRow({ children }: { children?: ReactNode }) {
           aria-label="한 줄 설명"
           placeholder="한 줄 설명"
           value={description}
+          readOnly={busy}
           onChange={(event) => setDescription(event.target.value)}
           className={`${FIELD} min-w-[180px] flex-[1_1_200px]`}
         />

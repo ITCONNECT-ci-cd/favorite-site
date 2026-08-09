@@ -220,6 +220,20 @@ async function fetchImage(
         continue;
       }
 
+      // 크기는 **받기 전에 한 번** 본다. `arrayBuffer()` 는 본문을 통째로 메모리에 올리므로,
+      // 파비콘 자리에 수십 MB 를 놓아 둔 사이트 하나가 등록 한 번마다 그만큼을 먹고 그 시간이
+      // 사람이 기다리는 8초 예산에서 나간다 — 어차피 버릴 바이트다. 남은 것은 `body.cancel()`
+      // 로 끊는다(연결을 붙든 채 버리지 않는다).
+      //
+      // 선검사는 **보태는 것이지 대신하는 것이 아니다.** content-length 는 없을 수도(chunked),
+      // 거짓일 수도 있으므로 확정 판정은 여전히 받고 나서 재는 아래 검사다.
+      const declared = declaredLength(response);
+      if (declared !== null && declared > MAX_ICON_BYTES) {
+        reason = `${declared}B — 너무 큼(선언값)`;
+        await response.body?.cancel().catch(() => {});
+        break;
+      }
+
       const body = new Uint8Array(await response.arrayBuffer());
 
       if (body.byteLength === 0) {
@@ -244,6 +258,19 @@ async function fetchImage(
   }
 
   return { reason };
+}
+
+/**
+ * 서버가 **미리 알려 준** 본문 길이. 헤더가 없거나(chunked) 숫자로 읽히지 않으면 `null` —
+ * 그때는 받아 보고 재는 수밖에 없다. 음수·NaN 도 `null` 로 접는다(믿을 수 없는 값이다).
+ */
+function declaredLength(response: Response): number | null {
+  const raw = response.headers.get('content-length');
+  if (raw === null) return null;
+
+  const length = Number(raw);
+
+  return Number.isFinite(length) && length >= 0 ? length : null;
 }
 
 const PNG: IconKind = { contentType: 'image/png', extension: 'png' };

@@ -260,6 +260,32 @@ describe('collectFavicon — 받은 바이트 검사 (B4 와 같은 규칙)', ()
     expect(await collectFavicon('https://huge.example/')).toMatchObject({ ok: false });
   });
 
+  it('content-length 가 상한을 넘으면 본문을 받지 않고 연결을 끊는다', async () => {
+    // `arrayBuffer()` 는 본문을 통째로 메모리에 올린다 — 어차피 버릴 수십 MB 를 다 받고 나서
+    // 재면 그 시간이 사람이 기다리는 8초 예산에서 나간다. 서버가 미리 알려 준 길이로 먼저 접고,
+    // 남은 바이트는 끊는다. (선언값이 없거나 거짓일 수 있으므로 위 "1MB 초과" 검사는 그대로다.)
+    const cancel = vi.fn(async () => {});
+    const arrayBuffer = vi.fn(async () => PNG.buffer);
+    stubAdminClient();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-length': '2000000' }),
+        body: { cancel },
+        arrayBuffer,
+      })),
+    );
+
+    expect(await collectFavicon('https://huge.example/')).toEqual({
+      ok: false,
+      error: '파비콘을 찾지 못했습니다.',
+    });
+    expect(arrayBuffer).not.toHaveBeenCalled();
+    expect(cancel).toHaveBeenCalled();
+  });
+
   it('확장자와 Content-Type 은 실제 바이트가 정한다', async () => {
     const { uploads } = stubAdminClient();
     stubFetch(() => ({ status: 200, body: ICO }));
