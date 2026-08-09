@@ -14,6 +14,13 @@ import type { Category, SiteData } from '@/lib/types';
 export type HomeViewProps = {
   /** 서버(app/page.tsx)가 getAllData 로 읽어 넘긴 전체 데이터. 두 배열 모두 sort_order 순이다. */
   data: SiteData;
+  /**
+   * 서버가 관리자 세션을 확인했는가 (J1) — 세 섹션의 카드 전부에 그대로 흘린다.
+   *
+   * 이 화면은 판정하지 않고 나르기만 한다. 참이면 카드가 연필·휴지통을 **렌더**하고,
+   * 거짓이면 그 마크업이 응답에 실리지 않는다(LinkCard 의 isAdmin JSDoc).
+   */
+  isAdmin?: boolean;
 };
 
 /** 빈 즐겨찾기 안내 — DESIGN_SPEC 3장의 문구를 그대로 옮긴다. */
@@ -57,8 +64,12 @@ function findOperatingIds(categories: readonly Category[]): { id: string; ids: S
  * 동기 localStorage 읽기가 생긴다(E1 규약).
  *
  * 세 섹션이 모두 같은 배선을 쓴다: 즐겨찾기든 관리자가 정한 자리든 클릭 집계 대상인 것은 같다.
+ *
+ * `isAdmin` 도 세 섹션 모두에 같이 준다 — 관리자가 고칠 수 있는 대상은 '어느 섹션에 놓였는가'와
+ * 무관하다. 연필·휴지통이 실제로 무엇을 하는지는 J2·J3 이 채운다(그때 콜백은 이 자리에서 카드로
+ * 내려간다 — LinkCard 의 onEdit·onDelete).
  */
-export function HomeView({ data }: HomeViewProps) {
+export function HomeView({ data, isAdmin = false }: HomeViewProps) {
   const { categories, bookmarks } = data;
   const { favs, handleToggleFav, handleOpen, openMany } = useCardHandlers(bookmarks);
 
@@ -102,6 +113,7 @@ export function HomeView({ data }: HomeViewProps) {
                 isFaved
                 onToggleFav={handleToggleFav}
                 onOpen={handleOpen}
+                isAdmin={isAdmin}
               />
             ))}
           </CardGrid>
@@ -126,6 +138,7 @@ export function HomeView({ data }: HomeViewProps) {
               bookmark={bookmark}
               showPin={false}
               onOpen={handleOpen}
+              isAdmin={isAdmin}
             />
           ))}
         </CardGrid>
@@ -155,6 +168,7 @@ export function HomeView({ data }: HomeViewProps) {
                 bookmark={bookmark}
                 showPin={false}
                 onOpen={handleOpen}
+                isAdmin={isAdmin}
               />
             ))}
           </CardGrid>

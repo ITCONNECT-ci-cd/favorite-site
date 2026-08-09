@@ -10,7 +10,9 @@
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import DailyPage, { metadata } from '@/app/(public)/daily/page';
+import { getAdminSession } from '@/lib/supabase/server';
 import type { BookmarkWithCount, SiteData } from '@/lib/types';
+import { adminSession } from '@/test/admin-session';
 import { setFavs } from '@/test/favs';
 import { BOOKMARKS, siteData } from '@/test/fixtures/seed';
 
@@ -20,6 +22,10 @@ vi.mock('@/lib/queries', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/queries')>()),
   getAllData,
 }));
+
+// 인증 관문은 H1 의 계약대로 non-null=관리자다(lib/supabase/server.ts). 여기서는 그 결과에 따라
+// 화면이 무엇을 그리는지만 본다 — 판정 자체는 그 파일의 테스트가 지킨다.
+vi.mock('@/lib/supabase/server', () => ({ getAdminSession: vi.fn() }));
 
 /** getAllData 는 sort_order 순으로 준다(D1) — 걸러 내도 그 순서가 그대로 남아야 한다. */
 const PINNED = BOOKMARKS.filter((bookmark) => bookmark.is_pinned);
@@ -66,6 +72,8 @@ beforeEach(() => {
   localStorage.clear();
   getAllData.mockReset();
   getAllData.mockResolvedValue(siteData() satisfies SiteData);
+  vi.mocked(getAdminSession).mockReset();
+  vi.mocked(getAdminSession).mockResolvedValue(null);
 });
 
 describe('매일 사용하는 사이트 — 라우트 metadata (D5)', () => {
@@ -161,5 +169,36 @@ describe('매일 사용하는 사이트 — 그 밖의 계약', () => {
     const pageModule = await import('@/app/(public)/daily/page');
 
     expect(pageModule).not.toHaveProperty('revalidate');
+  });
+});
+
+/**
+ * J1. 현장 편집 노출 — 연필·휴지통은 **서버가 관리자로 확인했을 때만** 렌더된다.
+ * 비로그인 응답에는 마크업 자체가 없어야 한다(README 주의사항 7).
+ */
+describe('매일 사용하는 사이트 — 관리자 편집 노출 (J1)', () => {
+  const PENCIL_PATH = 'M4 20.5h4L20 8.5l-4-4L4 16.5v4z';
+
+  it('비로그인 렌더에는 연필·휴지통이 없다 — 아이콘 마크업도 남지 않는다', async () => {
+    const { container } = await renderPage();
+
+    expect(screen.queryAllByRole('button', { name: /.+ 수정$/ })).toHaveLength(0);
+    expect(screen.queryAllByRole('button', { name: /.+ 삭제$/ })).toHaveLength(0);
+    expect(container.innerHTML).not.toContain(PENCIL_PATH);
+  });
+
+  it('관리자 세션이면 카드마다 연필·휴지통이 붙는다', async () => {
+    vi.mocked(getAdminSession).mockResolvedValue(adminSession);
+
+    await renderPage();
+
+    expect(screen.queryAllByRole('button', { name: /.+ 수정$/ })).toHaveLength(12);
+    expect(screen.queryAllByRole('button', { name: /.+ 삭제$/ })).toHaveLength(12);
+  });
+
+  it('세션 판정은 getAdminSession 하나로만 한다 — 요청당 한 번', async () => {
+    await renderPage();
+
+    expect(getAdminSession).toHaveBeenCalledTimes(1);
   });
 });

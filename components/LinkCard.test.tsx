@@ -47,6 +47,9 @@ function faviconLink(): HTMLAnchorElement {
 const bodyLink = () => screen.getByRole('link', { name: /AI 대화·문서 초안/ });
 const pinButton = () => screen.getByRole('button', { name: 'ChatGPT 즐겨찾기' });
 const checkButton = () => screen.getByRole('button', { name: 'ChatGPT 선택' });
+/** 관리자 전용 둘 (J1) — isAdmin 이 아닌 렌더에서는 존재 자체가 없다. */
+const editButton = () => screen.getByRole('button', { name: 'ChatGPT 수정' });
+const deleteButton = () => screen.getByRole('button', { name: 'ChatGPT 삭제' });
 
 describe('LinkCard 렌더', () => {
   it('이름·설명·주소·클릭 수를 보여준다', () => {
@@ -315,12 +318,125 @@ describe('LinkCard 테두리 3상태', () => {
   });
 });
 
-describe('LinkCard 관리자', () => {
-  it('isAdmin=true여도 연필·휴지통은 아직 그리지 않는다 (3단계 J1·J2 몫)', () => {
-    renderCard({ isAdmin: true, showCheck: true });
+/**
+ * J1. 현장 편집 노출 — 연필·휴지통은 **서버가 관리자로 확인했을 때만 렌더된다**.
+ *
+ * 숨기는 것이 아니라 **없는 것**이어야 한다(README 주의사항 7): 비관리자 렌더 결과에는
+ * 버튼도, 아이콘 path 도 남지 않는다. 그래서 아래 첫 테스트가 role 조회뿐 아니라
+ * 마크업 원문(스펙 2-1 의 path 문자열)까지 본다 — display:none 류의 회귀를 잡는 유일한 단언이다.
+ */
+describe('LinkCard 관리자 — 연필·휴지통 (J1)', () => {
+  /** DESIGN_SPEC 2-1 아이콘 표의 path 첫 조각. 렌더되면 이 문자열이 DOM 에 남는다. */
+  const PENCIL_PATH = 'M4 20.5h4L20 8.5l-4-4L4 16.5v4z';
+  const TRASH_PATH = 'M6.5 6.5l1 13.5h9l1-13.5';
 
-    expect(screen.queryByRole('button', { name: /편집|수정/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /삭제/ })).not.toBeInTheDocument();
+  it('기본(비관리자)에는 연필·휴지통이 렌더되지 않는다 — 마크업 자체가 없다', () => {
+    const card = renderCard({ showCheck: true });
+
+    expect(screen.queryByRole('button', { name: /수정$/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /삭제$/ })).not.toBeInTheDocument();
+    // 감춘 것이 아니라 그리지 않은 것이다 — 아이콘 path 도 남지 않아야 한다.
+    expect(card.innerHTML).not.toContain(PENCIL_PATH);
+    expect(card.innerHTML).not.toContain(TRASH_PATH);
+  });
+
+  it('isAdmin=false 를 명시해도 마찬가지다', () => {
+    const card = renderCard({ isAdmin: false, showCheck: true });
+
+    expect(card.innerHTML).not.toContain(PENCIL_PATH);
+    expect(card.innerHTML).not.toContain(TRASH_PATH);
+  });
+
+  it('isAdmin=true 면 체크 → 핀 → 연필 → 휴지통 순으로 넷을 그린다 (스펙 2-1 아이콘 표)', () => {
+    const card = renderCard({ isAdmin: true, showCheck: true });
+    const labels = [...card.querySelectorAll('button')].map((button) =>
+      button.getAttribute('aria-label'),
+    );
+
+    expect(labels).toEqual([
+      'ChatGPT 선택',
+      'ChatGPT 즐겨찾기',
+      'ChatGPT 수정',
+      'ChatGPT 삭제',
+    ]);
+  });
+
+  it('핀을 감춘 화면(홈의 매일·운영 중)에서도 관리자에게는 연필·휴지통이 보인다', () => {
+    renderCard({ isAdmin: true, showPin: false });
+
+    expect(editButton()).toBeInTheDocument();
+    expect(deleteButton()).toBeInTheDocument();
+  });
+
+  it('연필: 21×21 액션 규약 + 꺼짐 #8b877f · 호버 배경 #efede8 + 잉크', () => {
+    renderCard({ isAdmin: true });
+
+    expect(editButton()).toHaveClass(
+      'size-[21px]',
+      'shrink-0',
+      'rounded-[6px]',
+      'cursor-pointer',
+      'relative',
+      'before:absolute',
+      'before:-inset-y-[11.5px]',
+      'before:-inset-x-[0.5px]',
+      'text-faint',
+      'hover:bg-[#efede8]',
+      'hover:text-ink',
+    );
+  });
+
+  it('휴지통: 같은 액션 규약이지만 호버만 위험 색이다 — 배경 #f4e8e6 + #a8443a', () => {
+    renderCard({ isAdmin: true });
+
+    expect(deleteButton()).toHaveClass(
+      'size-[21px]',
+      'shrink-0',
+      'rounded-[6px]',
+      'cursor-pointer',
+      'relative',
+      'before:absolute',
+      'before:-inset-y-[11.5px]',
+      'before:-inset-x-[0.5px]',
+      'text-faint',
+      'hover:bg-[#f4e8e6]',
+      'hover:text-danger',
+    );
+    // 공용 호버 배경을 함께 달면 두 규칙이 다투고 승자는 CSS 출력 순서가 정한다.
+    expect(deleteButton()).not.toHaveClass('hover:bg-[#efede8]');
+  });
+
+  it('연필·휴지통을 눌러도 링크를 열지 않는다 (열기 영역은 파비콘·본문뿐)', () => {
+    const onOpen = vi.fn();
+    renderCard({ isAdmin: true, onOpen });
+
+    fireEvent.click(editButton());
+    fireEvent.click(deleteButton());
+
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it('onEdit·onDelete 는 그 카드의 id 를 돌려준다 (J2·J3 이 소비할 slot)', () => {
+    const onEdit = vi.fn();
+    const onDelete = vi.fn();
+    renderCard({ isAdmin: true, onEdit, onDelete });
+
+    fireEvent.click(editButton());
+    expect(onEdit).toHaveBeenCalledTimes(1);
+    expect(onEdit).toHaveBeenCalledWith('bm-1');
+
+    fireEvent.click(deleteButton());
+    expect(onDelete).toHaveBeenCalledTimes(1);
+    expect(onDelete).toHaveBeenCalledWith('bm-1');
+  });
+
+  it('콜백이 없어도(J1 시점 기본값) 클릭이 터지지 않는다', () => {
+    renderCard({ isAdmin: true });
+
+    expect(() => {
+      fireEvent.click(editButton());
+      fireEvent.click(deleteButton());
+    }).not.toThrow();
   });
 });
 

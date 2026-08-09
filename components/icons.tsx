@@ -54,7 +54,7 @@ export function PinIcon({ filled = false }: { filled?: boolean }) {
   );
 }
 
-/** 인라인 편집 (stroke-width 1.8) — 관리자 전용, 3단계 J1에서 카드에 붙는다. */
+/** 인라인 편집 (stroke-width 1.8) — 관리자 전용, J1이 카드에 붙였다(폼 자체는 J2). */
 export function PencilIcon() {
   return (
     <Icon strokeWidth={1.8}>
@@ -64,7 +64,7 @@ export function PencilIcon() {
   );
 }
 
-/** 삭제 (stroke-width 1.8) — 관리자 전용, 3단계 J2에서 카드에 붙는다. */
+/** 삭제 (stroke-width 1.8) — 관리자 전용, J1이 카드에 붙였다(확인 오버레이는 J3). */
 export function TrashIcon() {
   return (
     <Icon strokeWidth={1.8}>

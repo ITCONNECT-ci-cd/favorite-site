@@ -12,7 +12,9 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import FavoritesPage, { metadata } from '@/app/(public)/favorites/page';
 import { Toaster } from '@/components/Toast';
+import { getAdminSession } from '@/lib/supabase/server';
 import type { BookmarkWithCount, SiteData } from '@/lib/types';
+import { adminSession } from '@/test/admin-session';
 import { setFavs } from '@/test/favs';
 import { BOOKMARKS, siteData } from '@/test/fixtures/seed';
 import { setupToastTimers } from '@/test/toast';
@@ -24,6 +26,9 @@ vi.mock('@/lib/queries', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/queries')>()),
   getAllData,
 }));
+
+// 인증 관문(H1)의 결과에 따라 화면이 무엇을 그리는지만 본다 — 판정은 그 파일의 테스트 몫이다.
+vi.mock('@/lib/supabase/server', () => ({ getAdminSession: vi.fn() }));
 
 /** 담은 순서 검증용 — sort_order 순서(5 → 40 → 200)와 일부러 다르게 담는다(D2 와 같은 방식). */
 const FAV_IDS = [BOOKMARKS[200].id, BOOKMARKS[5].id, BOOKMARKS[40].id];
@@ -56,6 +61,8 @@ beforeEach(() => {
   localStorage.clear();
   getAllData.mockReset();
   getAllData.mockResolvedValue(siteData() satisfies SiteData);
+  vi.mocked(getAdminSession).mockReset();
+  vi.mocked(getAdminSession).mockResolvedValue(null);
 });
 
 describe('내 즐겨찾기 — 라우트 metadata (D5)', () => {
@@ -170,5 +177,41 @@ describe('내 즐겨찾기 — 그 밖의 계약', () => {
     const pageModule = await import('@/app/(public)/favorites/page');
 
     expect(pageModule).not.toHaveProperty('revalidate');
+  });
+});
+
+/**
+ * J1. 현장 편집 노출 — 서버가 관리자로 확인했을 때만 연필·휴지통이 렌더된다.
+ *
+ * 이 화면은 서버 → FavoritesView → ListView → LinkCard 로 `isAdmin` 이 한 번 더 건너간다.
+ * 목록 자체는 브라우저(localStorage)가 정하므로 담긴 카드에만 아이콘이 붙는다.
+ */
+describe('내 즐겨찾기 — 관리자 편집 노출 (J1)', () => {
+  const PENCIL_PATH = 'M4 20.5h4L20 8.5l-4-4L4 16.5v4z';
+
+  it('비로그인 렌더에는 연필·휴지통이 없다 — 아이콘 마크업도 남지 않는다', async () => {
+    setFavs(FAV_IDS);
+
+    const { container } = await renderPage();
+
+    expect(screen.queryAllByRole('button', { name: /.+ 수정$/ })).toHaveLength(0);
+    expect(screen.queryAllByRole('button', { name: /.+ 삭제$/ })).toHaveLength(0);
+    expect(container.innerHTML).not.toContain(PENCIL_PATH);
+  });
+
+  it('관리자 세션이면 담긴 카드마다 연필·휴지통이 붙는다', async () => {
+    setFavs(FAV_IDS);
+    vi.mocked(getAdminSession).mockResolvedValue(adminSession);
+
+    await renderPage();
+
+    expect(screen.queryAllByRole('button', { name: /.+ 수정$/ })).toHaveLength(FAV_IDS.length);
+    expect(screen.queryAllByRole('button', { name: /.+ 삭제$/ })).toHaveLength(FAV_IDS.length);
+  });
+
+  it('세션 판정은 getAdminSession 하나로만 한다 — 요청당 한 번', async () => {
+    await renderPage();
+
+    expect(getAdminSession).toHaveBeenCalledTimes(1);
   });
 });

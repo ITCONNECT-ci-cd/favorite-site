@@ -7,6 +7,7 @@ import {
   getAllData,
   rollupCounts,
 } from "@/lib/queries";
+import { getAdminSession } from "@/lib/supabase/server";
 
 /**
  * 셸을 그릴 데이터가 없을 때의 화면 — 사이드바·헤더 없이 이것만 렌더한다.
@@ -128,9 +129,19 @@ export default async function PublicLayout({ children }: LayoutProps<"/">) {
   const { categories, bookmarks } = data;
 
   /**
-   * 셸이 내려보내는 값 넷. 지금은 수가 적어 여기 두지만, 3단계 J1 이 관리자 세션까지
-   * 함께 읽어야 하므로 그 직전에 `getShellData()` 같은 함수로 한 번에 뽑아낸다.
+   * 헤더의 '관리자 편집 모드' 칩 조건 (J1). 판정은 통째로 `getAdminSession()`(H1)에 맡긴다 —
+   * non-null 이면 요청자가 그 관리자다. 이메일 같은 안쪽 값은 보지 않는다.
+   *
+   * 조회 실패로 셸이 서지 않는 경우에는 애초에 헤더가 없으므로 위 try 뒤에서 읽는다.
+   * 이 왕복은 화면당 한 번뿐이다: 같은 렌더 패스의 page 도 같은 함수를 부르지만 React
+   * `cache()` 가 묶어 준다(그 함수의 JSDoc "cache() 로 감싼 이유").
+   *
+   * C1 이 남긴 `getShellData()` 추출은 하지 않았다 — 아래 값 넷은 셸만 쓰고 세션은 화면들이
+   * 각자 `getAdminSession()` 을 불러 받으므로, 묶어 봐야 호출자가 하나뿐인 함수가 된다.
    */
+  const isAdmin = (await getAdminSession()) !== null;
+
+  /** 셸이 내려보내는 값 넷 — 사이드바·헤더가 쓰는 숫자다. */
   const totalCount = bookmarks.length;
   const dailyCount = bookmarks.filter((bookmark) => bookmark.is_pinned).length;
   const counts = rollupCounts(categories, bookmarks);
@@ -162,12 +173,13 @@ export default async function PublicLayout({ children }: LayoutProps<"/">) {
             여는 팔레트의 열림 상태를 누군가는 들고 있어야 하는데, 서버 컴포넌트인 셸은
             그럴 수 없어서다. 호스트가 헤더와 팔레트를 함께 렌더한다(팔레트는 fixed 라
             이 자리에 있어도 헤더 줄을 밀지 않는다).
-            isAdmin 은 3단계 J1 몫이라 지금은 넘기지 않는다 — 호스트가 그대로 흘려보낸다. */}
+            isAdmin 은 호스트가 헤더로 그대로 흘려보낸다 — 칩을 그리는 것은 C4 Header 다. */}
         <header className="flex h-[60px] flex-none items-center border-b border-border bg-card px-[12px] min-[820px]:px-[28px]">
           <PaletteHost
             data={data}
             totalCount={totalCount}
             faviconCount={faviconCount(bookmarks)}
+            isAdmin={isAdmin}
           />
         </header>
 

@@ -30,6 +30,13 @@ export type ListViewProps = {
   initialSubId?: string | null;
   /** 빈 상태 문구 — 분류는 `이 분류에 링크가 없습니다.`, 즐겨찾기는 다른 문구다(DESIGN_SPEC 4장). */
   emptyMessage: string;
+  /**
+   * 서버가 관리자 세션을 확인했는가 (J1) — 지금 보이는 카드에 그대로 흘린다.
+   *
+   * 이 화면은 판정하지 않고 나르기만 한다. 참이면 카드가 연필·휴지통을 **렌더**하고,
+   * 거짓이면 그 마크업이 응답에 실리지 않는다(LinkCard 의 isAdmin JSDoc).
+   */
+  isAdmin?: boolean;
 };
 
 /** 칩 — 12.5px, 패딩 6px 12px, 라운드 7px (DESIGN_SPEC 1장 "칩 6~7px" · 4장). */
@@ -81,6 +88,7 @@ export function ListView({
   subTabs,
   initialSubId = null,
   emptyMessage,
+  isAdmin = false,
 }: ListViewProps) {
   // 핀 토글(D6)·카드 열기(F3)·한 번에 열기(G4)는 홈과 글자 하나까지 같은 배선이라 훅 하나가
   // 들고 있다. `useFavorites` 도 그 안에서 뷰당 한 번만 불린다(lib/favorites.ts 사용 규칙).
@@ -233,6 +241,9 @@ export function ListView({
               isFaved={favs.has(bookmark.id)}
               onToggleFav={handleToggleFav}
               onOpen={handleOpen}
+              // 관리자 전용 연필·휴지통 (J1). 눌렀을 때의 동작은 J2·J3 이 채운다 — 그때 콜백
+              // (onEdit·onDelete)이 이 자리에서 카드로 내려간다.
+              isAdmin={isAdmin}
             />
           ))}
         </CardGrid>

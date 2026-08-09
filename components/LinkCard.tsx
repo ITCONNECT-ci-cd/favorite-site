@@ -1,7 +1,7 @@
 'use client';
 
 import type { MouseEvent } from 'react';
-import { CheckIcon, EyeIcon, PinIcon } from '@/components/icons';
+import { CheckIcon, EyeIcon, PencilIcon, PinIcon, TrashIcon } from '@/components/icons';
 import { faviconSrc } from '@/lib/favicon';
 import type { BookmarkWithCount } from '@/lib/types';
 import { hostOf } from '@/lib/url';
@@ -17,10 +17,30 @@ export type LinkCardProps = {
   isFaved?: boolean;
   onToggleFav?: (id: string) => void;
   /**
-   * 서버가 관리자 세션을 확인했을 때만 true.
-   * 연필·휴지통의 실제 렌더는 3단계(J1 인라인 편집 · J2 삭제 확인) 몫이라 지금은 받아만 둔다.
+   * **서버가** 관리자 세션을 확인했을 때만 true (J1).
+   *
+   * 이 값이 참일 때에만 연필·휴지통이 **렌더된다** — 늘 그려 두고 CSS 로 감추는 방식은 금지다
+   * (README 주의사항 7). 비관리자 응답에는 두 버튼의 마크업이 아예 실리지 않아야 한다.
+   *
+   * 판정은 이 카드가 하지 않는다. 공개 화면의 서버 컴포넌트가 `getAdminSession()`(H1)으로
+   * 정해 내려보내는 값이고, 카드는 받은 대로 그린다.
    */
   isAdmin?: boolean;
+  /**
+   * 연필 클릭 — 그 카드의 id 를 돌려준다. **J1 시점에는 어느 화면도 넘기지 않는다**(no-op).
+   *
+   * J2(`components/card/InlineEdit.tsx`)가 배선할 자리다. 그때 이 카드가 할 일은 콜백을 부르는
+   * 것까지이고, '한 번에 한 장만 편집' 같은 규칙은 여러 카드를 아는 화면 쪽이 든다.
+   */
+  onEdit?: (id: string) => void;
+  /**
+   * 휴지통 클릭 — 그 카드의 id 를 돌려준다. **J1 시점에는 어느 화면도 넘기지 않는다**(no-op).
+   *
+   * J3(`components/card/DeleteConfirm.tsx`)가 배선할 자리다. **누르는 즉시 지우지 않는다** —
+   * 확인 오버레이를 거치는 것이 이 제품의 규칙이라(DESIGN_SPEC 2-1) 이 콜백은 '삭제'가 아니라
+   * '삭제를 묻기'다.
+   */
+  onDelete?: (id: string) => void;
   /** 링크를 여는 순간 호출 — F3이 클릭 기록에 배선한다 */
   onOpen?: (id: string) => void;
 };
@@ -58,10 +78,26 @@ const CARD = [
  * 그래서 이 카드는 WCAG 2.5.5(AAA, 44×44)를 **구조적으로 만족시킬 수 없다** — 스펙이 21×21과
  * gap 1px을 고정한 이상 배치를 바꾸지 않고는 도달할 수 없는 값이다. 2.5.8(AA, 24×24)도
  * 가로 22px이라 2px 모자란다. 프로토타입 충실도를 우선한 결과이며, 넓히려면 스펙의
- * 아이콘 크기나 간격을 먼저 바꿔야 한다(3단계에서 연필·휴지통이 더 붙을 때 재검토 대상).
+ * 아이콘 크기나 간격을 먼저 바꿔야 한다.
+ *
+ * J1에서 연필·휴지통이 붙어 관리자 화면의 버튼은 최대 넷이 됐지만 **기하는 그대로다** —
+ * 늘어난 것은 같은 규격 버튼의 개수뿐이라(21px + gap 1px) 위 계산과 결론이 바뀌지 않는다.
+ * 재검토하려면 스펙 2-1장의 아이콘 크기·간격부터 손대야 한다.
+ *
+ * 호버 배경은 이 상수에 없다 — 휴지통만 다른 색을 쓰기 때문이다(아래 ACTION·ACTION_DANGER).
+ * 두 `hover:bg-*`를 한 버튼에 같이 달면 특정도가 같아 승자를 CSS 출력 순서가 정하게 된다.
  */
-const ACTION =
-  'relative flex size-[21px] shrink-0 items-center justify-center rounded-[6px] cursor-pointer hover:bg-[#efede8] before:absolute before:-inset-y-[11.5px] before:-inset-x-[0.5px]';
+const ACTION_BASE =
+  'relative flex size-[21px] shrink-0 items-center justify-center rounded-[6px] cursor-pointer before:absolute before:-inset-y-[11.5px] before:-inset-x-[0.5px]';
+
+/** 체크·핀·연필의 공통 호버 배경 (DESIGN_SPEC 2-1 아이콘 표). */
+const ACTION = `${ACTION_BASE} hover:bg-[#efede8]`;
+
+/**
+ * 휴지통만의 호버 — 배경 #f4e8e6 + 글자 #a8443a(= --color-danger).
+ * 되돌릴 수 없는 동작이라는 신호를 스펙이 색으로 준다. 두 값 모두 스펙 2-1장 아이콘 표 원값이다.
+ */
+const ACTION_DANGER = `${ACTION_BASE} hover:bg-[#f4e8e6] hover:text-danger`;
 
 /**
  * 파비콘 주소를 CSS url() 안에 안전하게 넣는다.
@@ -91,6 +127,9 @@ export function LinkCard({
   onToggleCheck,
   isFaved = false,
   onToggleFav,
+  isAdmin = false,
+  onEdit,
+  onDelete,
   onOpen,
 }: LinkCardProps) {
   const { id, title, url, description } = bookmark;
@@ -159,11 +198,34 @@ export function LinkCard({
             </button>
           )}
 
-          {/* 3단계: 연필(J1) · 휴지통(J2)이 isAdmin일 때 여기에 붙는다 */}
+          {/* 관리자 전용 둘 (J1). `isAdmin &&` 는 감추는 장치가 아니라 **그리지 않는** 장치다 —
+              비관리자 응답에는 아래 마크업이 통째로 실리지 않는다(README 주의사항 7).
+              조건을 `hidden` 클래스나 `display:none`으로 바꾸지 마라. */}
+          {isAdmin && (
+            <>
+              <button
+                type="button"
+                aria-label={`${title} 수정`}
+                onClick={() => onEdit?.(id)}
+                className={`${ACTION} text-faint hover:text-ink`}
+              >
+                <PencilIcon />
+              </button>
+
+              <button
+                type="button"
+                aria-label={`${title} 삭제`}
+                onClick={() => onDelete?.(id)}
+                className={`${ACTION_DANGER} text-faint`}
+              >
+                <TrashIcon />
+              </button>
+            </>
+          )}
         </span>
       </div>
 
-      {/* ↓ J1(인라인 편집)이 통째로 교체할 범위: 본문 블록 + 하단 줄 ↓ */}
+      {/* ↓ J2(인라인 편집)가 통째로 교체할 범위: 본문 블록 + 하단 줄 ↓ */}
       <a {...openLink} className="mt-auto block w-full cursor-pointer">
         {/* button과 달리 a는 흐름 콘텐츠를 담을 수 있지만, 스펙의 2줄 말줄임
             (max-height + overflow)만 필요하므로 span + block으로 충분하다. */}
@@ -184,7 +246,7 @@ export function LinkCard({
           {bookmark.click_count}
         </span>
       </div>
-      {/* ↑ J1 교체 범위 끝 ↑ */}
+      {/* ↑ J2 교체 범위 끝 ↑ */}
     </div>
   );
 }

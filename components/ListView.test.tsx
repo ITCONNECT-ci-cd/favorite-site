@@ -744,3 +744,35 @@ describe('ListView — 빈 상태', () => {
     ).toBeInTheDocument();
   });
 });
+
+/**
+ * J1. 현장 편집 노출 — 목록 화면은 `isAdmin` 을 받아 지금 보이는 카드에 그대로 흘린다.
+ * 판정은 서버(각 page.tsx)가 하고, 이 화면은 나르기만 한다.
+ */
+describe('ListView — 관리자 편집 노출 (J1)', () => {
+  const edits = () => screen.queryAllByRole('button', { name: /.+ 수정$/ });
+  const deletes = () => screen.queryAllByRole('button', { name: /.+ 삭제$/ });
+
+  it('기본(비관리자)에는 연필·휴지통이 한 장도 없다', () => {
+    renderList();
+
+    expect(edits()).toHaveLength(0);
+    expect(deletes()).toHaveLength(0);
+  });
+
+  it('isAdmin 이면 보이는 카드마다 연필·휴지통이 붙는다', () => {
+    renderList({ isAdmin: true });
+
+    expect(edits()).toHaveLength(BOOKMARKS.length);
+    expect(deletes()).toHaveLength(BOOKMARKS.length);
+  });
+
+  it('하위 탭으로 좁히면 그만큼만 남는다 — 안 보이는 카드의 아이콘은 없다', () => {
+    renderList({ isAdmin: true, subTabs: SUB_TABS });
+
+    fireEvent.click(screen.getByRole('button', { name: '영상 1' }));
+
+    expect(edits()).toHaveLength(1);
+    expect(deletes()).toHaveLength(1);
+  });
+});

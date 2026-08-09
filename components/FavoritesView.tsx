@@ -8,6 +8,8 @@ import type { BookmarkWithCount } from '@/lib/types';
 export type FavoritesViewProps = {
   /** 서버(app/favorites/page.tsx)가 getAllData 로 읽어 넘긴 **전체** 북마크 — sort_order 순. */
   bookmarks: BookmarkWithCount[];
+  /** 서버가 관리자 세션을 확인했는가 (J1) — 목록 화면에 그대로 넘긴다. 여기서 판정하지 않는다. */
+  isAdmin?: boolean;
 };
 
 /**
@@ -33,7 +35,7 @@ const EMPTY_MESSAGE = '아직 담은 즐겨찾기가 없습니다. 목록에서 
  * 코로케이트 테스트가 없는 것은 의도다 — `app/favorites/page.test.tsx` 가 이 컴포넌트를 통과해
  * 검증하므로 같은 계약을 두 번 적지 마라.
  */
-export function FavoritesView({ bookmarks }: FavoritesViewProps) {
+export function FavoritesView({ bookmarks, isAdmin = false }: FavoritesViewProps) {
   const { favs } = useFavorites();
 
   // 담은 순서 유지 · 죽은 id 제외 — 홈의 즐겨찾기 섹션과 같은 규칙이라 두 화면이 같은 순수 함수를
@@ -47,6 +49,7 @@ export function FavoritesView({ bookmarks }: FavoritesViewProps) {
       description={DESCRIPTION}
       bookmarks={items}
       emptyMessage={EMPTY_MESSAGE}
+      isAdmin={isAdmin}
     />
   );
 }

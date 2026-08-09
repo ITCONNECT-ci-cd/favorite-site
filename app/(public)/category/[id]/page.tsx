@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { ListView } from '@/components/ListView';
 import { EMPTY_LIST_MESSAGE } from '@/lib/constants';
 import { findOperatingCategoryId, getAllData, rollupCounts } from '@/lib/queries';
+import { getAdminSession } from '@/lib/supabase/server';
 import type { Category } from '@/lib/types';
 
 /**
@@ -41,11 +42,17 @@ export async function generateMetadata({ params }: CategoryPageProps): Promise<M
  * 때문이다. 하위로 들어오면 상위 페이지를 그대로 그리고 그 하위 탭만 선택해 둔다(404 아님).
  *
  * 서버 컴포넌트다 — 데이터는 여기서 한 번 읽고, 탭 전환 같은 화면 상태만 ListView 가 들고 있다.
+ * 연필·휴지통의 노출 여부도 여기서 정한다 (J1) — 홈과 같은 배선이라 근거는
+ * `app/(public)/page.tsx` 의 JSDoc 에 한 번만 적어 뒀다.
+ *
  * `export const revalidate` 를 넣지 마라(근거는 lib/queries.ts 의 getAllData JSDoc).
  */
 export default async function CategoryPage({ params }: CategoryPageProps) {
-  const { id } = await params;
-  const { categories, bookmarks } = await getAllData();
+  const [{ id }, { categories, bookmarks }, session] = await Promise.all([
+    params,
+    getAllData(),
+    getAdminSession(),
+  ]);
 
   const target = categories.find((category) => category.id === id);
   if (target === undefined) notFound();
@@ -74,6 +81,7 @@ export default async function CategoryPage({ params }: CategoryPageProps) {
       subTabs={subs.map((sub) => ({ id: sub.id, name: sub.name, count: counts[sub.id] }))}
       initialSubId={target.id === root.id ? null : target.id}
       emptyMessage={EMPTY_LIST_MESSAGE}
+      isAdmin={session !== null}
     />
   );
 }

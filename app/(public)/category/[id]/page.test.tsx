@@ -8,7 +8,9 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import CategoryPage, { generateMetadata } from '@/app/(public)/category/[id]/page';
 import { OPERATING_CATEGORY_NAME } from '@/lib/constants';
+import { getAdminSession } from '@/lib/supabase/server';
 import type { BookmarkWithCount, SiteData } from '@/lib/types';
+import { adminSession } from '@/test/admin-session';
 import { siteData, subId, topId } from '@/test/fixtures/seed';
 
 const getAllData = vi.hoisted(() => vi.fn());
@@ -19,6 +21,9 @@ vi.mock('@/lib/queries', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/queries')>()),
   getAllData,
 }));
+
+// 인증 관문(H1)의 결과에 따라 화면이 무엇을 그리는지만 본다 — 판정은 그 파일의 테스트 몫이다.
+vi.mock('@/lib/supabase/server', () => ({ getAdminSession: vi.fn() }));
 
 /** 서버 컴포넌트를 그대로 await 해 결과 트리를 그린다 (params 는 Next 16 에서 Promise 다). */
 async function renderPage(id: string) {
@@ -53,6 +58,8 @@ beforeEach(() => {
   localStorage.clear();
   getAllData.mockReset();
   getAllData.mockResolvedValue(siteData() satisfies SiteData);
+  vi.mocked(getAdminSession).mockReset();
+  vi.mocked(getAdminSession).mockResolvedValue(null);
 });
 
 describe('상위 카테고리로 들어왔을 때', () => {
@@ -222,5 +229,47 @@ describe('그 밖의 계약', () => {
     const pageModule = await import('@/app/(public)/category/[id]/page');
 
     expect(pageModule).not.toHaveProperty('revalidate');
+  });
+});
+
+/**
+ * J1. 현장 편집 노출 — 서버가 관리자로 확인했을 때만 연필·휴지통이 렌더된다.
+ * 비로그인 응답에는 마크업 자체가 없어야 한다(README 주의사항 7).
+ */
+describe('카테고리 — 관리자 편집 노출 (J1)', () => {
+  const PENCIL_PATH = 'M4 20.5h4L20 8.5l-4-4L4 16.5v4z';
+  const edits = () => screen.queryAllByRole('button', { name: /.+ 수정$/ });
+  const deletes = () => screen.queryAllByRole('button', { name: /.+ 삭제$/ });
+
+  it('비로그인 렌더에는 연필·휴지통이 없다 — 아이콘 마크업도 남지 않는다', async () => {
+    const { container } = await renderPage(topId('AI 도구 모음'));
+
+    expect(edits()).toHaveLength(0);
+    expect(deletes()).toHaveLength(0);
+    expect(container.innerHTML).not.toContain(PENCIL_PATH);
+  });
+
+  it('관리자 세션이면 보이는 카드마다 연필·휴지통이 붙는다', async () => {
+    vi.mocked(getAdminSession).mockResolvedValue(adminSession);
+
+    const { container } = await renderPage(topId('AI 도구 모음'));
+
+    expect(edits()).toHaveLength(cardCount(container));
+    expect(deletes()).toHaveLength(cardCount(container));
+  });
+
+  it('하위 id 로 들어와도 같다 — 좁혀진 목록에만 붙는다', async () => {
+    vi.mocked(getAdminSession).mockResolvedValue(adminSession);
+
+    const { container } = await renderPage(subId('AI 도구 모음', '대화·검색'));
+
+    expect(cardCount(container)).toBeGreaterThan(0);
+    expect(edits()).toHaveLength(cardCount(container));
+  });
+
+  it('세션 판정은 getAdminSession 하나로만 한다 — 요청당 한 번', async () => {
+    await renderPage(topId('AI 도구 모음'));
+
+    expect(getAdminSession).toHaveBeenCalledTimes(1);
   });
 });

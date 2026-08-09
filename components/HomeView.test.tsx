@@ -547,3 +547,46 @@ describe('HomeView — 섹션 한 번에 열기 (G4)', () => {
     expectOpened([BOOKMARKS[5], BOOKMARKS[40]]);
   });
 });
+
+/**
+ * J1. 현장 편집 노출 — 홈은 `isAdmin` 을 받아 **세 섹션 모든 카드**에 그대로 흘린다.
+ * 판정은 서버(app/(public)/page.tsx)가 하고, 이 화면은 받은 값을 나르기만 한다.
+ */
+describe('HomeView — 관리자 편집 노출 (J1)', () => {
+  const DAILY_COUNT = BOOKMARKS.filter((bookmark) => bookmark.is_pinned).length;
+  const OPERATING_COUNT = BOOKMARKS.filter(
+    (bookmark) => bookmark.category_id === OPERATING_ID,
+  ).length;
+
+  const edits = () => screen.queryAllByRole('button', { name: /.+ 수정$/ });
+  const deletes = () => screen.queryAllByRole('button', { name: /.+ 삭제$/ });
+
+  it('기본(비관리자)에는 연필·휴지통이 한 장도 없다', () => {
+    setFavs(FAV_IDS);
+    render(<HomeView data={DATA} />);
+
+    expect(edits()).toHaveLength(0);
+    expect(deletes()).toHaveLength(0);
+  });
+
+  it('isAdmin 이면 세 섹션의 카드 전부에 연필·휴지통이 붙는다 (즐겨찾기 3 + 매일 12 + 운영 16)', () => {
+    setFavs(FAV_IDS);
+    render(<HomeView data={DATA} isAdmin />);
+
+    const total = FAV_IDS.length + DAILY_COUNT + OPERATING_COUNT;
+
+    expect(total).toBe(31);
+    expect(edits()).toHaveLength(total);
+    expect(deletes()).toHaveLength(total);
+  });
+
+  it('핀을 감춘 섹션(매일·운영 중)에서도 관리자 아이콘은 나온다', () => {
+    render(<HomeView data={DATA} isAdmin />);
+
+    const daily = within(section('매일 사용하는 사이트'));
+
+    expect(pins('매일 사용하는 사이트')).toHaveLength(0);
+    expect(daily.queryAllByRole('button', { name: /.+ 수정$/ })).toHaveLength(DAILY_COUNT);
+    expect(daily.queryAllByRole('button', { name: /.+ 삭제$/ })).toHaveLength(DAILY_COUNT);
+  });
+});
