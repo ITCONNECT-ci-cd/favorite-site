@@ -1,26 +1,51 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* 디자인 토큰 — 원본은 DESIGN_SPEC 1장(색상·타이포그래피). 값을 임의로 바꾸지 않는다.
+   제품은 라이트 모드 전용(PRD 하드 제약)이므로 다크 모드 대응 토큰·미디어 쿼리를 두지 않는다.
+   Tailwind v4는 아래 토큰으로 bg-, text-, border- 유틸을 생성한다. */
+@theme {
+  /* 배경 */
+  --color-page: #f7f5f2; /* 페이지 배경, 헤더·툴바 */
+  --color-surface: #fbfaf8; /* 본문 영역 배경 */
+  --color-card: #ffffff; /* 카드·패널 */
+  --color-side: #f3f1ed; /* 사이드바, 검색창 배경 */
+  --color-toolbar: #faf9f7; /* 보조 툴바 */
+
+  /* 텍스트 */
+  --color-ink: #141516; /* 본문 텍스트, 선택(다크) 배경 */
+  --color-ink-hover: #33352f; /* 다크 요소 호버 */
+  --color-sub: #4a4844; /* 보조 텍스트 */
+  --color-desc: #6d6a65; /* 설명 텍스트 */
+  --color-faint: #8b877f; /* 흐린 텍스트, 클릭 수 */
+  --color-fainter: #9a9791; /* 더 흐린 텍스트 */
+  --color-muted: #a5a29c; /* 카드 주소 */
+  --color-mist: #a8a49d; /* 사이드바 캡션·카운트 */
+  --color-ghost: #b5b1aa; /* 핀 꺼짐 */
+
+  /* 테두리·구분선 */
+  --color-border: #e3dfd9; /* 기본 테두리 */
+  --color-border-strong: #ddd8d1; /* 입력 테두리 */
+  --color-card-border: #dcd7cf; /* 카드 기본 테두리 */
+  --color-dash: #d8d3cb; /* 점선 박스 */
+  --color-line: #f2f0ec; /* 옅은 구분선 */
+
+  /* 상태 */
+  --color-select: #e4e0d8; /* 선택 배경(라이트), 핀 켜짐 배경 */
+  --color-select-hover: #e7e3dc; /* 선택 호버 */
+  --color-fav-border: #cfc7b8; /* 즐겨찾기에 담긴 카드 테두리 */
+  --color-check-off: #c9c5be; /* 체크 꺼짐, 추이 막대 */
+  --color-danger: #a8443a; /* 삭제 */
+
+  /* 타이포그래피 */
+  --font-sans: "Pretendard", system-ui, sans-serif;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+/* 전역 타이포그래피 — DESIGN_SPEC 1장. 높이/레이아웃은 app/layout.tsx의 유틸 클래스가 담당한다. */
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
