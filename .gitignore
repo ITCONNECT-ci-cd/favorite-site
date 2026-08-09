@@ -34,6 +34,9 @@ yarn-error.log*
 .env*
 !.env.example
 
+# 관리자 계정 자격 (scripts/create-admin.ts 산출물 — 평문 비밀번호가 들어 있다)
+.admin-credentials.local
+
 # vercel
 .vercel
 
