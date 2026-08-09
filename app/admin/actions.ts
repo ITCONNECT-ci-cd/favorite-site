@@ -78,21 +78,32 @@ export async function signInAction(_state: LoginFormState, formData: FormData): 
 }
 
 /**
- * 로그아웃하고 로그인 화면으로 되돌린다 (H3 관리자 셸의 우측 '로그아웃'이 소비한다).
+ * 로그아웃하고 `/admin` 으로 되돌린다 (H3 관리자 셸의 우측 '로그아웃'이 소비한다).
  *
  * 기본 scope 는 global 이라 발급된 리프레시 토큰까지 회수한다 — 관리자 계정은 하나뿐이고,
  * "로그아웃했는데 다른 기기에 세션이 남아 있다"가 더 곤란하다(scripts/create-admin.ts 와 같은 판단).
  *
- * 호출이 실패해도 **화면은 반드시 로그인으로 되돌린다.** 여기서 오류를 띄우고 머무르면
- * 사용자는 로그아웃됐는지 아닌지 모르는 채로 관리 화면에 남는다. 쿠키가 남아 있다면 다음
- * 요청의 `getAdminSession()` 이 다시 판정하므로, 이 자리에서 억지로 붙잡을 이유가 없다.
+ * 호출이 실패해도 **화면은 반드시 `/admin` 으로 되돌려 `getAdminSession()` 이 다시 판정하게
+ * 한다.** 로그인 화면이 뜰지 관리 화면이 뜰지는 이 액션이 정하지 않는다 — 쿠키가 실제로
+ * 지워졌는지에 따라 `app/admin/layout.tsx` 가 그 자리에서 결정한다. 여기서 오류를 띄우고
+ * 머무르면 사용자는 로그아웃됐는지 아닌지 모르는 채로 관리 화면에 남는다.
+ *
+ * 실패는 두 모양으로 온다: 던지거나(네트워크·env), `{ error }` 를 돌려주거나. 둘 다 삼키지
+ * 않고 서버 로그에는 남긴다 — "로그아웃이 조용히 안 먹는" 상태를 볼 곳이 필요하다.
  */
 export async function signOutAction(): Promise<void> {
   try {
     const supabase = await createServerSupabaseClient();
-    await supabase.auth.signOut();
+    const { error } = await supabase.auth.signOut();
+
+    if (error !== null) {
+      console.warn('로그아웃 실패 — 화면 판정은 다시 시킨다', {
+        code: error.code,
+        message: error.message,
+      });
+    }
   } catch (error) {
-    console.error('로그아웃 처리 중 오류 — 로그인 화면으로 되돌린다', error);
+    console.error('로그아웃 처리 중 오류 — 화면 판정은 다시 시킨다', error);
   }
 
   revalidatePath('/', 'layout');

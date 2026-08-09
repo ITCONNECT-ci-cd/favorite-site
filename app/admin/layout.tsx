@@ -7,8 +7,20 @@ import { LoginForm } from '@/components/admin/LoginForm';
 import { ADMIN_PATH } from '@/lib/routes';
 import { getAdminSession } from '@/lib/supabase/server';
 
+/**
+ * 관리 라우트의 탭 제목과 색인 거부.
+ *
+ * `robots` 는 사내 도메인이 크롤러에 열려 있을 때를 대비한 한 줄이다. 미인증 응답도 200 이라
+ * (거부는 로그인 화면을 렌더하는 방식이지 상태 코드가 아니다) 크롤러 눈에는 평범한 페이지로
+ * 보이고, 색인되면 검색 결과가 "여기 관리 화면이 있다"고 알려 준다 — 공개 화면에서 링크를
+ * 지운 이유(test/admin-entry-hidden.test.ts)가 그대로 무의미해진다.
+ * `follow: false` 까지 두는 것은 로그인 화면 밖으로 크롤러를 내보내지 않기 위해서다.
+ *
+ * 이건 보안 장치가 아니라 **노출 억제**다. 문을 지키는 것은 아래 `getAdminSession()` 이다.
+ */
 export const metadata: Metadata = {
   title: '관리자',
+  robots: { index: false, follow: false },
 };
 
 /**
@@ -61,13 +73,18 @@ export default async function AdminLayout({ children }: LayoutProps<'/admin'>) {
    * 공개 셸과 달리 여기서는 **전용 오류 화면을 만들지 않는다.** 관리 화면에서 모르는 상태는
    * "통과"가 아니라 "거부"여야 하므로(fail-closed) 실패를 미인증과 똑같이 접어 로그인 화면을
    * 내보낸다 — 로그인해도 다시 실패하겠지만, 그 실패는 이미 사유를 구분하지 않는 자리다.
-   * 원문은 서버 로그에만 남긴다.
+   *
+   * 원문은 서버 로그에만 남기되 `error` 로 남긴다. 이 저장소의 관례는 "예상된 도메인 실패는
+   * warn, 던져진 예외는 error"고(actions.ts 가 같은 파일 안에서 둘을 가른다), 여기서 잡히는
+   * 것은 env 누락·Auth 장애 같은 **던져진 예외**다. fail-closed 라 화면에는 아무 신호도 남지
+   * 않으므로 — 사용자는 그냥 로그인 화면을 본다 — 로그가 유일한 신호이고, 경보는 대개
+   * error 에만 걸린다.
    */
   let session = null;
   try {
     session = await getAdminSession();
   } catch (error) {
-    console.warn('관리자 세션 확인 실패 — 미인증으로 접는다', error);
+    console.error('관리자 세션 확인 실패 — 미인증으로 접는다', error);
   }
 
   if (session === null) {

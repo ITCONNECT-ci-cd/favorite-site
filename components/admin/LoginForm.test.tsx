@@ -158,6 +158,28 @@ describe('LoginForm — 제출', () => {
     expect(formData.get('password')).toBe('pw-1234');
   });
 
+  /**
+   * React 19 는 action 을 가진 폼을 제출이 끝날 때 되돌린다(`requestFormReset`). 성공하면
+   * 화면을 떠나 보이지 않지만, **실패해서 같은 화면에 남을 때** 비제어 입력은 전부 비워진다 —
+   * 자격이 틀렸다는 안내 옆에서 이메일까지 사라지면 매번 다시 쳐야 한다.
+   * 그래서 이메일만 제어 입력으로 든다. 비밀번호는 리셋되는 대로 두는 것이 의도다.
+   */
+  it('실패해도 이메일은 남고 비밀번호만 비워진다', async () => {
+    renderForm(fail);
+
+    const email = screen.getByLabelText('이메일');
+    const password = screen.getByLabelText('비밀번호');
+
+    fireEvent.change(email, { target: { value: 'admin@example.com' } });
+    fireEvent.change(password, { target: { value: 'wrong-pw' } });
+    submit();
+
+    await screen.findByRole('alert');
+
+    expect(email).toHaveValue('admin@example.com');
+    expect(password).toHaveValue('');
+  });
+
   it('제출 중에는 버튼을 잠근다 — 두 번 눌러 두 번 로그인하지 않는다', async () => {
     let release!: (state: LoginFormState) => void;
     const action = vi.fn(

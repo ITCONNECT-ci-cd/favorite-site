@@ -105,9 +105,15 @@ describe('루트 레이아웃은 문서 뼈대만 진다 (app/layout.tsx)', () =
     expect(rootLayoutCode).not.toContain('@/lib/queries');
   });
 
+  /**
+   * 지키는 것은 **h-full 계약**이지 속성을 적은 순서가 아니다. `<html lang="ko" className="h-full">`
+   * 전체를 잠그면 `suppressHydrationWarning` 하나만 끼워 넣어도 깨진다 — 계약은 그대로인데
+   * 서식 때문에 빨개지는 테스트는 고쳐야 할 곳을 잘못 가리킨다.
+   */
   it('html·body 와 h-full 계약을 든다 (셸·로그인 화면이 함께 쓴다)', () => {
-    expect(rootLayoutCode).toMatch(/<html lang="ko" className="h-full">/);
-    expect(rootLayoutCode).toMatch(/<body className="h-full">/);
+    expect(rootLayoutCode).toMatch(/<html[^>]*lang="ko"/);
+    expect(rootLayoutCode).toMatch(/<html[^>]*className="[^"]*h-full/);
+    expect(rootLayoutCode).toMatch(/<body[^>]*className="[^"]*h-full/);
   });
 
   it('토스터를 딱 한 번, 루트에서 마운트한다 (관리 화면에서도 토스트가 떠야 한다)', () => {

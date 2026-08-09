@@ -152,7 +152,7 @@ describe('signOutAction', () => {
     expect(redirect).toHaveBeenCalledWith('/admin');
   });
 
-  it('로그아웃 호출이 실패해도 화면은 로그인으로 되돌린다', async () => {
+  it('로그아웃 호출이 던져도 화면은 /admin 으로 되돌린다', async () => {
     stubAuth({
       signOut: vi.fn(async () => {
         throw new Error('fetch failed');
@@ -162,5 +162,26 @@ describe('signOutAction', () => {
     await expect(signOutAction()).rejects.toThrow('NEXT_REDIRECT');
 
     expect(redirect).toHaveBeenCalledWith('/admin');
+  });
+
+  /**
+   * 던지지 않고 `{ error }` 로 실패하는 쪽 — 이게 더 흔하다(만료된 세션, 이미 회수된 토큰).
+   * 반환값을 안 보면 실패가 성공과 구분되지 않은 채 조용히 지나간다. 그래도 화면은 똑같이
+   * `/admin` 으로 되돌린다: 쿠키가 남았는지는 다음 요청의 `getAdminSession()` 이 판정한다.
+   */
+  it('signOut 이 error 를 돌려줘도 /admin 으로 되돌리고, 그 실패를 로그로 남긴다', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    stubAuth({
+      signOut: vi.fn(async () => ({ error: { message: 'Session not found', code: 'session_not_found' } })),
+    });
+
+    await expect(signOutAction()).rejects.toThrow('NEXT_REDIRECT');
+
+    expect(revalidatePath).toHaveBeenCalledWith('/', 'layout');
+    expect(redirect).toHaveBeenCalledWith('/admin');
+    // 삼키지 않는다 — "로그아웃이 조용히 안 먹는" 상태를 볼 곳이 서버 로그에는 있어야 한다.
+    expect(warn).toHaveBeenCalled();
+
+    warn.mockRestore();
   });
 });

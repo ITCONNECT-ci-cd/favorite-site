@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useId } from 'react';
+import { useActionState, useId, useState } from 'react';
 
 /**
  * 로그인 실패 문구 — **하나뿐이다.**
@@ -59,12 +59,32 @@ const LABEL_CLASS = 'mb-[7px] block text-[12px] font-semibold text-ink';
  *
  * 프로토타입 하단의 점선 '프로토타입 계정' 안내 박스는 만들지 않는다 — 자격을 화면에 적어
  * 두는 자리였다(스펙도 "제품에서는 제거").
+ *
+ * 입력의 `required`·`type="email"` 이 띄우는 브라우저 말풍선("이 입력란을 작성하세요")은
+ * **자격을 검증하기 전 단계**라 사유 비구분과 무관하다 — 어떤 계정이 존재하는지 알려 주지
+ * 않는다. 서버도 빈 입력을 같은 `{ failed: true }` 로 접으므로(actions.ts), 말풍선을 지운다고
+ * 더 안전해지지도 않는다. 지우면 키보드만 쓰는 사람이 빈 폼을 왕복하게 될 뿐이다.
  */
 export function LoginForm({ action, address }: LoginFormProps) {
   const [state, formAction, pending] = useActionState(action, INITIAL_STATE);
   const titleId = useId();
   const emailId = useId();
   const passwordId = useId();
+
+  /**
+   * 이메일만 제어 입력으로 든다 — **실패해도 지워지지 않게** 하려고.
+   *
+   * React 19 는 `action` 을 가진 폼을 제출이 끝날 때 `requestFormReset` 으로 되돌린다.
+   * 성공하면 화면을 떠나므로 보이지 않지만, 실패해서 같은 화면에 남는 경우에는 비제어
+   * 입력이 전부 비워진다 — 자격이 틀렸다는 안내 옆에서 이메일까지 사라지면 매번 다시 친다.
+   *
+   * 비밀번호는 **일부러 리셋되는 대로 둔다.** 틀린 비밀번호는 다시 치는 것이 맞고, 화면에
+   * 남겨 둘 값도 아니다.
+   *
+   * 실패 여부를 여기서 쓰지 않는다는 점이 중요하다: `LoginFormState` 는 `{ failed: boolean }`
+   * 하나로 잠겨 있고(그 타입 주석), 이 보존은 상태를 늘리지 않고 입력 자신의 값으로 해결한다.
+   */
+  const [email, setEmail] = useState('');
 
   return (
     <div className="flex h-full items-center justify-center bg-side px-[12px] py-[24px]">
@@ -98,6 +118,7 @@ export function LoginForm({ action, address }: LoginFormProps) {
           <label htmlFor={emailId} className={LABEL_CLASS}>
             이메일
           </label>
+          {/* value/onChange 는 장식이 아니다 — 이게 없으면 실패 제출마다 이메일이 지워진다. */}
           <input
             id={emailId}
             name="email"
@@ -105,6 +126,8 @@ export function LoginForm({ action, address }: LoginFormProps) {
             autoComplete="username"
             spellCheck={false}
             required
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
             className={`${FIELD_CLASS} mb-[16px]`}
           />
 

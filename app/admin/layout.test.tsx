@@ -95,7 +95,7 @@ describe('AdminLayout — 미인증', () => {
  */
 describe('AdminLayout — 세션 확인이 던질 때', () => {
   it('로그인 화면으로 접고 children 은 절대 그리지 않는다 (fail-closed)', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.mocked(getAdminSession).mockRejectedValue(new Error('env 누락'));
 
     await renderLayout();
@@ -103,10 +103,12 @@ describe('AdminLayout — 세션 확인이 던질 때', () => {
     expect(screen.getByRole('heading', { name: '관리자 로그인' })).toBeInTheDocument();
     expect(screen.queryByText(SECRET)).not.toBeInTheDocument();
     expect(screen.queryByRole('navigation', { name: '관리 메뉴' })).not.toBeInTheDocument();
-    // 삼키지는 않는다 — 원인을 볼 곳이 서버 로그에는 남아야 한다.
-    expect(warn).toHaveBeenCalled();
+    // 삼키지는 않는다 — fail-closed 라 화면에는 신호가 없고, 로그가 유일한 신호다.
+    // `error` 여야 한다: 여기서 잡히는 것은 던져진 예외고(env 누락·Auth 장애) 경보는
+    // 대개 error 에만 걸린다. 예상된 도메인 실패(warn)와 구분하는 관례를 잠근다.
+    expect(logged).toHaveBeenCalled();
 
-    warn.mockRestore();
+    logged.mockRestore();
   });
 });
 
@@ -149,5 +151,10 @@ describe('AdminLayout — 인증', () => {
 describe('AdminLayout — 탭 제목', () => {
   it('화면 이름만 댄다 — 꼬리표는 루트 셸의 template 이 붙인다', () => {
     expect(metadata.title).toBe('관리자');
+  });
+
+  /** 색인되면 검색 결과가 관리 화면의 존재를 알린다 — 링크를 지운 이유가 무의미해진다. */
+  it('검색 색인을 거부한다', () => {
+    expect(metadata.robots).toMatchObject({ index: false });
   });
 });

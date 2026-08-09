@@ -23,15 +23,20 @@ import { getAdminSession } from "@/lib/supabase/server";
  * 보내 서버 리렌더를 유도한다(클라이언트 내비게이션이 아니라 문서 요청이어야 셸이 다시 선다).
  *
  * `<html>`·`<body>` 를 직접 렌더하지 않는다 — 이 레이아웃은 더 이상 루트가 아니고
- * 문서 뼈대는 app/layout.tsx 가 세운다(H2 라우트 그룹 분리). 그래도 색·타이포는 inline
- * style 로 남겨 둔다: 전역 CSS 가 아직 안 붙은 상태에서도 이 화면만은 제대로 읽혀야 한다.
- * 값은 DESIGN_SPEC 1장 무채색 토큰과 같다.
+ * 문서 뼈대는 app/layout.tsx 가 세운다(H2 라우트 그룹 분리). 그래서 `margin: 0` 처럼
+ * body 가 가진 값은 여기서 손댈 수 없다. 여기서 자족할 수 있는 것은 **색·타이포·중앙 정렬**
+ * 뿐이라 그 셋만 inline style 로 적는다 — Tailwind 유틸이 실리지 않은 상태에서도 이 화면의
+ * 글자는 읽히고 가운데에 선다. 값은 DESIGN_SPEC 1장 무채색 토큰과 같다.
+ *
+ * 높이는 `100vh` 다(global-error 와 같은 값). `100%` 는 조상이 높이를 줘야 성립하는데,
+ * 루트 레이아웃의 `h-full` 은 전역 CSS 가 실려야 붙는 클래스다 — 그게 없을 때를 대비하는
+ * 화면이 그것에 기대면 안 된다. 뷰포트 기준이라면 혼자서도 세로를 채운다.
  */
 function ShellUnavailable() {
   return (
     <div
       style={{
-        minHeight: "100%",
+        minHeight: "100vh",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",

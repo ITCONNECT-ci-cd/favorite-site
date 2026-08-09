@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type { ReactElement } from 'react';
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -84,12 +85,23 @@ describe('관리 화면 — 미인증 요청', () => {
 describe('app/admin 아래 모든 page 가 자기 세션을 다시 확인한다', () => {
   const ADMIN_DIR = join(process.cwd(), 'app/admin');
 
+  /** 확장자를 가리지 않는다 — `page.jsx` 로 붙인 화면이 규칙 밖으로 새지 않게. */
+  const PAGE_FILE = /^page\.(t|j)sx?$/;
+
+  /**
+   * 부르기만 해서는 부족하다. `getAdminSession()` 을 부르고 **그 결과로 아무것도 그리지 않는
+   * 데까지** 가야 미인증 페이로드가 비어 있다. 사이에 `=== null)` 정도만 들어가므로 200자면
+   * 넉넉하고, "부르고 나서 한참 뒤 어딘가에서 null 을 돌려준다"는 다른 코드까지 통과시키지는
+   * 않는다.
+   */
+  const GUARD = /getAdminSession\(\)[\s\S]{0,200}return null/;
+
   function adminPages(dir: string): string[] {
     return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
       const path = join(dir, entry.name);
       if (entry.isDirectory()) return adminPages(path);
 
-      return entry.name === 'page.tsx' ? [path] : [];
+      return PAGE_FILE.test(entry.name) ? [path] : [];
     });
   }
 
@@ -100,9 +112,39 @@ describe('app/admin 아래 모든 page 가 자기 세션을 다시 확인한다'
     expect(pages.length).toBeGreaterThanOrEqual(3);
   });
 
-  it.each(pages)('%s 가 getAdminSession 을 부른다', (path) => {
-    const code = readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  /**
+   * **본 단언** — 찾아낸 page 를 그 자리에서 불러 실제로 실행한다.
+   *
+   * 위쪽 `PAGES` 배열은 손으로 등록한 셋뿐이라 새 화면이 자동으로 들어오지 않는다. 여기서는
+   * 디렉터리에서 찾은 경로를 그대로 import 하므로, I·K·M 시리즈가 화면을 붙이는 순간
+   * 등록 없이도 이 단언에 걸린다. 파일 경로로 부르는 것이라 `@/` 별칭 목록과도 어긋나지 않는다.
+   */
+  it.each(pages)('%s 는 미인증이면 아무것도 그리지 않는다', async (path) => {
+    vi.mocked(getAdminSession).mockResolvedValue(null);
 
-    expect(code).toContain('getAdminSession(');
+    const loaded: unknown = await import(/* @vite-ignore */ pathToFileURL(path).href);
+    const Page = (loaded as { default: () => Promise<unknown> }).default;
+
+    expect(typeof Page).toBe('function');
+    expect(await Page()).toBeNull();
+    // 모킹이 이 모듈까지 닿았다는 증거 — 안 닿았다면 진짜 세션 조회가 돌아 위 null 이
+    // 다른 이유로 나왔을 수 있다. 그러면 이 단언은 아무것도 지키지 않는다.
+    expect(getAdminSession).toHaveBeenCalled();
+  });
+
+  /**
+   * 보조 단언 — 위 실행 단언이 본체고, 이것은 **모양**을 잠근다.
+   *
+   * 실행만 보면 "세션을 안 보고 늘 null 을 돌려주는 화면"도 통과한다(I1 이 내용을 채우다
+   * 잠시 그런 상태를 만들 수 있다). 그래서 `getAdminSession()` 을 부르고 그 결과로 곧장
+   * null 을 돌려주는 형태까지 본다. 사이에 `=== null)` 정도만 들어가므로 200자면 넉넉하다.
+   */
+  it.each(pages)('%s 가 세션을 보고 나서 null 을 돌려준다 (소스)', (path) => {
+    // 주석은 블록·줄 둘 다 걷어낸다 — 규칙을 설명하는 주석 자체가 통과 근거가 되면 안 된다.
+    const code = readFileSync(path, 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+
+    expect(code).toMatch(GUARD);
   });
 });
