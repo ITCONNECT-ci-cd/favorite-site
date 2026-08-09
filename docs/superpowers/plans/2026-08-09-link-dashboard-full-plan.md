@@ -502,7 +502,7 @@ graph LR
 
 - [x] **D6. 핀 토글 배선 (전 목록 화면)** `S` — 의존: D2, D3, D4, E1, C5(Toast) ✅ 2026-08-09 완료 (31933eb + fixup e52ab8c, 스펙·품질 통과. toggle은 토글 후 상태 반환, pickFavorites·favToastText 추출, 프로토타입 원문 토스트)
   - 파일: `components/HomeView.tsx`, `components/ListView.tsx`, `components/FavoritesView.tsx`, `lib/favorites.ts` (배선 수정)
-  - 내용: 카드 핀 → `toggle(id)` + 토스트(**프로토타입 원문 확정: `<제목> · 홈 즐겨찾기에 담김` / `<제목> 즐겨찾기 해제`** — 스펙 리뷰 코드포인트 검증). 담긴 카드 테두리 `--color-fav-border`. 홈의 매일·운영 중 섹션은 핀 미노출 유지. toggle은 토글 후 상태를 반환(진실 원천 단일화 — 품질 리뷰 I-1). **추가(리뷰 이월)**: HomeView·FavoritesView에 바이트 동일 중복인 favs 순서 매핑을 `lib/favorites.ts`의 순수 함수 `pickFavorites(bookmarks, favs)`로 추출(+단위 테스트 — 훅 아님). **사이드바 favCount 정합**: SidebarContainer의 `favs.size`(원본)와 화면의 필터된 개수가 죽은 id 존재 시 어긋남 — 1단계에서는 SidebarContainer에 divergence 주석만(트리거는 재시드뿐), 완전 수정(같은 헬퍼 사용 또는 J2 시점 id 집합 전달)은 3단계 J2로. 콜백은 useCallback으로 신원 고정. 소비자 테스트는 toast 잔류 상태 주의(afterEach 타이머 소진). `/favorites` 핀 해제는 즉시 소멸 — 토스트가 유일한 피드백임을 인지.
+  - 내용: 카드 핀 → `toggle(id)` + 토스트(**프로토타입 원문 확정: `<제목> · 홈 즐겨찾기에 담김` / `<제목> 즐겨찾기 해제`** — 스펙 리뷰 코드포인트 검증). 담긴 카드 테두리 `--color-fav-border`. 홈의 매일·운영 중 섹션은 핀 미노출 유지. toggle은 토글 후 상태를 반환(진실 원천 단일화 — 품질 리뷰 I-1). **추가(리뷰 이월)**: HomeView·FavoritesView에 바이트 동일 중복인 favs 순서 매핑을 `lib/favorites.ts`의 순수 함수 `pickFavorites(bookmarks, favs)`로 추출(+단위 테스트 — 훅 아님). **사이드바 favCount 정합**: SidebarContainer의 `favs.size`(원본)와 화면의 필터된 개수가 죽은 id 존재 시 어긋남 — 1단계에서는 SidebarContainer에 divergence 주석만(트리거는 재시드뿐), 완전 수정(같은 헬퍼 사용 또는 실존 id 집합 전달)은 3단계 **J3**로(소유자 정정 — 트리거가 링크 삭제이므로. J2 스펙 리뷰 Important 1, impl-J3에 범위 전달됨). 콜백은 useCallback으로 신원 고정. 소비자 테스트는 toast 잔류 상태 주의(afterEach 타이머 소진). `/favorites` 핀 해제는 즉시 소멸 — 토스트가 유일한 피드백임을 인지.
   - 완료 기준: 테스트 — 토글 시 favs 반영 + 토스트 노출 + 홈 즐겨찾기 섹션 즉시 갱신.
 
 - [x] **D5. 반응형 (<820px)** `M` — 의존: D2, D3, D4, D6, C3, C4 ✅ 2026-08-09 완료 (997ecd0·74d46b9·d098bd2 + fixup 4d2c081, 스펙·품질 통과. 프로토타입 narrow 11규칙 전체+정리 버킷. 375px 스크린샷은 O1 아침 항목. 관리자·팔레트 narrow는 각 후속 스토리)
@@ -554,24 +554,26 @@ graph LR
   - 내용: @supabase/ssr 쿠키 세션. `getAdminSession()` 서버 헬퍼(모든 관리 진입점이 사용). 이메일 확인 비활성(사내 수동 생성).
   - 완료 기준: 로그인 세션이 서버 컴포넌트에서 읽힌다.
 
-- [ ] **H2. 로그인 화면** `S` — 의존: H1, A2 · 병렬: H4와 동시 가능. **선행 결정(C1 이월)**: 루트 layout이 공개 셸+데이터 조회를 갖고 있어 `/admin`이 공개 사이드바에 감싸임 — H2 시작 시 라우트 그룹 분리(`app/(public)/layout.tsx`로 셸 이동, 루트는 html/body만)를 C1 소유자(app/layout.tsx)에게 지시할 것
+- [x] **H2. 로그인 화면** `S` — 의존: H1, A2 · 병렬: H4와 동시 가능 ✅ 2026-08-09 야간 완료 (1760510+1b0a242+fixup a763572 — 스펙·품질 리뷰 승인, 재검증 9건 전해소·픽스업 필수 0. 잔여 소형 4건(스캔 상수 우회 잠금 등)은 fixup-J1b에 위임. 404 SSR 공백 수용에 재검증자 동의: 상태 코드는 기계 소비자와의 계약, loading.tsx 기각은 Next 문서 근거.) **선행 결정(C1 이월)**: 루트 layout이 공개 셸+데이터 조회를 갖고 있어 `/admin`이 공개 사이드바에 감싸임 — H2 시작 시 라우트 그룹 분리(`app/(public)/layout.tsx`로 셸 이동, 루트는 html/body만)를 C1 소유자(app/layout.tsx)에게 지시할 것
   - 구현 완료(1760510 라우트 그룹 분리 + 1b0a242 로그인) — 스펙 리뷰 진행 중. URL 불변 실측, Toaster는 루트로(셸에 두면 관리 화면 토스트 불가), 실계정 통합 검증 dev·prod 15/15.
-  - **보안 발견(H3·I 전체 인계)**: 레이아웃 가드만으로는 미인증 `/admin` 응답의 RSC 페이로드에 관리 본문이 문자열로 실린다(dev·prod 재현 — 화면엔 안 보여 눈으로 못 잡음). 규칙: **`app/admin/**`의 모든 page.tsx는 자체적으로 getAdminSession() 확인 후 미인증이면 null 반환** — 소스 스캔 테스트(test/admin-entry-hidden.test.ts)가 강제하므로 새 관리 화면에서 이 줄을 빼면 테스트가 깨진다. 임시 /admin 페이지의 로그아웃 버튼은 H3가 상단 탭 우측 제자리로 이동.
+  - **보안 발견(H3·I 전체 인계)**: 레이아웃 가드만으로는 미인증 `/admin` 응답의 RSC 페이로드에 관리 본문이 문자열로 실린다(dev·prod 재현 — 화면엔 안 보여 눈으로 못 잡음). 규칙: **`app/admin/**`의 모든 page.tsx는 자체적으로 getAdminSession() 확인 후 미인증이면 null 반환** — 소스 스캔 테스트(**app/admin/page.test.tsx** — test/admin-entry-hidden.test.ts는 "공개 화면에 /admin 링크 없음"이라는 별개 관심사)가 강제하므로 새 관리 화면에서 이 줄을 빼면 테스트가 깨진다. 임시 /admin 페이지의 로그아웃 버튼은 H3가 상단 탭 우측 제자리로 이동.
   - **스펙 리뷰 ✅(위반 0·누락 0, DESIGN_SPEC 6장 수치 전수 일치 실측)**. 편차 승인 4건: ①page별 세션 재확인 규칙(위) ②임시 app/admin/page.tsx(H3가 통째 교체) ③로그아웃 form POST(H3가 상단 탭 우측으로 **이동** — 재작성 아님) ④주소 표기는 하드코딩 대신 요청 헤더 생성(위조 가능성 인지·표시 전용 봉인).
   - **품질 리뷰: 조건부 승인(Critical 0).** 자산 확인: redirect가 try 밖(NEXT_REDIRECT 삼킴 방지 — 행위로 잠김), `{failed:boolean}` 타입 봉인. **픽스업 필수 7건(fixup-H2 — impl-H3·impl-J1 랜딩 후 실행, 파일 충돌 회피)**: ①admin-entry-hidden 재작성(SCAN_ROOTS=['app','components']+EXCLUDED, 매처 `/["'`]\/admin(?=["'`/?#])/` — includes('/admin')은 '@/lib/supabase/admin'에 오탐 실측, 임계값 10+대표 파일 단언) ②(public)/layout minHeight 100vh 복원+주석 사실화, global-error의 끊어진 상호참조 정정 ③signOutAction의 signOut() error 무시 — warn 로깅+독스트링 정정("반드시 /admin으로 되돌려 재판정")+테스트 ④admin layout metadata `robots:{index:false,follow:false}`+잠금(로그인 화면 색인 방지) ⑤React 19 폼 자동 리셋으로 실패 시 이메일까지 소실 — 이메일만 제어 컴포넌트로 보존(LoginFormState 확장 금지)+회귀 테스트 ⑥테스트 위생(무의미 단언 제거, page 매칭 `/^page\.(t|j)sx?$/`, "호출+null 반환" 단언 강화, shell-structure 정규식 완화) ⑦LoginForm JSDoc(네이티브 말풍선은 자격 검증 전 단계). **404 편차 기록 보강: `(public)` 안 `notFound()`(삭제된 카테고리 링크 = 실사용 경로)도 셸을 잃음** — 처분: fixup-H2에서 `app/(public)/not-found.tsx` 신설(셸 안 한국어 404) + 루트 `app/not-found.tsx`(정적 한국어 404), 작업 전 프로덕션 빌드로 `GET /category/<없는 id>` 실측 선행. H3 이월 2건(ADMIN_PATH 단일화→lib/routes.ts, 관리 레이아웃 SSR 실패 fail-closed 접기)은 impl-H3에 전달됨.
+  - **fixup a763572 랜딩** — 필수 7건+라우팅 2건(page 스캔 동적 import 전수 승격, admin layout warn→error) 전부 반영, 972/972·프로덕션 실측 표 포함. **오케스트레이터 수용 판단: 카테고리 404의 SSR HTML 공백은 Next 16.3 `notFound()` 프레임워크 동작(기준선 동일·회귀 아님)** — RSC 페이로드에는 셸+한국어 404가 실려 하이드레이션 후 정상 표시, 404 상태 코드 정확. 유일한 대안(app/(public)/loading.tsx)은 상태를 200으로 떨어뜨려 기각. 미매칭 URL은 정적 한국어 404(셸 없음·DB 조회 0·noindex). 재검증 진행 중.
   - **H2 통합 검증 재현 절차(품질 리뷰 M-11 — 기록)**: ①`npm run build` 후 프로덕션 서버 기동 ②쿠키 없이 `GET /admin` ③응답 본문(인라인 RSC 페이로드 포함 전문)에서 관리 화면 고유 문구 grep = 0건, 로그인 문구만 존재해야 함. 관리 화면을 추가할 때마다 이 3단계로 누출 재확인.
   - 파일: `app/admin/layout.tsx`(미인증 시 로그인 렌더), 로그인 폼
   - 내용: DESIGN_SPEC 6장 — 396px 컬럼, 실패 알림은 **사유 비구분**("이메일 또는 비밀번호를 확인해 주세요"). 프로토타입 계정 안내 박스는 만들지 않는다. 공개 화면 어디에도 /admin 링크 없음.
   - 완료 기준: 테스트 — 실패 메시지 단일화. 로그인→관리 화면 전환.
 
-- [ ] **H3. 관리자 셸** `S` — 의존: H2
-  - 구현 완료(9facff8, DONE_WITH_CONCERNS) — 스펙 리뷰 진행 중. 레이아웃 장착+셸만 클라이언트 경계(usePathname), 관리 page는 서버 유지, 활성 판정 /admin 정확일치·나머지 하위 포함, lib/routes.ts 경로 상수 단일화, 레이아웃 try/catch 미인증 접기, stats/cleanup 자리 표시 page(자체 게이트+K2/M2 교체 주석). 프로덕션 실측: 미인증 3 URL 셸 흔적 0, 실계정으로 활성 탭 경로별 1개. **우려(자기 신고): 검증 중 관리자 비밀번호가 서브에이전트 전사 출력에 1회 노출(파일·커밋·서버 로그 무관) — 아침 리포트에 비밀번호 교체 권고 기록.** 인계: I1은 app/admin/page.tsx `<main/>` 안만(패딩·스크롤·바는 셸 소유), K2/M2는 page 통째 교체+첫 줄 가드·main 소유 승계, 새 화면은 lib/routes.ts+AdminShell TABS 확장.
+- [x] **H3. 관리자 셸** `S` — 의존: H2 ✅ 2026-08-09 야간 완료 (9facff8 + fixup 0e7d04f — 스펙·품질 리뷰 승인, 재검증 9.5/10 해소·추가 픽스업 0. 선택 정리 이월: app/admin/page.test.tsx:35-39 중복 단언(I 시리즈 곁다리), AdminShell li flex-none(관례 일치 — 후속). 좁은 화면 이월 처방: header min-w-max 최소 / nav overflow-x-auto 권장)
+  - **스펙 리뷰 합격**(위반 0·누락 0, 프로토타입 285–297행 수치 9종 전수 일치, 로그아웃 "이동" diff로 확증, 스펙 밖 5건 승인 — ④좁은 화면 미대응은 단서 기록: 공개 셸과 overflow 비대칭은 정당하나 ~520px 이하 헤더 도색 끊김 실재, 후속 처방은 header min-w-max 또는 nav overflow-x-auto). **품질 리뷰 승인**(Critical 0) — fixup-H3 진행 중(I-1 로그아웃 form 배선 검증, I-2 형제 접두어 경로, M-1 toHaveClass 전환, M-2 무의미 단언 제거, M-3 nav ul/li 관례 통일, M-4 lib/routes 잠금 테스트+constants 경계, M-5 주석 복제 축소, M-6·M-7). I-3(admin layout warn→error)은 fixup-H2로 라우팅. 정정: 테스트 추가 실측 35건(커밋 메시지의 43은 오기).
+  - 구현 완료(9facff8, DONE_WITH_CONCERNS). 레이아웃 장착+셸만 클라이언트 경계(usePathname), 관리 page는 서버 유지, 활성 판정 /admin 정확일치·나머지 하위 포함, lib/routes.ts 경로 상수 단일화, 레이아웃 try/catch 미인증 접기, stats/cleanup 자리 표시 page(자체 게이트+K2/M2 교체 주석). 프로덕션 실측: 미인증 3 URL 셸 흔적 0, 실계정으로 활성 탭 경로별 1개. **우려(자기 신고): 검증 중 관리자 비밀번호가 서브에이전트 전사 출력에 1회 노출(파일·커밋·서버 로그 무관) — 아침 리포트에 비밀번호 교체 권고 기록.** 인계: I1은 app/admin/page.tsx `<main/>` 안만(패딩·스크롤·바는 셸 소유), K2/M2는 page 통째 교체+첫 줄 가드·main 소유 승계, 새 화면은 lib/routes.ts+AdminShell TABS 확장.
   - 파일: `app/admin/page.tsx`(카테고리·링크 탭 진입점), `components/admin/AdminShell.tsx`
   - 내용: 상단 60px — `관리자` + 탭 3개(카테고리·링크 `/admin`, 통계 `/admin/stats`, 정리 도구 `/admin/cleanup`) + 사이트 보기 + 로그아웃. 미인증 접근 시 어느 관리 URL이든 로그인만 렌더.
   - **H2 인계(필수 승계)**: ①`app/admin/**` 모든 page.tsx는 자체 getAdminSession() 확인 후 미인증 시 null 반환(소스 스캔 테스트가 강제 — RSC 페이로드 누출 방지) ②임시 page.tsx는 통째 교체 ③로그아웃은 기존 signOutAction form POST를 셸 우측으로 **이동**(재작성 금지) ④/admin/stats·/admin/cleanup 탭이 404가 안 되도록 자체 게이트된 자리 표시 page를 만들되 K2·M2가 교체함을 파일 주석에 명시.
   - 완료 기준: 테스트 — 미인증 가드, 탭 활성.
 
-- [ ] **H4. 쓰기 계층 (서버 액션)** `M` — 의존: B2, H1 · 병렬: H2·H3과 동시 가능
+- [x] **H4. 쓰기 계층 (서버 액션)** `M` — 의존: B2, H1 · 병렬: H2·H3과 동시 가능 ✅ 2026-08-09 야간 완료 (223a767 + fixup 3bc226c — 스펙·품질 리뷰 승인, 픽스업 재검증 전량 해소 확인: mutations 134/134·전체 939/939·이중 잠금 상보성 실증(ESLint는 동적 import 못 잡고 테스트 정규식이 그 구멍을 덮음 — 정규식 삭제 금지). 실 DB 쿼리 3종 확인 **14/14 PASS**(reorder 스코프 체인의 0행 무해 통과·혼합 목록 부분 반영 실측, 직속 링크 프로브, favicon_url null 키 적법 — 시드 22/290/12 원상·잔존 0). 참고: deleteCategory 가드는 앱 계층뿐 — raw DB delete는 여전히 set null 승격(restrict 백로그 유효). 잔여 나노 항목 N-1~N-3·M-4·M-7은 다음 파일 오픈 시 일괄 — 특히 N-2: 쓰기 액션 파일을 추가하면 eslint no-restricted-imports의 files 목록에도 추가할 것)
   - 구현 완료(223a767) — 12개 액션 전부 getAdminSession 우선, 반환 `{ok:true}|{ok:false,error}`(내부 정보는 서버 로그만), 쓰기는 anon+쿠키 클라이언트(service role 미사용 — 행위 단언으로 실질 고정, H1 리뷰의 이중 방어 계약 준수). 실 DB 통합 검증 20/20(관리자 실계정 authenticated 역할).
   - **스펙 리뷰 ✅(위반 0, 89/89·전체 815 통과 확인)**. 편차 ①하위 잔존 상위 삭제 거부 = 승인(스키마 근거: parent_id on delete set null이 하위를 상위로 승격 — 2단 트리 파괴), ②상·하위 분리+parent_id 조건, ③PIN_LIMIT 문구는 편차 아님(스펙 그대로)으로 재분류.
   - **품질 리뷰: 승인(Critical 0, 89/89·lint·tsc 청정).** fixup-H4 진행 중 — 필수: I-1(부분 성공 후 revalidatePath 누락 2곳) I-2(Promise.allSettled+"던지지 않는다" 범위 정정) I-4(reorderCategories에 parent_id is null 강제 — 인계 ④를 코드로) 이월①(ESLint no-restricted-imports + 문자열 단언 통합 정규식) I-5(적대적 페이로드 테스트) I-6(ALL_ACTIONS 자동 포섭) + faviconUrl 계약(검증은 http/https/`data:image/` 전용 헬퍼, Storage 키는 hostOf 기반 — collect-favicons의 uuid 키와 공존 주석). 권장 일괄: adminClient→writeClient 리네임, 문구 상수화, PGRST301 매핑 등. **오케스트레이터 결정 3건**: ①deleteCategory는 직속 링크 잔존 시에도 거부("지우려면 비워라" 단일 규칙 — 미분류로 떨어져 관리 화면 어디에도 안 뜨는 링크 원천 차단, I1 확인 문구도 이 규칙으로) ②DB `on delete restrict` 승격은 별도 백로그(마이그레이션 번호+23503 문구 동반 필요) ③deleteBookmark의 Storage 파비콘 고아는 백로그(M1 정리 도구 스코프 확장 검토).
@@ -580,6 +582,7 @@ graph LR
   - 완료 기준: 테스트 — 미인증 호출 거부, pin 13번째 거부 메시지.
 
 - [ ] **I1. 상위 카테고리 패널 + 우측 헤더 패널** `M` — 의존: H3, H4
+  - 구현 완료(9ac6171+1d6cd54, 테스트 49 추가·전체 1167 통과) — 스펙 리뷰 진행 중. 서버가 상위만 접어 내림(290행 미전달), SelectedCategoryProvider(URL 미동기화 — 근거 기록), useOptimistic 정렬, <820px 1단 접기를 I1이 소유(I4는 확인만). 실계정 통합: 추가→수정→정렬(공개 사이드바 재배치 실측)→복구→삭제, 원상 확증(상위 10개 sort_order 0..9·22/290). **I2~I5 인계**: 선택은 `useSelectedCategory()`(id를 prop으로 내리지 말 것), I2는 CategoryHeader **children**, I3~I5는 우측 칸 다음 상자, 실패 문구는 그대로 토스트(화면 복제 금지 관례). 참고: clicks가 비어 클릭 합계는 현재 전부 0 표시(로직은 테스트 고정), rollupClicks는 page 안(lib 경계 — 후속 병합 후보).
   - 파일: `components/admin/CategoryPanel.tsx`, `components/admin/CategoryHeader.tsx`
   - 내용: DESIGN_SPEC 6장 — 좌측 270px(추가 입력, 행: 손잡이·이름·개수·클릭 합계, 선택 행 다크, HTML5 draggable 정렬 → 사이드바 순서 반영) + **우측 헤더 패널**(카테고리 이름 16px/700 + 링크 수 + "이름 수정" 인라인 입력·저장·취소 + "카테고리 삭제").
   - **H4 인계(fixup-H4 반영 후 기준)**: ①서버 액션은 positional 인자 — `<form action={...}>` 직접 배선 불가, 클라이언트 컴포넌트에서 호출 ②deleteCategory는 **하위 또는 직속 링크가 남아 있으면 거부**("지우려면 비워라" 단일 규칙 — 미분류 링크 발생 경로 차단) — UI는 두 실패 문구를 그대로 안내하고, 삭제 확인 문구도 "비어 있는 카테고리만 삭제됩니다" 전제로 작성 ③reorderCategories에는 상위 카테고리 id만(하위 id 섞이면 서버가 거부 — fixup-H4에서 코드 강제) ④착수 전 lib/mutations.ts 최신 커밋(fixup-H4)의 헬퍼 이름(writeClient)·문구 상수를 확인.
@@ -604,21 +607,28 @@ graph LR
   - 내용: 목록 내 검색, 하위 칩 필터(전체/각 하위/하위 미지정), 정렬 4종(직접 지정 순서·하위 카테고리순·클릭 많은순·이름순).
   - 완료 기준: 테스트 — 각 필터·정렬 결과.
 
-- [ ] **J1. 서버 세션 기반 현장 편집 노출** `S` — 의존: H1, C2 · **병렬: I 전체와 동시 가능** (파일 겹침 없음)
+- [x] **J1. 서버 세션 기반 현장 편집 노출** `S` — 의존: H1, C2 · **병렬: I 전체와 동시 가능** (파일 겹침 없음) ✅ 2026-08-09 야간 완료 (b2957ad + fixup ad15e50·bea8b34·1097e45 — 스펙·품질 리뷰·재검증 통과, Minor 전량 반영. hasEditSlot 기준="React가 그리는가"(boolean 전체 배제), 셸 왕복 병렬화+순서 잠금, 공개 page isAdmin 배선 소스 잠금(test/public-admin-thread) 신설)
   - 내용: 공개 화면 서버 컴포넌트가 `getAdminSession()` 결과를 `isAdmin`으로 내려보냄 — **연필·휴지통은 서버 확인 시에만 렌더**(클라이언트 플래그 숨김 금지, README 주의사항 7). 헤더에 `관리자 편집 모드` 칩.
-  - **스펙 리뷰 ✅(Critical 0)** — 비로그인 4화면 HTML+RSC 무누출 독립 재실측(세션 토큰·이메일·userId 0건), 칩 수치 전수 일치, 스펙 밖 4건 승인. Important 1: 계획 682행의 "상태 슬롯" 미이행으로 J2/J3 병렬 안전 붕괴 → **처분(a) 채택: fixup-J1이 LinkCard에 isEditing/editSlot/deleteSlot 개방(병렬 설계 유지)** + 낡은 J1 번호 주석 정정. 품질 리뷰 이월: 셸의 getAllData→getAdminSession 직렬화(모든 페이지뷰 1회 직렬화 vs 오류 경로 1회 절약 — 재검토), "왕복 1회" 근거 표현 정정(실근거는 RSC 실측+H1 소스 단언).
+  - **스펙 리뷰 ✅(Critical 0)** — 비로그인 4화면 HTML+RSC 무누출 독립 재실측(세션 토큰·이메일·userId 0건), 칩 수치 전수 일치, 스펙 밖 4건 승인. Important 1: 계획 682행의 "상태 슬롯" 미이행으로 J2/J3 병렬 안전 붕괴 → **처분(a) 채택 + fixup ad15e50 랜딩**: LinkCard에 `isEditing`+`editSlot`(AND 조건 시 본문+하단 교체 — 상단 액션 줄 유지, DESIGN_SPEC 2-1 근거)·`deleteSlot`(마지막 자식 덧대기, 오버레이 z-[6]은 자신이 소유) 개방, 빈 슬롯 시 outerHTML 동일 검증, 낡은 J1 번호 주석 정정. 전체 963 통과. **J2·J3은 LinkCard 재수정 불필요 — 단 화면 상태 배선(HomeView/ListView/FavoritesView)이 겹치므로 J2 선행 후 J3**(682행의 "병렬"은 컴포넌트 파일 기준으로만 유효). 품질 리뷰 이월: 셸의 getAllData→getAdminSession 직렬화(모든 페이지뷰 1회 직렬화 vs 오류 경로 1회 절약 — 재검토), "왕복 1회" 근거 표현 정정(실근거는 RSC 실측+H1 소스 단언).
+  - **품질 리뷰: 조건부 승인(Critical 0)** — 오버레이 포인터 차단은 구조적으로 완결(relative+overflow-hidden+z-[6] 상호작용 검증). fixup-J1b 진행: Important 1(editSlot falsy 구멍 — `cond && <Form/>`의 false가 통과해 빈 카드), Important 2(공개 page의 isAdmin 배선 소스 잠금 신설), 이월 1 채택(셸 두 프로미스 선발사 + sessionPromise 생성 직후 catch→null — Next 문서상 layout·page 병렬 렌더 모델이면 이득 0, 직렬 모델이면 Auth RTT 1회 절약, 어느 쪽이든 무손해 + getAdminSession 예외가 ShellUnavailable 보호 밖인 구멍 봉합), Minor(아이콘 path 상수 단일화, 공허 통과 가드, deleteSlot 키보드 트랩 JSDoc — **J3 필수 인지: 오버레이가 포인터는 막지만 키보드 포커스는 못 막음, 포커스 트랩은 오버레이 몫**, aria-expanded, dev 경고, 호버 대칭). J2에 위임: 3개 View의 isAdmin required 전환. 정정: ad15e50의 outerHTML 단언은 "슬롯 prop이 DOM으로 안 샌다" 수준 — b2957ad 동일성의 실근거는 기존 테스트 무수정 통과.
   - 구현 완료(b2957ad, 19파일·테스트 35 추가). isAdmin boolean만 스레딩(세션 객체는 클라이언트 경계 미통과), 각 page가 cache()된 getAdminSession 재호출(왕복 1회 실측), 4화면 비로그인 HTML+RSC 마크업 0·실계정 쿠키에서 노출 실측. C1 이월 "getShellData 추출"은 **불성립으로 종결**(근거: 셸 값 넷은 셸 전용, 세션은 cache()로 무료 — layout.tsx 주석 기록). **J2/J3 인계**: LinkCard `onEdit?/onDelete?(id)` slot(현재 no-op), onDelete는 "삭제를 묻기", 배선 지점 HomeView 3곳·ListView 1곳, J2 교체 범위는 LinkCard 마커, 삭제 오버레이는 `absolute inset-0 z-[6]`(컨테이너 relative overflow-hidden 전제), PaletteHost에도 isAdmin 흐름(N3 재사용 가능).
   - 완료 기준: 테스트 — 비로그인 HTML에 연필·휴지통 **미포함**(렌더 자체가 없음).
 
-- [ ] **J2. 카드 인라인 편집** `M` — 의존: J1, H4
+- [x] **J2. 카드 인라인 편집** `M` — 의존: J1, H4 ✅ 2026-08-09 야간 완료 (e1c5176 + fixup 84b82bd — 스펙·품질 리뷰·재검증 통과. ref 빗장(sending)+표시 상태(saving) 분담 정합, startTransition 닫기, baseline 고정 실증. 재검증 신규 Minor: A(trigger 캡처 시점 — DeleteConfirm과 공유 패턴, J3 품질 리뷰로), B·C·D는 O3 전 정리 스윕. M11 낱말 통일도 스윕 이월. IME Enter 실브라우저 1회는 아침 확인)
+  - **스펙 리뷰 ✅(수치 전건 일치, 완료 기준 4종 비공허 실증, 스펙 밖 7건 전부 승인 — ①IME Enter 위임은 프로토타입 대비 상향 ②부분 patch는 mutations "준 키만" 계약과 정합 ⑦탭 유지도 프로토타입 990행 대칭)**. Important 1: favCount 소유자 J2→J3 문서 정정(처리됨). Minor: "동시에 한 장만"의 실불변식은 "한 링크만"(두 섹션 중복 배치 시 두 자리 — 프로토타입 동일), InlineEdit 로컬 상태 분기 엣지, saving 성공 시 미해제(언마운트 전제 — onDone JSDoc 보강 권고).
+  - **fixup 84b82bd 랜딩** — 품질 지적 전량 반영 + J3 발견 전파(sending ref 빗장 — 상태 가드는 같은 틱 이중 클릭을 못 막음, 선실패 재현 후 수정). M11(연필 '수정' vs 폼 '편집' 낱말)만 소유권 4파일에 걸쳐 O3 전 정리 스윕으로 이월. 재검증 진행 중.
+  - **품질 리뷰: 조건부 승인(Critical 0, Important 4 — 전부 서버 왕복 가장자리).** fixup-J2(InlineEdit 단독) 진행: I1(성공 닫기를 startTransition으로 — 옛 값 스침 방지), I2(프라미스 거부 시 영구 잠금 — try/catch+토스트), I3(마운트 포커스 — 연필에 포커스 남아 Esc 안 듣는 문제), M2(비교 기준선 마운트 시점 고정 — 남의 수정 되돌림 방지), M3~M6·M11. impl-J3 위임 4건: **양방향 상호 배제(프로토타입 928행 startEdit→confirmId:null — 인계문에 빠졌던 방향)**, mutations mock importOriginal 형태, 모든 연필 순회 테스트, ListView 중복 비교 정리. 이월 판정: draft 인스턴스 소유는 수용하되 사유 정정(프로토타입은 화면 단일 상태 — divergence 2건 문서화), saving 미해제는 지연 커밋 잠금으로 성격 전환(성공 시 해제 금지). **아침 확인 추가: 한글 IME 조합 확정 Enter가 저장을 일으키지 않는지 실브라우저 1회(jsdom 자동화 불가).**
+  - 구현 완료(e1c5176, 테스트 42 추가·전체 1017 통과). 폼=이름+설명만(프로토타입 141-146행), editingId 하나로 단일 편집 보장, 바뀐 키만 patch·무변경 시 서버 미호출, 실계정 편집·원복 DB+HTML 양쪽 실측. **발견: FavoritesView는 LinkCard 렌더 지점 없음(ListView 위임 래퍼) — 배선 대상 아님.** 3개 View isAdmin required 전환(J1 리뷰 위임분) 포함. **J3 인계**: deletingId 배선 자리(HomeView editing 헬퍼 옆 deleting 헬퍼 3곳 스프레드, ListView 인라인 1곳), 상호 배제는 프로토타입 askDel 재현 — `onDelete={(id)=>{setDeletingId(id); setEditingId(null);}}`, 같은 링크가 두 섹션에 놓이면 오버레이도 두 자리(id 기반 — 명시 테스트 있음).
   - 파일: `components/card/InlineEdit.tsx`
   - 내용: DESIGN_SPEC 2-1장 — 연필 클릭 시 본문·하단을 폼으로 교체(동시에 한 장만), Enter 저장/Esc 취소, 서버 액션 저장. 모달 금지.
   - 완료 기준: 테스트 — 폼 전환·저장·취소·단일 편집 보장.
 
 - [ ] **J3. 카드 삭제 확인** `S` — 의존: J1, H4 · 병렬: J2와 동시 가능
-  - 파일: `components/card/DeleteConfirm.tsx`
-  - 내용: 휴지통 → 카드 위 `inset-0` 오버레이("이 링크를 삭제할까요" + 삭제/취소). 즉시 삭제 금지.
-  - 완료 기준: 테스트 — 확인 전 미삭제, 확인 후 삭제+목록 갱신.
+  - **스펙 리뷰 합격**(위반 0, 수치 27개 중 26 이식·1 의도적 미이식 전건 확인. **판정: DESIGN_SPEC 153행 "12px"는 문서 오기 — 프로토타입 11.5px가 정본**(스펙 3행 자기 선언+타입 스케일 정합+D6 선례. DESIGN_SPEC 원본은 핸드오프 번들이라 미수정 — 정오표로 기록, 아침 보고). 테스트 실측 +51(보고 52는 계수 오차). favCount 잔여 빚 사유 정정: "셸 경계 밖"이 아니라 **페이로드 비용**(290 uuid×전 페이지뷰 RSC — 데이터는 셸에 이미 있음, 3줄이면 닿으나 비용>이득 판단). 품질 리뷰 이월: 중복 배치 마운트 포커스(나중 인스턴스 승리 — 실브라우저 확인), 포인터 밖 클릭 가둠 풀림(수용/후속 판정), E1 규칙 문언(위치 기준→실불변식), J2 재검증발 A(trigger 캡처 시점 — InlineEdit·DeleteConfirm 공유 패턴).
+  - 구현 완료(1f75cd3, 테스트 +51). alertdialog+포커스 트랩(마운트 시 취소 포커스·언마운트 시 트리거 반환·오버레이 자체 Tab 순환), **ref 빗장**(상태 가드는 같은 틱 이중 클릭을 못 막음 — 실측, InlineEdit 동일 구멍은 fixup-J2에 전달), 양방향 상호 배제, 위임 4건 이행(31개 전수 순회 테스트 포함). favCount: 삭제 브라우저의 localStorage에서 제거 — **남는 빚: 다른 방문자 localStorage는 완전 해소 불가(셸이 실존 id 집합을 내려보내야 — 백로그)**. dev+프로덕션 삭제 사이클 실측(291→290·화면 소멸), 시드 290 불변. 참고: createBookmark는 I 트랙이 import하기 전까지 HTTP 미도달.
+  - 파일: `components/card/DeleteConfirm.tsx` (+ SidebarContainer.tsx — favCount 정합)
+  - 내용: 휴지통 → 카드 위 `inset-0` 오버레이("이 링크를 삭제할까요" + 삭제/취소). 즉시 삭제 금지. **추가(소유자 정정)**: 사이드바 favCount 정합 — 삭제된 링크 id가 localStorage에 남아 카운트가 어긋나는 문제의 완전 수정(C4 이월분, J2→J3 정정).
+  - 완료 기준: 테스트 — 확인 전 미삭제, 확인 후 삭제+목록 갱신, favCount 정합.
 
 ### 3단계 게이트 — **O3. 검수** (보안 항목 필수: §6)
 
@@ -632,6 +642,7 @@ graph LR
   - 완료 기준: 각 함수 실측 검증(시드+테스트 클릭 데이터), 익명 호출 거부.
 
 - [ ] **K2. 통계 화면** `L` — 의존: K1, H3
+  - **H3 인계**: page 통째 교체하되 첫 줄 getAdminSession 가드·`<main>` 소유 규칙 승계, 자리 표시 문구 단언 테스트(app/admin/page.test.tsx)도 함께 교체, 자기 `metadata.title` 달 것. 탭 경로는 lib/routes.ts.
   - 파일: `app/admin/stats/page.tsx`, `components/admin/StatsView.tsx`
   - 내용: DESIGN_SPEC 6장 통계 — KPI 3장(숫자 26px), 기간 탭 14·30(기본)·90·180·365, 막대(높이 80px, gap 규칙: ≤30일 5px/≤90일 2px/그 외 1px, 날짜 라벨 ≤30일만), 하단 1.4fr/1fr(순위 12행 막대 / 카테고리 합계 / 최근 14건 `M.D HH:MM`).
   - 완료 기준: 테스트 — 기간 전환·gap 규칙·빈 데이터. "순위는 unique 기준, 절대값 참고용" 안내문 노출. **<820px 1단 축소**.
@@ -646,6 +657,7 @@ graph LR
   - 완료 기준: 판정 함수 테스트(경계: 등록 직후 링크는 방치 아님).
 
 - [ ] **M2. 정리 도구 화면** `M` — 의존: M1, H3
+  - **H3 인계**: page 통째 교체하되 첫 줄 getAdminSession 가드·`<main>` 소유 규칙 승계, 자리 표시 문구 단언 테스트도 함께 교체, 자기 `metadata.title` 달 것. 탭 경로는 lib/routes.ts.
   - 파일: `app/admin/cleanup/page.tsx`, `components/admin/CleanupView.tsx`
   - 내용: DESIGN_SPEC 6장 — 2열, 기준 탭 30·90·180(기본)·365, 0건 안내문, 도메인 그룹에 "정리 대상이 아닙니다" 명시.
   - 완료 기준: 테스트 — 탭 전환·목록 렌더. **<820px 1단 축소**.
@@ -713,6 +725,7 @@ graph LR
 | categories.parent_id `on delete restrict` 승격(deleteCategory TOCTOU의 DB 차단) | 보류 — 새 마이그레이션 번호 + 23503 문구 매핑 동반 필요(H4 품질 리뷰 이월②). 앱 계층 거부+주석으로 야간 수용 |
 | deleteBookmark 시 Storage 파비콘 객체 미삭제(고아 누적) | 보류 — I3 도입 후 증가. M1 정리 도구 스코프 확장 또는 별도 정리 스크립트 검토 |
 | I4 '미분류' 버킷(카테고리 null 링크 노출) | 불요 처리 — deleteCategory가 직속 링크 잔존 시 거부로 규칙 변경되어 미분류 발생 경로 원천 차단(H4 품질 리뷰 I-7 처분) |
+| favCount 완전 정합(타 방문자 localStorage의 죽은 id) | 보류 — 삭제한 브라우저는 J3이 즉시 정리. 완전 해소는 공개 셸이 실존 id 집합을 클라이언트에 내려 favorites 훅이 필터하는 구조 — 후속(빈도 낮음: 관리자가 링크를 지울 때만 발생, 표시 카운트 1~2 차이) |
 
 ## 7. 리스크와 대응
 
