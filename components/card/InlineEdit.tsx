@@ -277,11 +277,11 @@ export function InlineEdit({ bookmark, onDone }: InlineEditProps) {
       // 카드마다 폼이 하나씩 열릴 수 있으므로 어느 링크의 폼인지 이름에 담는다
       // (카드 액션 버튼의 `${title} 수정`·`${title} 삭제` 와 같은 방식).
       //
-      // 낱말이 갈리는 것은 알고 두는 것이다 — 연필은 '수정', 이 폼은 '편집'. 연필은 LinkCard 의
-      // 것이라 이 트랙이 못 고치고(J1b 병렬 계약), 폼 쪽을 '수정' 으로 맞추면 이 이름을 못박아 둔
-      // 화면 테스트(HomeView·ListView)·DeleteConfirm 주석과 갈라진다. 한 낱말로 모으려면 그
-      // 파일들을 한 번에 고쳐라 — 여기만 바꾸는 것은 고치는 게 아니라 깨는 것이다.
-      aria-label={`${bookmark.title} 편집`}
+      // 낱말은 **'수정' 하나다.** 이 폼을 여는 연필의 이름이 `${title} 수정` 이고(LinkCard),
+      // 같은 것을 가리키는 두 이름이 갈리면 화면을 볼 수 없는 사용자는 방금 연필로 연 것이 이
+      // 폼인지 알 수 없다. 원조 관례가 연필 쪽이라 폼을 그리로 맞췄다 — J2 시점에는 LinkCard 가
+      // 다른 트랙의 파일이라 '편집' 으로 두고 이월했던 것이다.
+      aria-label={`${bookmark.title} 수정`}
       onSubmit={handleSubmit}
       onKeyDown={handleKeyDown}
       className="mt-auto flex flex-col gap-[5px]"

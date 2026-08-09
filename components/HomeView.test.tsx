@@ -655,7 +655,7 @@ describe('HomeView — 카드 인라인 편집 (J2)', () => {
 
     const card = cards('내 즐겨찾기')[0];
 
-    expect(within(card).getByRole('form', { name: `${FAV_FIRST.title} 편집` })).toBeInTheDocument();
+    expect(within(card).getByRole('form', { name: `${FAV_FIRST.title} 수정` })).toBeInTheDocument();
     expect(within(card).getByRole('textbox', { name: '이름' })).toHaveValue(FAV_FIRST.title);
     // 교체 범위는 본문 + 하단 줄이다 — 본문 앵커가 사라지고 상단 액션 줄은 남는다(LinkCard J1 계약).
     expect(within(card).queryByRole('link')).not.toBeInTheDocument();
@@ -685,16 +685,16 @@ describe('HomeView — 카드 인라인 편집 (J2)', () => {
     renderHome();
 
     fireEvent.click(pencil('내 즐겨찾기'));
-    expect(formIn('내 즐겨찾기')).toHaveAccessibleName(`${FAV_FIRST.title} 편집`);
+    expect(formIn('내 즐겨찾기')).toHaveAccessibleName(`${FAV_FIRST.title} 수정`);
 
     fireEvent.click(pencil('매일 사용하는 사이트'));
     expect(forms()).toHaveLength(1);
-    expect(formIn('매일 사용하는 사이트')).toHaveAccessibleName(`${DAILY_FIRST.title} 편집`);
+    expect(formIn('매일 사용하는 사이트')).toHaveAccessibleName(`${DAILY_FIRST.title} 수정`);
 
     fireEvent.click(pencil('현재 운영 중인 사이트', OPERATING_ONLY_INDEX));
     expect(forms()).toHaveLength(1);
     expect(formIn('현재 운영 중인 사이트', OPERATING_ONLY_INDEX)).toHaveAccessibleName(
-      `${OPERATING_ONLY.title} 편집`,
+      `${OPERATING_ONLY.title} 수정`,
     );
   });
 
@@ -708,7 +708,7 @@ describe('HomeView — 카드 인라인 편집 (J2)', () => {
 
     fireEvent.click(pencil('매일 사용하는 사이트', dailyIndex));
 
-    expect(screen.getAllByRole('form', { name: `${SHARED.title} 편집` })).toHaveLength(2);
+    expect(screen.getAllByRole('form', { name: `${SHARED.title} 수정` })).toHaveLength(2);
     expect(forms()).toHaveLength(2);
   });
 

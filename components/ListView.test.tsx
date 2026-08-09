@@ -815,7 +815,7 @@ describe('ListView — 카드 인라인 편집 (J2)', () => {
 
     fireEvent.click(pencil('대화A'));
 
-    expect(screen.getByRole('form', { name: '대화A 편집' })).toBeInTheDocument();
+    expect(screen.getByRole('form', { name: '대화A 수정' })).toBeInTheDocument();
     expect(field('이름')).toHaveValue('대화A');
     // 교체 범위는 본문 + 하단 줄이다 — 그 카드의 열기 앵커만 사라지고 나머지 카드는 그대로다.
     expect(screen.queryByRole('link', { name: '대화A' })).not.toBeInTheDocument();
@@ -832,7 +832,7 @@ describe('ListView — 카드 인라인 편집 (J2)', () => {
     fireEvent.click(pencil('영상A'));
 
     expect(forms()).toHaveLength(1);
-    expect(screen.getByRole('form', { name: '영상A 편집' })).toBeInTheDocument();
+    expect(screen.getByRole('form', { name: '영상A 수정' })).toBeInTheDocument();
     expect(openLink('대화A')).toBeInTheDocument();
   });
 

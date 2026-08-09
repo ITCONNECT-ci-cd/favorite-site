@@ -341,7 +341,7 @@ export function DeleteConfirm({ bookmark, onDone }: DeleteConfirmProps) {
       role="alertdialog"
       aria-modal="true"
       // 카드마다 오버레이가 하나씩 뜰 수 있으므로 어느 링크의 확인인지 이름에 담는다
-      // (카드 액션 버튼의 `${title} 삭제` · 편집 폼의 `${title} 편집` 과 같은 방식).
+      // (카드 액션 버튼의 `${title} 삭제` · 편집 폼의 `${title} 수정` 과 같은 방식).
       aria-label={`${bookmark.title} 삭제 확인`}
       aria-describedby={messageId}
       // 버튼이 잠기는 구간에 포커스를 받아 둘 자리 (위 두 번째 useEffect).

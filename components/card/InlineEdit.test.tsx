@@ -154,7 +154,7 @@ describe('InlineEdit — 폼 구성 (DESIGN_SPEC 2-1 · 프로토타입 실측)'
   it('어느 카드의 폼인지 이름으로 알린다 — 카드 액션 버튼과 같은 방식', () => {
     renderForm();
 
-    expect(screen.getByRole('form', { name: 'ChatGPT 편집' })).toBeInTheDocument();
+    expect(screen.getByRole('form', { name: 'ChatGPT 수정' })).toBeInTheDocument();
   });
 
   it('본문 자리를 그대로 차지한다 — margin-top:auto, 세로 5px 간격 (프로토타입)', () => {
@@ -163,7 +163,7 @@ describe('InlineEdit — 폼 구성 (DESIGN_SPEC 2-1 · 프로토타입 실측)'
     // LinkCard 의 `editSlot` JSDoc(J1b)이 정한 계약은 "폼이 `mt-auto` 나 `flex-1` 중 하나를
     // 갖는다"이고, 이 단언은 그중 지금 구현이 고른 쪽을 못박는다 — `flex-1` 로 가는 대안 구현이
     // 오면 계약은 그대로이므로 이 한 줄만 갱신하면 된다.
-    expect(screen.getByRole('form', { name: 'ChatGPT 편집' })).toHaveClass(
+    expect(screen.getByRole('form', { name: 'ChatGPT 수정' })).toHaveClass(
       'mt-auto',
       'flex',
       'flex-col',
@@ -353,7 +353,7 @@ describe('InlineEdit — 저장', () => {
   it('Enter 가 저장이 되는 조건을 갖춘다 — 두 입력이 폼 안에 있고 저장이 submit 버튼이다', () => {
     renderForm();
 
-    const form = screen.getByRole('form', { name: 'ChatGPT 편집' });
+    const form = screen.getByRole('form', { name: 'ChatGPT 수정' });
 
     expect(form).toContainElement(titleField());
     expect(form).toContainElement(descField());
