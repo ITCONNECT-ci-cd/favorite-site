@@ -109,8 +109,9 @@ export function HomeView({ data }: HomeViewProps) {
           (bookmark) => bookmark.category_id !== null && operating.ids.has(bookmark.category_id),
         );
 
+  // 섹션 간격은 프로토타입 sectionGap 그대로다 — narrow 20px · 데스크톱 26px (D5).
   return (
-    <main className="flex flex-col gap-[26px]">
+    <main className="flex flex-col gap-[20px] min-[820px]:gap-[26px]">
       <section aria-label="내 즐겨찾기">
         <SectionHeader
           title="내 즐겨찾기"

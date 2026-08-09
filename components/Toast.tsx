@@ -73,6 +73,10 @@ export function toast(message: string): void {
  * rise 애니메이션 (DESIGN_SPEC 7장 `rise .18s ease-out`).
  * 전역 스타일(app/globals.css)이 아니라 이 컴포넌트가 직접 싣는다 — 토스트 말고는 쓰는 곳이 없다.
  *
+ * 붙이는 쪽은 `motion-safe:` 다 (D5, prefers-reduced-motion 가드). 움직임을 꺼 둔 사용자에게는
+ * 애니메이션을 되돌리는 규칙을 얹는 대신 **아예 걸지 않는다** — 같은 특정도의 규칙 둘이
+ * CSS 출력 순서로 승부가 갈리는 상황을 만들지 않기 위해서다. 문구는 그 자리에 즉시 나타난다.
+ *
  * 가운데 정렬은 바깥 flex가 맡으므로 키프레임은 세로 이동만 건드린다.
  * 프로토타입 키프레임은 `translate(-50%, 8px)`로 가로 -50%를 함께 들고 있는데, 거기서는
  * 가운데 정렬도 `transform: translateX(-50%)`이라 애니메이션이 그 값을 통째로 덮어쓰기 때문이다.
@@ -108,7 +112,10 @@ export function Toaster() {
         {message ? (
           <div
             key={message.id}
-            className="animate-[toast-rise_0.18s_ease-out] rounded-[8px] bg-ink px-[16px] py-[11px] text-[12.5px] whitespace-nowrap text-white shadow-[0_8px_24px_rgba(20,21,22,0.3)]"
+            /* 폭 상한은 D5 실측 결과다 — 시드에서 가장 긴 제목 + 가장 긴 꼬리표는 12.5px 기준
+               약 444px 라 375px 화면을 넘는다. 좌우 12px(모바일 본문 패딩과 같은 값)을 남기고
+               말줄임으로 끊는다. 데스크톱에서는 상한에 닿지 않아 모습이 그대로다. */
+            className="motion-safe:animate-[toast-rise_0.18s_ease-out] max-w-[calc(100vw-24px)] truncate rounded-[8px] bg-ink px-[16px] py-[11px] text-[12.5px] whitespace-nowrap text-white shadow-[0_8px_24px_rgba(20,21,22,0.3)]"
           >
             {message.text}
           </div>

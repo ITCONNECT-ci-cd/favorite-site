@@ -16,7 +16,7 @@ describe('CardGrid', () => {
     expect(container.firstElementChild?.children).toHaveLength(2);
   });
 
-  it('열 수를 고정하지 않는 auto-fill 그리드다 (DESIGN_SPEC 1장 브레이크포인트 표)', () => {
+  it('≥820px 에서는 열 수를 고정하지 않는 auto-fill 그리드다 (DESIGN_SPEC 1장 브레이크포인트 표)', () => {
     const { container } = render(
       <CardGrid>
         <span>카드</span>
@@ -26,9 +26,20 @@ describe('CardGrid', () => {
     // 최소 폭 158px는 액션 아이콘 4개가 파비콘과 한 줄에 들어가는 하한선이다.
     expect(container.firstElementChild).toHaveClass(
       'grid',
-      'grid-cols-[repeat(auto-fill,minmax(158px,1fr))]',
-      'gap-[10px]',
+      'min-[820px]:grid-cols-[repeat(auto-fill,minmax(158px,1fr))]',
+      'min-[820px]:gap-[10px]',
     );
+  });
+
+  it('<820px 에서는 2열로 고정하고 gap 을 8px 로 줄인다 (프로토타입 tileCols·tileGap)', () => {
+    const { container } = render(
+      <CardGrid>
+        <span>카드</span>
+      </CardGrid>,
+    );
+
+    // Tailwind 의 grid-cols-2 가 곧 프로토타입의 `repeat(2,minmax(0,1fr))` 다.
+    expect(container.firstElementChild).toHaveClass('grid-cols-2', 'gap-[8px]');
   });
 
   it('className을 덧붙일 수 있다', () => {

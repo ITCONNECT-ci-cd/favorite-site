@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Header } from "@/components/Header";
+import { MobileChips } from "@/components/MobileChips";
 import { SidebarContainer } from "@/components/SidebarContainer";
 import { Toaster } from "@/components/Toast";
 import {
@@ -24,7 +25,10 @@ export const metadata: Metadata = {
  *
  * 뷰포트 높이를 꽉 채운 좌우 분할이다. 사이드바(240px)와 헤더(60px)는 자리에 고정되고
  * 콘텐츠 영역만 세로로 스크롤한다. 프로토타입 상단의 회색 주소창(38px)은 프로토타입 전용이라
- * 제품에는 만들지 않는다. 반응형(<820px에서 사이드바 숨김)은 D5 몫이다.
+ * 제품에는 만들지 않는다.
+ *
+ * <820px(DESIGN_SPEC 1장 브레이크포인트)에서는 사이드바가 숨고 헤더 아래에 칩 줄이 들어오며
+ * 헤더·본문 패딩이 줄어든다. 세 규칙 모두 이 파일 안의 클래스 한 줄씩이다(D5).
  *
  * 사이드바·헤더가 쓰는 숫자는 여기서 읽는다. layout 은 받은 데이터를 children 에 넘길 수 없어
  * 본문(page)도 같은 요청에서 getAllData 를 다시 부르지만, 그 함수가 React `cache()` 로
@@ -68,8 +72,9 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
             body 의 surface 가 아니라 스펙의 페이지 배경이 드러나게 하기 위한 대비다. */}
         <div className="flex h-full overflow-hidden bg-page">
           {/* 사이드바 (240px, bg-side, 우측 1px 테두리) — 내용물은 C3 Sidebar.
-              '내 즐겨찾기' 개수만 localStorage 소관이라 클라이언트 래퍼를 한 겹 거친다. */}
-          <aside className="flex w-[240px] flex-none flex-col overflow-hidden border-r border-border bg-side">
+              '내 즐겨찾기' 개수만 localStorage 소관이라 클라이언트 래퍼를 한 겹 거친다.
+              <820px 에서는 통째로 숨고 그 자리를 아래 MobileChips 가 대신한다(D5). */}
+          <aside className="hidden w-[240px] flex-none flex-col overflow-hidden border-r border-border bg-side min-[820px]:flex">
             <SidebarContainer
               categories={categories}
               counts={counts}
@@ -82,19 +87,23 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
           <div className="flex min-w-0 flex-1 flex-col">
             {/* 헤더 (60px, 흰 배경, 하단 1px 테두리, 좌우 패딩 28px) — 내용물은 C4 Header.
                 검색·AI 버튼 콜백 연결은 2단계 G5, isAdmin 은 3단계 J1 몫이라 지금은 생략한다. */}
-            <header className="flex h-[60px] flex-none items-center border-b border-border bg-card px-[28px]">
+            <header className="flex h-[60px] flex-none items-center border-b border-border bg-card px-[12px] min-[820px]:px-[28px]">
               <Header totalCount={totalCount} faviconCount={faviconCount(bookmarks)} />
             </header>
 
+            {/* 좁은 화면의 내비게이션 (D5) — 숨은 사이드바 대신 헤더 바로 아래 한 줄로 깐다.
+                자신이 `min-[820px]:hidden` 을 들고 있어 데스크톱에서는 아무것도 그리지 않는다. */}
+            <MobileChips categories={categories} />
+
             {/* 콘텐츠 — 셸에서 유일하게 스크롤되는 영역.
                 본문 패딩(DESIGN_SPEC 1장, 데스크톱 20px 28px 36px)은 화면이 아니라 셸이 갖는다.
-                모바일 축소(12px 12px 26px)를 D5가 이 한 줄에서 처리하기 위해서다.
+                모바일 축소(12px 12px 26px)를 D5가 이 한 줄에서 처리하기 위해서다 — 실제로 그렇게 됐다.
 
                 화면과의 계약: 이 컨테이너는 `flex flex-col` 이다. 화면 루트에 `flex-1` 을 주면
                 내용이 짧아도 세로를 꽉 채우고(빈 상태 안내를 가운데 두는 화면이 이걸 쓴다),
                 주지 않으면 내용 높이만큼만 차지한다. 이 두 클래스를 빼면 화면들의
                 세로 정렬이 조용히 무너지므로 함부로 바꾸지 않는다. */}
-            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-surface px-[28px] pt-[20px] pb-[36px]">
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-surface px-[12px] pt-[12px] pb-[26px] min-[820px]:px-[28px] min-[820px]:pt-[20px] min-[820px]:pb-[36px]">
               {children}
             </div>
           </div>

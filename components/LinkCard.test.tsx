@@ -6,6 +6,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { LinkCard, type LinkCardProps } from '@/components/LinkCard';
 import type { BookmarkWithCount } from '@/lib/types';
+import { middleClick, rightClick } from '@/test/events';
 
 const BOOKMARK: BookmarkWithCount = {
   id: 'bm-1',
@@ -46,16 +47,6 @@ function faviconLink(): HTMLAnchorElement {
 const bodyLink = () => screen.getByRole('link', { name: /AI 대화·문서 초안/ });
 const pinButton = () => screen.getByRole('button', { name: 'ChatGPT 즐겨찾기' });
 const checkButton = () => screen.getByRole('button', { name: 'ChatGPT 선택' });
-
-/** fireEvent에는 auxClick 헬퍼가 없어 auxclick 이벤트를 직접 만들어 쏜다. */
-function auxClick(element: Element, button: number) {
-  return fireEvent(element, new MouseEvent('auxclick', { bubbles: true, cancelable: true, button }));
-}
-
-/** 가운데 클릭 = 새 탭 (button 1). 왼쪽 클릭은 click이라 auxclick으로 오지 않는다. */
-const middleClick = (element: Element) => auxClick(element, 1);
-/** 우클릭 (button 2) — 메뉴만 연다. */
-const rightClick = (element: Element) => auxClick(element, 2);
 
 describe('LinkCard 렌더', () => {
   it('이름·설명·주소·클릭 수를 보여준다', () => {
@@ -359,11 +350,21 @@ describe('LinkCard 수치 (DESIGN_SPEC 2-1)', () => {
 
     expect(card).toHaveClass(
       'hover:border-ink',
-      'hover:[transform:scale(1.05)]',
+      // 확대는 motion-safe 로만 건다 — 움직임을 꺼 둔 사용자에게는 규칙 자체가 컴파일되지 않는다(D5).
+      'motion-safe:hover:[transform:scale(1.05)]',
       'hover:shadow-[0_10px_26px_rgba(20,21,22,.14)]',
       'hover:z-[5]',
       '[transition:transform_.22s_cubic-bezier(.22,.9,.28,1),box-shadow_.22s_ease,border-color_.22s_ease]',
     );
+  });
+
+  it('확대를 무조건부로 걸지 않는다 — prefers-reduced-motion 가드', () => {
+    const card = renderCard();
+
+    // motion-safe 없는 hover:[transform:...] 이 남아 있으면 우선순위 다툼이 생긴다.
+    // 클래스 이름을 통째로 적지 않고 정규식으로 본다 — 적으면 Tailwind 스캐너가 그 문자열을
+    // 후보로 주워 쓰지 않는 유틸이 최종 CSS 에 실린다.
+    expect(card.className).not.toMatch(/(?:^|\s)hover:\[transform/);
   });
 
   it('상단 줄: min-h 32px, align-items flex-start, gap 4px', () => {
@@ -410,6 +411,21 @@ describe('LinkCard 수치 (DESIGN_SPEC 2-1)', () => {
         'rounded-[6px]',
         'hover:bg-[#efede8]',
         'cursor-pointer',
+      );
+    }
+  });
+
+  it('액션 버튼의 손가락 자리를 세로 44px 로 넓힌다 — 보이는 크기(21×21)는 그대로', () => {
+    renderCard({ showCheck: true });
+
+    for (const button of [checkButton(), pinButton()]) {
+      // ::before 로만 넓힌다 — 버튼 상자를 키우면 스펙 2-1의 21×21이 깨진다.
+      expect(button).toHaveClass(
+        'size-[21px]',
+        'relative',
+        'before:absolute',
+        'before:-inset-y-[11.5px]',
+        'before:-inset-x-[0.5px]',
       );
     }
   });

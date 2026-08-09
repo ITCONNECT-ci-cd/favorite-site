@@ -35,13 +35,25 @@ const CARD = [
   'p-[10px] min-[820px]:p-[12px] min-h-[104px] min-[820px]:min-h-[126px]',
   'shadow-[0_1px_2px_rgba(20,21,22,.04)]',
   '[transition:transform_.22s_cubic-bezier(.22,.9,.28,1),box-shadow_.22s_ease,border-color_.22s_ease]',
-  'hover:border-ink hover:[transform:scale(1.05)]',
+  // 확대만 motion-safe 로 감싼다 (D5, prefers-reduced-motion 가드). 같은 규칙을 reduce 쪽에서
+  // 되돌리지 않고 아예 걸지 않는 이유는 우선순위 다툼을 만들지 않기 위해서다 — 두 규칙의
+  // 특정도가 같아 CSS 출력 순서에 결과가 좌우된다. 색·그림자 전환은 움직임이 아니라 남긴다.
+  'hover:border-ink motion-safe:hover:[transform:scale(1.05)]',
   'hover:shadow-[0_10px_26px_rgba(20,21,22,.14)] hover:z-[5]',
 ].join(' ');
 
-/** 상단 우측 액션 버튼 21×21px, radius 6px (DESIGN_SPEC 2-1 아이콘 표) */
+/**
+ * 상단 우측 액션 버튼 21×21px, radius 6px (DESIGN_SPEC 2-1 아이콘 표).
+ *
+ * 보이는 크기는 스펙대로 두고 **손가락이 닿는 자리만** `::before`로 넓힌다(C3 사이드바의
+ * 펼침 버튼과 같은 방식). 세로는 ±11.5px로 44px를 채우고, 가로는 ±0.5px에서 멈춘다 —
+ * 버튼 사이 간격이 1px뿐이라(스펙의 `gap 1px`) 그 이상 넓히면 옆 버튼의 **보이는 영역** 위로
+ * 히트 영역이 겹쳐 눌린 버튼이 뒤바뀐다. 나란한 21px 버튼 둘이 22px 간격으로 서 있는 한
+ * 44×44를 둘 다 갖는 배치는 존재하지 않으므로, 겹침 없이 얻을 수 있는 최대치(22×44)를 취한다.
+ * 위쪽으로 넘친 부분은 카드의 `overflow-hidden`이 잘라 실제로는 카드 안쪽까지만 눌린다.
+ */
 const ACTION =
-  'flex size-[21px] shrink-0 items-center justify-center rounded-[6px] cursor-pointer hover:bg-[#efede8]';
+  'relative flex size-[21px] shrink-0 items-center justify-center rounded-[6px] cursor-pointer hover:bg-[#efede8] before:absolute before:-inset-y-[11.5px] before:-inset-x-[0.5px]';
 
 /**
  * 파비콘 주소를 CSS url() 안에 안전하게 넣는다.

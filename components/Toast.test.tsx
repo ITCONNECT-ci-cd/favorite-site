@@ -1,19 +1,10 @@
 import { act, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { TOAST_DURATION_MS, Toaster, toast } from '@/components/Toast';
+import { useToastTimers } from '@/test/toast';
 
 describe('Toast', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-
-  afterEach(() => {
-    // 모듈 레벨 스토어가 다음 테스트로 새지 않도록 자동 소멸 경로로 비운다.
-    act(() => {
-      vi.advanceTimersByTime(TOAST_DURATION_MS);
-    });
-    vi.useRealTimers();
-  });
+  useToastTimers();
 
   it('띄운 토스트가 없으면 라이브 리전만 비어 있다', () => {
     render(<Toaster />);
@@ -72,8 +63,33 @@ describe('Toast', () => {
       toast('새 탭에서 열었습니다');
     });
 
+    // 움직임을 꺼 둔 사용자에게는 규칙 자체가 컴파일되지 않도록 motion-safe 로만 건다(D5).
     expect(screen.getByText('새 탭에서 열었습니다')).toHaveClass(
-      'animate-[toast-rise_0.18s_ease-out]',
+      'motion-safe:animate-[toast-rise_0.18s_ease-out]',
+    );
+    // 클래스 이름을 통째로 적지 않고 정규식으로 본다 — 적으면 Tailwind 스캐너가 그 문자열을
+    // 후보로 주워 쓰지 않는 유틸이 최종 CSS 에 실린다.
+    expect(screen.getByText('새 탭에서 열었습니다').className).not.toMatch(/(?:^|\s)animate-\[/);
+  });
+
+  /**
+   * D5 실측 판정 — 시드에서 가장 긴 제목("지식을 담다. 지식을 나누다. 학술논문 전문 검…")에
+   * 가장 긴 꼬리표(" · 홈 즐겨찾기에 담김")가 붙으면 12.5px 기준 말풍선 폭이 약 444px 다.
+   * 375px 화면에서는 좌우로 삐져나가 앞뒤 글자를 읽을 수 없으므로 폭 상한을 둔다.
+   * (`fixed` 요소라 가로 스크롤은 생기지 않는다 — 읽을 수 없다는 것이 문제였다.)
+   */
+  it('말풍선이 화면 밖으로 나가지 않는다 — 좌우 12px 을 남기고 말줄임', () => {
+    render(<Toaster />);
+
+    act(() => {
+      toast('지식을 담다. 지식을 나누다. 학술논문 전문 검… · 홈 즐겨찾기에 담김');
+    });
+
+    expect(screen.getByRole('status').firstElementChild).toHaveClass(
+      'max-w-[calc(100vw-24px)]',
+      'truncate',
+      // 한 줄 유지는 그대로다 — 넘칠 때 줄바꿈이 아니라 말줄임으로 끊는다.
+      'whitespace-nowrap',
     );
   });
 

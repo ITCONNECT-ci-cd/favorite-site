@@ -78,3 +78,43 @@ describe('셸 레이아웃 뼈대 (app/layout.tsx)', () => {
     expect(layoutCode).not.toMatch(/export\s+const\s+revalidate/);
   });
 });
+
+/**
+ * 반응형 (D5) — DESIGN_SPEC 1장 브레이크포인트 표의 narrow 규칙 중 셸이 지는 몫이다.
+ * 위 describe 의 데스크톱 잠금은 그대로 살아 있다 — 이제 `min-[820px]:` 접두사가 붙은 채로
+ * 같은 값을 지킨다(예: `min-[820px]:px-[28px]`).
+ */
+describe('셸 레이아웃 반응형 (<820px)', () => {
+  it('사이드바를 <820px 에서 숨긴다', () => {
+    const className = classNameOf(/<aside className="([^"]*)"/);
+
+    expect(className).toContain('hidden');
+    expect(className).toContain('min-[820px]:flex');
+    // 무조건부 flex 가 남아 있으면 hidden 과 싸운다 — 모바일 우선으로 한쪽만 둔다.
+    expect(className).not.toMatch(/(^|\s)flex(\s|$)/);
+  });
+
+  it('사이드바가 사라진 자리를 칩 줄이 대신한다 — 헤더 아래, 콘텐츠 위에 한 번', () => {
+    expect(layoutCode.match(/<MobileChips\b/g)).toHaveLength(1);
+    // 표시 조건(<820px)은 MobileChips 자신이 들고 있다(MobileChips.test.tsx).
+    expect(layoutCode).toMatch(/<\/header>[\s\S]*<MobileChips[\s\S]*<div className="flex min-h-0/);
+  });
+
+  it('헤더 좌우 패딩이 모바일에서 12px 로 줄어든다 (프로토타입 headPad)', () => {
+    const className = classNameOf(/<header className="([^"]*)"/);
+
+    expect(className).toContain('px-[12px]');
+    expect(className).toContain('min-[820px]:px-[28px]');
+  });
+
+  it('본문 패딩이 모바일에서 12px 12px 26px 이다 (프로토타입 mainPad)', () => {
+    const className = classNameOf(/<div className="(flex min-h-0 flex-1[^"]*)"/);
+
+    expect(className).toContain('px-[12px]');
+    expect(className).toContain('pt-[12px]');
+    expect(className).toContain('pb-[26px]');
+    expect(className).toContain('min-[820px]:px-[28px]');
+    expect(className).toContain('min-[820px]:pt-[20px]');
+    expect(className).toContain('min-[820px]:pb-[36px]');
+  });
+});

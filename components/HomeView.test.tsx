@@ -1,16 +1,18 @@
 /** D2. 홈 화면 — DESIGN_SPEC 3장(섹션 3개). */
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HomeView } from '@/components/HomeView';
-import { TOAST_DURATION_MS, Toaster } from '@/components/Toast';
+import { Toaster } from '@/components/Toast';
 import { recordClick } from '@/lib/clicks';
-import { FAVS_KEY, OPERATING_CATEGORY_NAME } from '@/lib/constants';
+import { OPERATING_CATEGORY_NAME } from '@/lib/constants';
 import { useFavorites } from '@/lib/favorites';
 import { rollupCounts } from '@/lib/queries';
 import type { BookmarkWithCount, Category, SiteData } from '@/lib/types';
-import { buildSeed, toBookmarkRow, type RawLink } from '@/scripts/seed-mapper';
-import RAW_LINKS from '@/docs/data/links.json';
+import { middleClick } from '@/test/events';
+import { setFavs, storedFavs } from '@/test/favs';
+import { BOOKMARKS, CATEGORIES } from '@/test/fixtures/seed';
+import { useToastTimers } from '@/test/toast';
 
 /**
  * 클릭 기록은 네트워크를 타므로 여기서는 부르는지만 본다 — 요청의 모양(keepalive·visitorId·
@@ -22,22 +24,9 @@ vi.mock('@/lib/clicks', async (importOriginal) => ({
 }));
 
 /**
- * fixture 는 실제 `docs/data/links.json` 을 B3 의 `buildSeed` 로 돌려 만든다(B3·D1 관례).
- * 손으로 적은 숫자가 아니라 시드가 DB 에 넣을 바로 그 형태라, 화면에 적히는 실측치
+ * fixture 는 실시드 그대로다 (`test/fixtures/seed.ts`) — 화면에 적히는 실측치
  * (매일 12 · 운영 중 16)가 시드와 어긋나면 여기서 먼저 깨진다.
- *
- * 읽기는 fs 가 아니라 import 로 한다 — D1 테스트의 `import.meta.url` 방식은 jsdom 환경에서
- * 쓸 수 없고(jsdom 이 페이지 URL 로 바꾼다) `process.cwd()` 는 실행 위치에 기댄다.
  */
-const RAW = RAW_LINKS as RawLink[];
-const SEED = buildSeed(RAW, new Set<number>());
-
-const CATEGORIES: Category[] = SEED.categories;
-/** 클릭 수는 카드(C2)가 요구하는 필드라 인덱스로 채운다 — 홈은 이 값을 쓰지 않는다. */
-const BOOKMARKS: BookmarkWithCount[] = SEED.bookmarks.map((bookmark, index) => ({
-  ...toBookmarkRow(bookmark),
-  click_count: index,
-}));
 const DATA: SiteData = { categories: CATEGORIES, bookmarks: BOOKMARKS };
 
 const OPERATING_ID = CATEGORIES.find(
@@ -46,10 +35,6 @@ const OPERATING_ID = CATEGORIES.find(
 
 /** 즐겨찾기 순서 검증용 — sort_order 순서(5 → 40 → 200)와 일부러 다르게 담는다. */
 const FAV_IDS = [BOOKMARKS[200].id, BOOKMARKS[5].id, BOOKMARKS[40].id];
-
-function setFavs(ids: readonly string[]): void {
-  localStorage.setItem(FAVS_KEY, JSON.stringify(ids));
-}
 
 const section = (name: string) => screen.getByRole('region', { name });
 
@@ -82,16 +67,6 @@ const pins = (name: string) =>
  */
 const openLink = (name: string, index = 0) => within(cards(name)[index]).getByRole('link');
 
-/** fireEvent 에 auxClick 헬퍼가 없어 직접 만들어 쏜다 (가운데 클릭 = button 1). */
-const middleClick = (element: Element) =>
-  fireEvent(element, new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 }));
-
-/** localStorage 에 실제로 저장된 순서. */
-function storedFavs(): unknown {
-  const raw = localStorage.getItem(FAVS_KEY);
-  return raw === null ? null : JSON.parse(raw);
-}
-
 /**
  * 다른 화면(목록·카테고리)에서 담는 상황 모사.
  * 홈에는 담을 수단이 없다 — 즐겨찾기 섹션의 핀은 이미 담긴 카드에만 있고, 매일·운영은 핀 자체가
@@ -123,10 +98,15 @@ describe('HomeView — 섹션 구성', () => {
     ]);
   });
 
-  it('섹션 사이를 26px 띄운다 (DESIGN_SPEC 1장 섹션 간격)', () => {
+  it('섹션 사이를 26px 띄운다 — 모바일은 20px (DESIGN_SPEC 1장 섹션 간격 · 프로토타입 sectionGap)', () => {
     render(<HomeView data={DATA} />);
 
-    expect(screen.getByRole('main')).toHaveClass('flex', 'flex-col', 'gap-[26px]');
+    expect(screen.getByRole('main')).toHaveClass(
+      'flex',
+      'flex-col',
+      'gap-[20px]',
+      'min-[820px]:gap-[26px]',
+    );
   });
 
   it('스펙 3장의 하단 안내 박스는 두지 않는다 (계획서 V6 편차 — 사용자 결정)', () => {
@@ -327,17 +307,7 @@ describe('HomeView — 현재 운영 중인 사이트 섹션', () => {
 });
 
 describe('HomeView — 핀 토글 (D6)', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-
-  afterEach(() => {
-    // 모듈 레벨 토스트 스토어가 다음 테스트로 새지 않게 자동 소멸까지 흘려보낸다(Toast.tsx 규약).
-    act(() => {
-      vi.advanceTimersByTime(TOAST_DURATION_MS);
-    });
-    vi.useRealTimers();
-  });
+  useToastTimers();
 
   it('즐겨찾기 카드의 핀을 누르면 그 카드가 곧바로 사라지고 해제 토스트가 뜬다', () => {
     setFavs(FAV_IDS);
@@ -411,17 +381,10 @@ describe('HomeView — 카드 클릭 기록 (F3)', () => {
   const DAILY = BOOKMARKS.filter((bookmark) => bookmark.is_pinned);
   const OPERATING = BOOKMARKS.filter((bookmark) => bookmark.category_id === OPERATING_ID);
 
+  useToastTimers();
+
   beforeEach(() => {
     vi.mocked(recordClick).mockClear();
-    vi.useFakeTimers();
-  });
-
-  afterEach(() => {
-    // 모듈 레벨 토스트 스토어가 다음 테스트로 새지 않게 자동 소멸까지 흘려보낸다(Toast.tsx 규약).
-    act(() => {
-      vi.advanceTimersByTime(TOAST_DURATION_MS);
-    });
-    vi.useRealTimers();
   });
 
   function renderHome() {
