@@ -238,8 +238,19 @@ export async function renameCategory(id: string, name: string): Promise<ActionRe
  * DB 제약을 `on delete restrict` 로 승격하면 경합까지 막히지만 스키마 변경이라 **백로그**로 둔다.
  *
  * ⚠️ 검사와 삭제는 한 트랜잭션이 아니다(TOCTOU). 검사 직후 다른 창이 하위나 링크를 만들면 그것들이
- * 승격·미분류가 될 수 있다. 복구 절차: ① 같은 이름의 하위를 다시 만들고 → ② I4 링크 표의 select 로
- * 승격본에 붙어 있는 링크들을 그 하위로 옮긴 뒤 → ③ 빈 승격본을 삭제한다.
+ * 승격·미분류가 될 수 있다.
+ *
+ * **승격된 하위의 복구 절차** — 관리 화면만으로 가능한 순서다. I4 링크 표의 분류 select 는
+ * **지금 고른 상위의 하위만** 나열하므로, "다른 상위 아래의 하위로 옮기기" 는 애초에 못 고른다.
+ * 그래서 옮기는 대신 **승격본을 원래 상위 자리에 앉힌다**:
+ *
+ * ① 승격본의 이름을 지워진 상위의 이름으로 바꾼다(`renameCategory` — 이제 상위다). 링크는
+ *    그대로 딸려 오고, 상위 직속이 된다.
+ * ② 그 아래에 원래 하위 이름으로 하위를 다시 만든다(`createSubCategory`).
+ * ③ I4 링크 표에서 그 상위를 고르면 각 행의 select 에 ②의 하위가 뜬다 — 링크를 거기로 옮긴다.
+ *
+ * **미분류가 된 직속 링크는 화면으로 되돌릴 수 없다.** `category_id = null` 인 행은 I4 표에도
+ * 뜨지 않아 고를 화면 자체가 없다(위 "직속 링크" 문단). DB 에서 직접 되돌려야 한다.
  */
 export async function deleteCategory(id: string): Promise<ActionResult> {
   const supabase = await writeClient();

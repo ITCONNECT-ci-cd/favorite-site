@@ -115,7 +115,11 @@ export function AdminShell({ signOutAction, children }: AdminShellProps) {
               const active = isActive(pathname, tab.href);
 
               return (
-                <li key={tab.href}>
+                /* `flex-none` 은 칩 줄(MobileChips)과 같은 관례다 — flex 항목의 기본값
+                   `flex-shrink:1` 이라, 좁은 화면에서 상단 바가 넘칠 때 탭 칸이 먼저 줄어
+                   `whitespace-nowrap` 인 글자가 칸 밖으로 새어 나온다. 넘치는 것은 바깥이
+                   가로 스크롤로 받는다(아래 '좁은 화면' 문단). */
+                <li key={tab.href} className="flex-none">
                   <Link
                     href={tab.href}
                     /* 색만으로는 선택을 알릴 수 없다 — 스크린 리더는 배경색을 읽지 않는다. */

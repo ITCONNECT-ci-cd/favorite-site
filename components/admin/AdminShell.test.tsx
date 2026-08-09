@@ -142,6 +142,16 @@ describe('AdminShell — 탭 3개', () => {
     // 항목마다 링크가 하나씩 — 한 항목에 몰아넣으면 "항목 3개" 안내가 거짓이 된다.
     expect(items.map((item) => within(item).queryAllByRole('link').length)).toEqual([1, 1, 1]);
   });
+
+  it('항목은 줄어들지 않는다 — 칩 줄과 같은 관례', () => {
+    // flex 항목의 기본값은 `flex-shrink:1` 이라, 좁은 화면에서 바가 넘칠 때 탭 칸이 먼저 줄어
+    // `whitespace-nowrap` 인 글자가 칸 밖으로 샌다. 넘침은 바깥의 가로 스크롤이 받는다.
+    renderShell();
+
+    for (const item of within(tabList()).getAllByRole('listitem')) {
+      expect(item).toHaveClass('flex-none');
+    }
+  });
 });
 
 /**
