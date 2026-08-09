@@ -3,18 +3,24 @@
 // 실제 파일 URL 로 남아(jsdom 은 페이지 URL 로 치환한다) cwd 에 기대지 않고 경로를 잡을 수 있다.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OPERATING_CATEGORY_NAME } from '@/lib/constants';
 import {
   attachCounts,
   faviconCount,
   findOperatingCategoryId,
+  getAllData,
   rollupCounts,
   type ClickCountRow,
 } from '@/lib/queries';
+import { createServerSupabaseClient } from '@/lib/supabase/server';
 import type { Bookmark, Category } from '@/lib/types';
 import { buildSeed, toBookmarkRow, type RawLink } from '@/scripts/seed-mapper';
+
+// getAllData 는 순수 함수가 아니라 얇은 조회부다 — Supabase 클라이언트만 갈아 끼우고
+// "무엇을 물어보고 어떻게 합치는지"를 확인한다. 실제 DB 대조는 B5 시드 이후 몫.
+vi.mock('@/lib/supabase/server', () => ({ createServerSupabaseClient: vi.fn() }));
 
 /**
  * fixture 는 실제 `docs/data/links.json` 을 B3 의 `buildSeed` 로 돌려 만든다.
@@ -310,5 +316,98 @@ describe('findOperatingCategoryId', () => {
     ];
 
     expect(findOperatingCategoryId(categories)).toBe('top');
+  });
+});
+
+type QueryResult = {
+  data: unknown;
+  error: { message: string; code?: string; details?: string | null; hint?: string | null } | null;
+};
+
+/**
+ * `supabase.from(t).select(...).order(...)` 체인을 흉내 내는 최소 thenable.
+ * `select`·`order` 는 자기 자신을 돌려주고, await 되는 순간 미리 정한 결과를 낸다.
+ */
+function fakeSupabase(byTable: Record<string, QueryResult>) {
+  const requestedTables: string[] = [];
+
+  const client = {
+    from(table: string) {
+      requestedTables.push(table);
+      const result: QueryResult = byTable[table] ?? { data: [], error: null };
+      const builder = {
+        select: () => builder,
+        order: () => builder,
+        then: (
+          onFulfilled: (value: QueryResult) => unknown,
+          onRejected?: (reason: unknown) => unknown,
+        ) => Promise.resolve(result).then(onFulfilled, onRejected),
+      };
+
+      return builder;
+    },
+  };
+
+  return { client, requestedTables };
+}
+
+function useFakeSupabase(byTable: Record<string, QueryResult>) {
+  const fake = fakeSupabase(byTable);
+  vi.mocked(createServerSupabaseClient).mockResolvedValue(
+    fake.client as unknown as Awaited<ReturnType<typeof createServerSupabaseClient>>,
+  );
+
+  return fake;
+}
+
+describe('getAllData', () => {
+  beforeEach(() => {
+    vi.mocked(createServerSupabaseClient).mockReset();
+  });
+
+  it('categories·bookmarks·bookmark_click_counts 세 곳을 조회한다', async () => {
+    const fake = useFakeSupabase({});
+
+    await getAllData();
+
+    expect(fake.requestedTables).toEqual(['categories', 'bookmarks', 'bookmark_click_counts']);
+  });
+
+  it('뷰의 클릭 수를 북마크에 결합해 SiteData 를 만든다 (뷰에 없으면 0)', async () => {
+    const category = makeCategory({ id: 'c1', name: '마케팅' });
+    const bookmarks = [
+      makeBookmark({ id: 'b1', category_id: 'c1' }),
+      makeBookmark({ id: 'b2', category_id: 'c1' }),
+    ];
+    useFakeSupabase({
+      categories: { data: [category], error: null },
+      bookmarks: { data: bookmarks, error: null },
+      bookmark_click_counts: { data: [{ bookmark_id: 'b2', click_count: 9 }], error: null },
+    });
+
+    const data = await getAllData();
+
+    expect(data.categories).toEqual([category]);
+    expect(data.bookmarks.map((b) => [b.id, b.click_count])).toEqual([
+      ['b1', 0],
+      ['b2', 9],
+    ]);
+  });
+
+  it('조회가 실패하면 테이블 이름·진단 코드를 담아 던지고 원본 에러를 cause 로 잇는다', async () => {
+    // B2 게이트에서 실제로 만나는 형태: 뷰에 grant 가 빠지면 42501 이 온다.
+    const error = {
+      message: 'permission denied for view bookmark_click_counts',
+      code: '42501',
+      details: null,
+      hint: 'grant select on bookmark_click_counts to anon',
+    };
+    useFakeSupabase({ bookmark_click_counts: { data: null, error } });
+
+    await expect(getAllData()).rejects.toThrow(
+      'Supabase bookmark_click_counts 조회 실패: permission denied for view ' +
+        'bookmark_click_counts (code 42501 · hint: grant select on bookmark_click_counts to anon)',
+    );
+    await expect(getAllData()).rejects.toMatchObject({ cause: error });
   });
 });

@@ -1,3 +1,5 @@
+import { cache } from 'react';
+
 import { faviconSrc } from '@/lib/favicon';
 import { OPERATING_CATEGORY_NAME } from '@/lib/constants';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
@@ -7,6 +9,17 @@ import type { Bookmark, BookmarkWithCount, Category, SiteData } from '@/lib/type
 export type ClickCountRow = {
   bookmark_id: string;
   click_count: number;
+};
+
+/**
+ * PostgREST 응답의 실패 부분. `message` 만으로는 원인이 갈리지 않아 진단 필드를 함께 받는다.
+ * (예: `42501` = 권한/grant 누락, `PGRST205` = 스키마 캐시에 없는 테이블·뷰)
+ */
+type QueryError = {
+  message: string;
+  code?: string;
+  details?: string | null;
+  hint?: string | null;
 };
 
 /** categories 에서 읽는 컬럼 — `Category` 와 1:1 로 맞춘다. */
@@ -19,8 +32,16 @@ const CATEGORY_COLUMNS = 'id, name, parent_id, sort_order';
 const BOOKMARK_COLUMNS =
   'id, category_id, title, url, description, tags, favicon_url, is_pinned, sort_order, created_at';
 
+/** `bookmark_click_counts` 뷰에서 읽는 컬럼 — `ClickCountRow` 와 1:1 로 맞춘다. */
+const CLICK_COUNT_COLUMNS = 'bookmark_id, click_count';
+
 /**
  * 공개 화면이 쓰는 데이터를 한 번에 읽는다 — 전체 290행 규모라 페이지네이션 없이 통째로 받는다.
+ *
+ * **`cache()` 로 감싼 이유 — 요청 단위 중복 제거.** App Router 에서는 layout 이 받은 데이터를
+ * children 에 넘길 수 없어, 사이드바(layout)와 본문(page)이 같은 요청에서 각각 이 함수를
+ * 부른다. 감싸지 않으면 홈 한 번에 6쿼리가 나간다. 이건 **요청 안에서만** 사는 메모이제이션이라
+ * 아래의 "요청마다 새로 읽는다"와 충돌하지 않는다 — 다음 요청은 다시 DB 를 친다.
  *
  * **이 페이지들은 의도적으로 매 요청 렌더된다(dynamic).** anon 클라이언트가 `cookies()` 를
  * 읽으므로 Next 는 라우트를 dynamic 으로 잡는다. ISR(`revalidate`) 로 60초 캐싱하는 선택지도
@@ -30,16 +51,21 @@ const BOOKMARK_COLUMNS =
  * 사내 트래픽·290행 규모에서 요청당 조회 비용은 무시할 수 있고, 클릭 수가 항상 최신인 이득이 있다.
  * 그러니 이 함수를 쓰는 페이지에 `export const revalidate = ...` 를 넣지 마라.
  *
- * 정렬은 DB 에 맡긴다(`sort_order`). 하위 카테고리의 `sort_order` 는 부모 안에서만 유일하지만,
- * 화면이 필요로 하는 것도 '같은 부모 안에서의 순서' 뿐이라 이 정렬로 충분하다.
+ * ⚠️ **행 수 상한** — Supabase 의 PostgREST 는 응답을 기본 1000행에서 자른다(에러가 아니라
+ * 조용히 잘린다). 현재 북마크 290 · 카테고리 22 로 여유가 있지만, 북마크가 1000을 넘기면
+ * `.range()` 페이지네이션으로 나눠 받아야 한다.
+ *
+ * 정렬은 DB 에 맡긴다(`sort_order`, 동점이면 `id`). 하위 카테고리의 `sort_order` 는 부모 안에서만
+ * 유일해 다른 부모의 하위끼리는 동점이 나는데, 타이브레이커가 없으면 그 순서가 매 요청 달라질 수
+ * 있다(화면이 필요로 하는 '같은 부모 안에서의 순서'는 어느 쪽이든 지켜지지만, 흔들리면 진단이 어렵다).
  */
-export async function getAllData(): Promise<SiteData> {
+export const getAllData = cache(async (): Promise<SiteData> => {
   const supabase = await createServerSupabaseClient();
 
   const [categoriesResult, bookmarksResult, countsResult] = await Promise.all([
-    supabase.from('categories').select(CATEGORY_COLUMNS).order('sort_order'),
-    supabase.from('bookmarks').select(BOOKMARK_COLUMNS).order('sort_order'),
-    supabase.from('bookmark_click_counts').select('bookmark_id, click_count'),
+    supabase.from('categories').select(CATEGORY_COLUMNS).order('sort_order').order('id'),
+    supabase.from('bookmarks').select(BOOKMARK_COLUMNS).order('sort_order').order('id'),
+    supabase.from('bookmark_click_counts').select(CLICK_COUNT_COLUMNS),
   ]);
 
   const categories = unwrap<Category>('categories', categoriesResult);
@@ -47,21 +73,30 @@ export async function getAllData(): Promise<SiteData> {
   const counts = unwrap<ClickCountRow>('bookmark_click_counts', countsResult);
 
   return { categories, bookmarks: attachCounts(bookmarks, counts) };
-}
+});
 
 /**
  * Supabase 응답에서 행 배열만 꺼낸다. 실패는 삼키지 않고 던진다 —
  * 빈 화면으로 조용히 넘어가면 "링크가 없다"와 "DB 가 죽었다"를 구분할 수 없다.
  *
+ * 메시지에 테이블 이름과 PostgREST 진단 필드를 모두 싣는다. B2 게이트에서 마주칠
+ * `42501`(뷰에 grant 누락)과 `PGRST205`(뷰 자체가 없음)는 `message` 만으로는 헷갈린다.
+ * 원본 에러 객체는 `cause` 로 이어 붙여 상위에서 코드로 분기할 수 있게 남긴다.
+ *
  * 생성된 Database 타입이 아직 없어 supabase-js 가 행 타입을 알 수 없으므로 여기서 한 번만 못박는다.
  * `select()` 컬럼 목록과 타입이 어긋나면 런타임에 드러나므로 위 상수와 `lib/types.ts` 를 같이 고쳐라.
  */
-function unwrap<T>(
-  table: string,
-  result: { data: unknown; error: { message: string } | null },
-): T[] {
-  if (result.error !== null) {
-    throw new Error(`Supabase ${table} 조회 실패: ${result.error.message}`);
+function unwrap<T>(table: string, result: { data: unknown; error: QueryError | null }): T[] {
+  const { error } = result;
+
+  if (error !== null) {
+    const diagnostics: string[] = [];
+    if (error.code) diagnostics.push(`code ${error.code}`);
+    if (error.details) diagnostics.push(error.details);
+    if (error.hint) diagnostics.push(`hint: ${error.hint}`);
+    const suffix = diagnostics.length > 0 ? ` (${diagnostics.join(' · ')})` : '';
+
+    throw new Error(`Supabase ${table} 조회 실패: ${error.message}${suffix}`, { cause: error });
   }
 
   return (result.data ?? []) as T[];
@@ -93,6 +128,9 @@ export function rollupCounts(
     const seen = new Set<string>();
     let current = bookmark.category_id;
 
+    // `parentOf.has` 는 두 가지를 한꺼번에 막는다 — 없는 카테고리를 가리키는 북마크의 진입과,
+    // 부모가 삭제돼(on delete set null 이 아닌 경로로) 끊긴 링크를 타고 올라가다 counts 에 없는
+    // 키를 만드는 일. `seen` 은 순환일 때 멈추는 몫이다.
     while (current !== null && parentOf.has(current) && !seen.has(current)) {
       seen.add(current);
       counts[current] += 1;
