@@ -2,15 +2,61 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { ReactElement } from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import AdminPage from '@/app/admin/page';
 import CleanupPage from '@/app/admin/cleanup/page';
 import StatsPage from '@/app/admin/stats/page';
+import { getAllData } from '@/lib/queries';
 import { getAdminSession } from '@/lib/supabase/server';
+import type { BookmarkWithCount, Category } from '@/lib/types';
 
 vi.mock('@/lib/supabase/server', () => ({ getAdminSession: vi.fn() }));
+
+/**
+ * 조회만 갈아 끼운다 — `rollupCounts` 는 진짜를 쓴다. 화면이 패널에 넘기는 숫자가 **사이드바와
+ * 같은 규칙**(직속 + 모든 하위)인지가 여기서 볼 것이라, 그 규칙까지 대역으로 바꾸면 아무것도
+ * 지키지 못한다.
+ */
+vi.mock('@/lib/queries', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/queries')>()),
+  getAllData: vi.fn(),
+}));
+
+const CATEGORIES: Category[] = [
+  { id: 'cat-ai', name: 'AI 도구 모음', parent_id: null, sort_order: 0 },
+  { id: 'sub-chat', name: '대화형', parent_id: 'cat-ai', sort_order: 0 },
+  { id: 'cat-mkt', name: '마케팅', parent_id: null, sort_order: 1 },
+];
+
+/** 클릭 수는 `bookmark_click_counts` 뷰에서 붙어 온 값이다(getAllData → attachCounts). */
+function bookmark(id: string, categoryId: string | null, clicks: number): BookmarkWithCount {
+  return {
+    id,
+    category_id: categoryId,
+    title: id,
+    url: `https://example.test/${id}`,
+    description: null,
+    tags: [],
+    favicon_url: null,
+    is_pinned: false,
+    sort_order: 0,
+    created_at: '2024-01-01T00:00:00.000Z',
+    click_count: clicks,
+  };
+}
+
+const BOOKMARKS: BookmarkWithCount[] = [
+  bookmark('bm-1', 'cat-ai', 5), // 상위 직속
+  bookmark('bm-2', 'sub-chat', 7), // 하위 — 상위 합계에 포함된다
+  bookmark('bm-3', 'sub-chat', 1),
+  bookmark('bm-4', 'cat-mkt', 0),
+];
+
+const categoryPanel = () => screen.getByRole('region', { name: '상위 카테고리' });
+const categoryRows = () => within(within(categoryPanel()).getByRole('list')).getAllByRole('button');
+const headerPanel = () => screen.getByRole('region', { name: '선택한 카테고리' });
 
 /** 셸이 지는 상단 바·탭은 여기 없다 — 화면은 콘텐츠만 만든다(components/admin/AdminShell.tsx). */
 const PAGES: Array<[string, () => Promise<ReactElement | null>]> = [
@@ -22,20 +68,50 @@ const PAGES: Array<[string, () => Promise<ReactElement | null>]> = [
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getAdminSession).mockResolvedValue({ userId: 'user-1', email: 'admin@example.com' });
+  vi.mocked(getAllData).mockResolvedValue({ categories: CATEGORIES, bookmarks: BOOKMARKS });
 });
 
-describe('AdminPage — 카테고리 · 링크 진입점', () => {
-  it('본문 랜드마크만 세워 둔다 — 안은 I1 이 채운다', async () => {
+describe('AdminPage — 카테고리 · 링크 (I1 2단)', () => {
+  it('랜드마크 하나 안에 좌 270px 패널과 우측 헤더 패널을 세운다', async () => {
     const { container } = render((await AdminPage()) as ReactElement);
 
+    const main = container.querySelector('main');
     expect(container.querySelectorAll('main')).toHaveLength(1);
-    expect(container.textContent).toBe('');
+    // <820px 에서 1단으로 접힌다 (DESIGN_SPEC 1장 브레이크포인트 — 관리자 2단 → 1단).
+    expect(main).toHaveClass('flex', 'flex-col', 'gap-[20px]', 'min-[820px]:flex-row');
+    expect(categoryPanel()).toBeInTheDocument();
+    expect(headerPanel()).toBeInTheDocument();
   });
 
-  it('세션 정보를 화면에 적지 않는다', async () => {
-    const { container } = render((await AdminPage()) as ReactElement);
+  it('패널에는 상위 카테고리만 올린다 — 하위가 섞이면 정렬 저장이 거부된다', async () => {
+    render((await AdminPage()) as ReactElement);
 
-    expect(container.textContent).not.toMatch(/@|user-|token/i);
+    expect(categoryRows()).toHaveLength(2);
+    expect(categoryRows()[0]).toHaveTextContent('AI 도구 모음');
+    expect(categoryRows()[1]).toHaveTextContent('마케팅');
+    expect(within(categoryPanel()).queryByText('대화형')).not.toBeInTheDocument();
+  });
+
+  it('행의 링크 수·클릭 합계는 직속 + 하위다 (사이드바와 같은 규칙)', async () => {
+    render((await AdminPage()) as ReactElement);
+
+    // AI 도구 모음: 직속 1건(5회) + 하위 2건(7·1회).
+    expect(within(categoryRows()[0]).getByText('3개')).toBeInTheDocument();
+    expect(within(categoryRows()[0]).getByText('13회')).toBeInTheDocument();
+    expect(within(categoryRows()[1]).getByText('1개')).toBeInTheDocument();
+  });
+
+  it('총계는 상위 카테고리 수와 전체 링크 수다', async () => {
+    render((await AdminPage()) as ReactElement);
+
+    expect(within(categoryPanel()).getByText('2개 카테고리 · 링크 4개')).toBeInTheDocument();
+  });
+
+  it('우측 헤더는 처음에 첫 카테고리를 보여 준다', async () => {
+    render((await AdminPage()) as ReactElement);
+
+    expect(within(headerPanel()).getByText('AI 도구 모음')).toBeInTheDocument();
+    expect(within(headerPanel()).getByText('3개 링크')).toBeInTheDocument();
   });
 });
 
