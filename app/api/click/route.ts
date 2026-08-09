@@ -62,6 +62,10 @@ export async function POST(request: Request): Promise<Response> {
   //   (외부 IP 미전달 — Vercel Request headers 문서). 그래서 집계용 해시 재료일 때와 달리 limiter
   //   키로도 신뢰할 수 있다. Vercel 위에 별도 프록시를 얹거나 비Vercel 로 배포하면 그 보장이 깨져
   //   leftmost 가 위조 가능해지므로, 그 환경에서는 x-vercel-forwarded-for/x-real-ip 로 키를 바꿔라.
+  //   (프레임워크 헬퍼가 아니라 raw 헤더를 읽는다: NextRequest.ip 는 Next 15 에서 제거됐고 이
+  //   라우트는 애초에 NextRequest 를 쓰지 않는다 — 구현과 무관한 문서 정확성 차원의 각주다.)
+  //   벤더(@vercel/firewall) 권장 키는 x-real-ip 지만, 기본 Vercel 에선 XFF 와 동등하게 신뢰할 수
+  //   있고 visitor_hash 의 IP 도출(logic.clientIp = XFF leftmost)과 일관되게 하려고 leftmost 를 쓴다.
   if (clickRateLimiter.check(ip, now.getTime(), isBulk).limited) {
     return Response.json({ counted: false, reason: 'rate-limit' } satisfies ClickDecision);
   }

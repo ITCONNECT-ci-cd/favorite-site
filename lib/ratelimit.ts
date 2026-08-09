@@ -37,16 +37,36 @@ export type RateLimiter = {
   check(key: string, nowMs: number, isBulk: boolean): RateLimitDecision;
   /** 모든 키의 누적을 지운다. 테스트 격리 전용(운영 경로에서는 부르지 않는다). */
   reset(): void;
+  /**
+   * 현재 추적 중인 키(=활성 IP) 수. 지연 스윕이 만료 키를 실제로 회수하는지 관찰하기 위한
+   * introspection 이다(운영 경로에서는 부르지 않는다).
+   */
+  size(): number;
 };
 
 /** 창 안에 남아 있는 한 번의 소비 단위. `bulk` 는 묶음당 1개만 남긴다. */
 type Unit = { at: number; bulk: boolean };
 
+/**
+ * 지연 스윕 주기. check() 가 이만큼 불릴 때마다 한 번, 만료 유닛만 남은 키를 buckets 에서
+ * 회수한다. 서버리스(주 타깃)에선 인스턴스가 짧게 살아 사실상 무영향이지만, 문서화된 비Vercel
+ * 폴백(장수 프로세스)에서는 조용히 떠난 IP 의 키가 이 스윕으로 회수돼 누수를 막는다. 스윕 비용은
+ * O(distinct IP) 이고 드물게 돈다.
+ */
+const SWEEP_EVERY_CHECKS = 512;
+
 export function createRateLimiter(
-  { windowMs = RATE_LIMIT_WINDOW_MS, max = RATE_LIMIT_MAX }: { windowMs?: number; max?: number } = {},
+  {
+    windowMs = RATE_LIMIT_WINDOW_MS,
+    max = RATE_LIMIT_MAX,
+    sweepEvery = SWEEP_EVERY_CHECKS,
+  }: { windowMs?: number; max?: number; sweepEvery?: number } = {},
 ): RateLimiter {
-  // key(IP) → 창 안에 살아 있는 소비 단위들. 비면 키를 지워 메모리를 활성 IP 수로 묶는다.
+  // key(IP) → 창 안에 살아 있는 소비 단위들. 정상 check 경로는 늘 유닛을 하나 남겨 키가 절대
+  // 비지 않으므로, 만료된 키의 회수는 아래 지연 스윕(sweep)이 맡는다 — 그래야 "메모리를 활성
+  // IP 수로 묶는다"가 실제로 참이 된다.
   const buckets = new Map<string, Unit[]>();
+  let checksSinceSweep = 0;
 
   function live(key: string, nowMs: number): Unit[] {
     const cutoff = nowMs - windowMs;
@@ -57,12 +77,33 @@ export function createRateLimiter(
   }
 
   function save(key: string, units: Unit[]): void {
+    // units 가 비면 키를 회수한다. 정상 check 경로는 늘 유닛을 하나 남겨 이 분기에 닿지 않지만,
+    // 스윕이 만료된 키를 빈 배열로 이 함수에 넘겨 이 분기를 실제로 태운다(활성 IP 수로 묶기).
     if (units.length === 0) buckets.delete(key);
     else buckets.set(key, units);
   }
 
+  /**
+   * 만료 유닛만 남은 키를 회수하는 경량 스윕. 각 키의 live(창 안 유닛)를 다시 계산해 save 로
+   * 되쓴다 — 살아 있으면 솎아 낸 배열로 갱신되고, 전부 만료됐으면 save 가 키를 지운다. Map 순회
+   * 중 방문한/현재 키의 삭제는 안전하고, save 는 기존 키만 갱신·삭제하므로 새 키를 추가하지 않는다.
+   */
+  function sweep(nowMs: number): void {
+    for (const key of buckets.keys()) {
+      save(key, live(key, nowMs));
+    }
+  }
+
   return {
     check(key, nowMs, isBulk) {
+      // N회마다 한 번, 만료 키를 회수한다. 현재 요청보다 먼저 돌아도 무방하다 — 이 요청의
+      // 키는 아래에서 곧바로 다시 채워진다.
+      checksSinceSweep += 1;
+      if (checksSinceSweep >= sweepEvery) {
+        checksSinceSweep = 0;
+        sweep(nowMs);
+      }
+
       const units = live(key, nowMs);
 
       if (isBulk) {
@@ -88,6 +129,11 @@ export function createRateLimiter(
 
     reset() {
       buckets.clear();
+      checksSinceSweep = 0;
+    },
+
+    size() {
+      return buckets.size;
     },
   };
 }

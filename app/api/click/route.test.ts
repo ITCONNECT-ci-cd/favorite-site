@@ -348,4 +348,32 @@ describe('POST /api/click — body 크기 상한', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ counted: true });
   });
+
+  it('content-length 없는 스트림 본문(2KB 초과)도 실바이트 층에서 413 이다', async () => {
+    // undici 는 스트림 body 에 content-length 를 붙이지 않는다(chunked). 그래서 이 요청은 읽기
+    // 전 content-length 선차단(route.ts:153-156)을 통과하고, 실제로 읽은 바이트로 다시 재는
+    // 층(route.ts:165-167)만이 진짜 방어가 된다 — 그 회귀를 못박는다.
+    const oversized = 'x'.repeat(3000); // 2KB 상한을 넉넉히 넘는 실 본문
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(oversized));
+        controller.close();
+      },
+    });
+    const request = new Request('http://localhost/api/click', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body,
+      duplex: 'half',
+    } as RequestInit & { duplex: 'half' });
+
+    // 전제 확인: 스트림 body 라 content-length 가 실제로 없다 — 있으면 선차단 층을 타 버려
+    // 이 테스트가 실바이트 층을 검증하지 못한다.
+    expect(request.headers.get('content-length')).toBeNull();
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(413);
+    expect(createAdminSupabaseClient).not.toHaveBeenCalled();
+  });
 });

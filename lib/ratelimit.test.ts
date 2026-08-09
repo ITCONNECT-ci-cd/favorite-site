@@ -116,6 +116,26 @@ describe('createRateLimiter — bulk(전체 열기)는 묶음당 1회', () => {
   });
 });
 
+describe('createRateLimiter — 지연 스윕이 만료 키를 회수한다(M-3)', () => {
+  it('만료 유닛만 남은 키 여럿을 스윕이 회수해 size 가 준다', () => {
+    // sweepEvery 를 낮춰 스윕을 결정적으로 튼다. 프로덕션 주기(512)는 그대로 두고 테스트에서만 바꾼다.
+    const limiter = createRateLimiter({ sweepEvery: 5 });
+
+    // 서로 다른 IP 50개로 각각 T0 에 1건씩 → 키 50개. (T0 시점의 스윕은 전부 창 안이라 회수 없음.)
+    for (let i = 0; i < 50; i += 1) limiter.check(`10.0.0.${i}`, T0, false);
+    expect(limiter.size()).toBe(50);
+
+    // 창이 지난 시각에 새 키로 sweepEvery 회 던져 스윕을 튼다. 이 시각 기준 앞선 50개 키의
+    // 유닛은 전부 만료됐으므로 스윕이 그 키들을 buckets 에서 지운다. (스윕이 없으면 live() 가
+    // 매번 걸러도 Map 은 키를 계속 들고 있어 size 가 51 로 남는다 — 그 누수를 이 단언이 잡는다.)
+    const later = T0 + RATE_LIMIT_WINDOW_MS + 1;
+    for (let i = 0; i < 5; i += 1) limiter.check('sweeper', later, false);
+
+    // 회수 뒤에는 방금 던진 sweeper 키 1개만 남는다(만료 50개가 사라졌다).
+    expect(limiter.size()).toBe(1);
+  });
+});
+
 describe('createRateLimiter — reset', () => {
   it('reset() 은 모든 키의 누적을 지운다', () => {
     const limiter = createRateLimiter();
