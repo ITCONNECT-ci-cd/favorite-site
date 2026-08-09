@@ -6,12 +6,17 @@ import { useId, useState } from 'react';
 import type { Category } from '@/lib/types';
 
 export type SidebarProps = {
-  /** 상위+하위 전체, sort_order 순. 하위는 parent_id 로 판별한다. */
+  /**
+   * 상위+하위 전체, sort_order 순. 하위는 parent_id 로 판별한다.
+   * 2단 트리만 렌더한다 — 손자·고아(parent 가 목록에 없는 하위)·운영 중 카테고리의
+   * 하위는 렌더되지 않는다.
+   */
   categories: Category[];
   /** 카테고리 id → 링크 수. 상위는 하위 합산 롤업이며 계산은 D1 책임 — 여기선 표시만 한다. */
-  counts: Record<string, number>;
+  counts: Readonly<Record<string, number>>;
   totalCount: number;
   dailyCount: number;
+  /** E1 useFavorites 파생 — C1의 클라이언트 래퍼가 공급, SSR 초기값 0. */
   favCount: number;
   /** '현재 운영 중인 사이트' 카테고리 id. 빠른 접근으로 올리고 분류 목록에서는 뺀다. */
   operatingCategoryId: string | null;
@@ -50,11 +55,13 @@ type RowProps = {
 
 function Row({ href, name, count, active, indent, font, toggle }: RowProps) {
   return (
-    <div className={`${ROW} ${active ? 'bg-select' : ''}`}>
+    <div className={`relative ${ROW} ${active ? 'bg-select' : ''}`}>
+      {/* 링크가 ::after 로 행 전체를 덮어 개수·여백까지 클릭 영역이 된다. 토글 버튼만
+          그 위(z-10)로 올려 두므로 버튼 클릭은 이동으로 새지 않는다. */}
       <Link
         href={href}
         aria-current={active ? 'page' : undefined}
-        className={`flex h-full min-w-0 flex-1 items-center gap-[9px] ${indent}`}
+        className={`flex h-full min-w-0 flex-1 items-center gap-[9px] after:absolute after:inset-0 ${indent}`}
       >
         {/* 좌측 3px 세로 마커 — 선택된 행에서만 보인다. */}
         <span
@@ -76,7 +83,7 @@ function Row({ href, name, count, active, indent, font, toggle }: RowProps) {
           onClick={toggle.onToggle}
           aria-expanded={toggle.open}
           aria-label={`${name} 하위 분류 ${toggle.open ? '접기' : '펼치기'}`}
-          className={`${ARROW_SLOT} text-center text-[10px] text-ghost`}
+          className={`${ARROW_SLOT} relative z-10 h-full text-center text-[10px] text-ghost before:absolute before:inset-y-0 before:-inset-x-[7px]`}
         >
           {toggle.open ? '–' : '+'}
         </button>
@@ -85,6 +92,7 @@ function Row({ href, name, count, active, indent, font, toggle }: RowProps) {
       )}
 
       <span
+        data-testid="count"
         className={`min-w-[22px] flex-none text-right text-[11px] ${
           active ? 'text-[#5a5651]' : 'text-mist'
         }`}
@@ -128,6 +136,25 @@ export function Sidebar({
   const activeSub = categories.find(
     (c) => c.parent_id !== null && isActive(categoryHref(c.id)),
   );
+
+  /**
+   * 현재 위치 표시는 내비게이션 불변식이다 — 사용자가 접어 둔 상위라도 그 안의 하위로
+   * 이동하면 활성 행이 가려지므로 그 가지의 접기만 버린다. 다른 가지의 접기 취향은
+   * 건드리지 않는다. 경로가 바뀐 렌더에서 곧바로 조정한다(렌더 중 상태 조정 패턴).
+   */
+  const activeBranch = activeSub?.parent_id ?? null;
+  const [seenBranch, setSeenBranch] = useState(activeBranch);
+  if (seenBranch !== activeBranch) {
+    setSeenBranch(activeBranch);
+    if (activeBranch !== null) {
+      setToggled((prev) => {
+        const next = { ...prev };
+        delete next[activeBranch];
+        return next;
+      });
+    }
+  }
+
   /**
    * 기본 펼침 — 프로토타입은 상위를 누르면 이동과 펼침을 함께 했다. URL이 상태를 쥐는
    * 구조에서는 "그 가지가 현재 경로에 걸려 있으면 펼친다"로 옮긴다. 상위 자신이 활성이거나
@@ -170,9 +197,9 @@ export function Sidebar({
         aria-label="사이드바"
         className="min-h-0 flex-1 overflow-y-auto px-[10px] pt-[12px] pb-[20px]"
       >
-        <p id={quickCaptionId} className={CAPTION}>
+        <h2 id={quickCaptionId} className={CAPTION}>
           빠른 접근
-        </p>
+        </h2>
         <ul aria-labelledby={quickCaptionId}>
           {quick.map((item) => (
             <li key={item.href}>
@@ -188,9 +215,9 @@ export function Sidebar({
           ))}
         </ul>
 
-        <p id={catCaptionId} className={CAPTION}>
+        <h2 id={catCaptionId} className={CAPTION}>
           분류
-        </p>
+        </h2>
         <ul aria-labelledby={catCaptionId}>
           {tops.map((top) => {
             const subs = subsOf(top.id);

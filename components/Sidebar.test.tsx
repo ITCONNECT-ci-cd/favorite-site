@@ -49,7 +49,7 @@ function row(name: string) {
     container,
     marker: link.firstElementChild!,
     label: link.lastElementChild!,
-    count: container.lastElementChild!,
+    count: within(container).getByTestId('count'),
   };
 }
 
@@ -263,6 +263,23 @@ describe('Sidebar', () => {
       );
     });
 
+    it('링크가 행 전체를 덮고 토글 버튼만 그 위로 올라온다', () => {
+      renderSidebar();
+
+      expect(row('AI 도구 모음').container).toHaveClass('relative');
+      expect(row('AI 도구 모음').link).toHaveClass('after:absolute', 'after:inset-0');
+      // 버튼은 10px 슬롯을 유지한 채 히트 영역만 좌우 7px씩 넓힌다 (24×34px).
+      expect(screen.getByRole('button', { name: 'AI 도구 모음 하위 분류 펼치기' })).toHaveClass(
+        'w-[10px]',
+        'relative',
+        'z-10',
+        'h-full',
+        'before:absolute',
+        'before:inset-y-0',
+        'before:-inset-x-[7px]',
+      );
+    });
+
     it('현재 경로의 행만 선택 배경 · 마커 · 개수 색을 바꾼다', () => {
       pathname.current = '/category/mkt';
       renderSidebar();
@@ -348,6 +365,24 @@ describe('Sidebar', () => {
       fireEvent.click(screen.getByRole('button', { name: 'AI 도구 모음 하위 분류 접기' }));
 
       expect(screen.queryByRole('link', { name: '대화·검색' })).not.toBeInTheDocument();
+    });
+
+    it('접어 둔 상위라도 그 안의 하위로 이동하면 다시 펼친다', () => {
+      pathname.current = '/category/ai';
+      const { rerender } = renderSidebar();
+
+      // 다른 가지는 펼쳐 두고, 활성 가지는 사용자가 접는다.
+      fireEvent.click(screen.getByRole('button', { name: '참고자료 하위 분류 펼치기' }));
+      fireEvent.click(screen.getByRole('button', { name: 'AI 도구 모음 하위 분류 접기' }));
+      expect(screen.queryByRole('link', { name: '대화·검색' })).not.toBeInTheDocument();
+
+      // 접힌 가지 안의 하위로 이동 — 현재 위치는 반드시 드러나야 한다.
+      pathname.current = '/category/ai-chat';
+      rerender(<Sidebar {...PROPS} />);
+
+      expect(row('대화·검색').container).toHaveClass('bg-select');
+      // 다른 가지의 취향은 버리지 않는다.
+      expect(screen.getByRole('link', { name: '도구·서비스' })).toBeInTheDocument();
     });
   });
 });
