@@ -19,6 +19,10 @@ vi.mock('@/lib/supabase/admin', () => ({ createAdminSupabaseClient }));
 
 const { POST } = await import('@/app/api/click/route');
 
+// rate limiter 는 인스턴스 단위 싱글턴이라 상태가 테스트 사이로 샌다 — beforeEach 에서 지운다.
+const { clickRateLimiter } = await import('@/lib/ratelimit');
+const { RATE_LIMIT_MAX } = await import('@/lib/ratelimit');
+
 const BOOKMARK_ID = '0f9c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f';
 const VISITOR_ID = '11111111-1111-4111-8111-111111111111';
 const SALT = 'test-salt';
@@ -100,6 +104,7 @@ beforeEach(() => {
   createAdminSupabaseClient.mockImplementation(() => {
     throw new Error('이 갈래는 Supabase 에 붙기 전에 끝나야 한다');
   });
+  clickRateLimiter.reset();
 });
 
 afterEach(() => {
@@ -265,5 +270,82 @@ describe('POST /api/click — 기록', () => {
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: '클릭을 기록하지 못했습니다.' });
     expect(logged).toHaveBeenCalled();
+  });
+});
+
+/** 지정한 client IP(XFF 의 leftmost)로 클릭 요청을 만든다 — limiter 키 분리를 확인할 때 쓴다. */
+function clickRequestFrom(ip: string): Request {
+  return new Request('http://localhost/api/click', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-forwarded-for': `${ip}, 10.0.0.1` },
+    body: JSON.stringify({ bookmarkId: BOOKMARK_ID, visitorId: VISITOR_ID }),
+  });
+}
+
+describe('POST /api/click — L1 rate limit (IP당 분당 상한)', () => {
+  it(`같은 IP 의 ${RATE_LIMIT_MAX + 1}번째 일반 요청은 200 rate-limit 이고 DB 를 건드리지 않는다`, async () => {
+    stubSupabase({ rows: [] });
+
+    // 앞의 30회는 정상 기록된다.
+    for (let i = 0; i < RATE_LIMIT_MAX; i += 1) {
+      const ok = await POST(clickRequest());
+      expect(ok.status).toBe(200);
+      expect(await ok.json()).toEqual({ counted: true });
+    }
+    expect(createAdminSupabaseClient).toHaveBeenCalledTimes(RATE_LIMIT_MAX);
+
+    // 31번째는 막힌다 — 판정이 DB 앞에서 끝나므로 admin 클라이언트를 새로 만들지 않는다.
+    const blocked = await POST(clickRequest());
+
+    expect(blocked.status).toBe(200);
+    expect(await blocked.json()).toEqual({ counted: false, reason: 'rate-limit' });
+    expect(createAdminSupabaseClient).toHaveBeenCalledTimes(RATE_LIMIT_MAX); // 늘지 않았다
+  });
+
+  it('bulk 118건은 상한을 넘겨도 전부 기록된다(묶음당 1회 계산)', async () => {
+    const { insert } = stubSupabase({ rows: [] });
+
+    for (let i = 0; i < 118; i += 1) {
+      const res = await POST(
+        clickRequest({ bookmarkId: BOOKMARK_ID, visitorId: VISITOR_ID, isBulk: true }),
+      );
+      expect(await res.json()).toEqual({ counted: true });
+    }
+
+    // 118건이 전부 insert 까지 갔다 — rate limit 에 잘려 유실된 클릭이 없다.
+    expect(insert).toHaveBeenCalledTimes(118);
+  });
+
+  it('IP(XFF leftmost)가 다르면 서로의 상한에 영향을 주지 않는다', async () => {
+    stubSupabase({ rows: [] });
+
+    // 한 IP 를 상한까지 채우고 막힌 것을 확인한다.
+    for (let i = 0; i < RATE_LIMIT_MAX; i += 1) await POST(clickRequest());
+    const blocked = await POST(clickRequest());
+    expect(await blocked.json()).toEqual({ counted: false, reason: 'rate-limit' });
+
+    // 다른 IP 의 첫 요청은 여전히 기록된다 — 키가 XFF 로 갈린다는 배선 증거.
+    const other = await POST(clickRequestFrom('198.51.100.9'));
+    expect(await other.json()).toEqual({ counted: true });
+  });
+});
+
+describe('POST /api/click — body 크기 상한', () => {
+  it('과대 페이로드는 413 이고 DB 를 건드리지 않는다', async () => {
+    const huge = { bookmarkId: BOOKMARK_ID, visitorId: VISITOR_ID, junk: 'x'.repeat(4000) };
+
+    const response = await POST(clickRequest(huge));
+
+    expect(response.status).toBe(413);
+    expect(createAdminSupabaseClient).not.toHaveBeenCalled();
+  });
+
+  it('정상 크기 body 는 통과한다 (상한이 정상 요청을 막지 않는다)', async () => {
+    stubSupabase({ rows: [] });
+
+    const response = await POST(clickRequest());
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ counted: true });
   });
 });

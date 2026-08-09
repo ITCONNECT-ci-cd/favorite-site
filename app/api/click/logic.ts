@@ -29,7 +29,7 @@ export type ParseResult = { ok: true; body: ClickBody } | { ok: false; error: st
  */
 export type ClickDecision =
   | { counted: true }
-  | { counted: false; reason: 'cooldown' | 'daily-cap' };
+  | { counted: false; reason: 'cooldown' | 'daily-cap' | 'rate-limit' };
 
 /**
  * uuid 형식만 본다(버전 자리는 강제하지 않는다). `lib/visitor.ts` 의 폴백 생성기와 같은 기준이다 —
