@@ -1,16 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback } from 'react';
 
 import { CardGrid } from '@/components/CardGrid';
 import { EmptyBox } from '@/components/EmptyBox';
 import { LinkCard } from '@/components/LinkCard';
 import { SectionHeader } from '@/components/SectionHeader';
-import { toast } from '@/components/Toast';
-import { openToastText, recordClick } from '@/lib/clicks';
+import { useCardHandlers } from '@/components/useCardHandlers';
 import { OPERATING_CATEGORY_NAME } from '@/lib/constants';
-import { favToastText, pickFavorites, useFavorites } from '@/lib/favorites';
+import { pickFavorites } from '@/lib/favorites';
 import type { Category, SiteData } from '@/lib/types';
 
 export type HomeViewProps = {
@@ -21,6 +19,13 @@ export type HomeViewProps = {
 /** 빈 즐겨찾기 안내 — DESIGN_SPEC 3장의 문구를 그대로 옮긴다. */
 const EMPTY_FAVS_TEXT =
   '다른 화면에서 카드 오른쪽 위의 핀을 누르면 이 자리에 모입니다. 매일 사용하는 사이트와 달리 내가 직접 담고 빼는 목록입니다.';
+
+/**
+ * 섹션 이름 — 제목·`aria-label`·'한 번에 열기' 토스트의 탭 그룹 명칭이 모두 이 문자열이라
+ * 한 번만 적는다(프로토타입도 `openMany(daily, '매일 사용하는 사이트')` 처럼 섹션 이름을 넘긴다).
+ */
+const FAVS_TITLE = '내 즐겨찾기';
+const DAILY_TITLE = '매일 사용하는 사이트';
 
 /**
  * '현재 운영 중인 사이트' 상위 카테고리와 그 하위까지의 id 집합. 없으면 null(섹션을 접는다).
@@ -53,51 +58,19 @@ function findOperatingIds(categories: readonly Category[]): { id: string; ids: S
  * 스펙 3장 "하단 안내"(`나머지 N개는 왼쪽 사이드바에서…` 점선 박스)는 **의도적으로 빼 둔 것**이다
  * (계획서 V6 편차 — 사용자 결정). 스펙만 보고 되살리지 마라.
  *
- * 즐겨찾기는 브라우저에만 있으므로 뷰 전체가 클라이언트 컴포넌트다. `useFavorites` 는 여기서
- * **한 번만** 부르고 카드에는 계산된 값을 내린다 — 카드마다 부르면 렌더 때마다 카드 수만큼
+ * 즐겨찾기는 브라우저에만 있으므로 뷰 전체가 클라이언트 컴포넌트다. 핀 토글(D6)·카드 열기(F3)·
+ * 한 번에 열기(G4) 배선은 목록 화면과 공유하는 `useCardHandlers` 가 들고 있고, 그 훅이
+ * `useFavorites` 를 **한 번만** 불러 결과를 돌려준다 — 카드마다 부르면 렌더 때마다 카드 수만큼
  * 동기 localStorage 읽기가 생긴다(E1 규약).
  *
- * 아직 배선하지 않은 것: 열기 버튼(`onOpenAll`)은 2단계 G4 몫이다.
+ * 세 섹션이 모두 같은 배선을 쓴다: 즐겨찾기든 관리자가 정한 자리든 클릭 집계 대상인 것은 같다.
  */
 export function HomeView({ data }: HomeViewProps) {
   const { categories, bookmarks } = data;
-  const { favs, toggle } = useFavorites();
+  const { favs, handleToggleFav, handleOpen, openMany } = useCardHandlers(bookmarks);
 
   // 담은 순서 유지 · 죽은 id 제외는 `/favorites` 와 같은 규칙이라 lib/favorites 의 순수 함수를 쓴다.
   const favItems = pickFavorites(bookmarks, favs);
-
-  /** 핀 토글 — 담고/빼고 토스트로 알린다(DESIGN_SPEC 7장). 방향은 `toggle` 이 돌려준다. */
-  const handleToggleFav = useCallback(
-    (id: string) => {
-      // 카드가 돌려준 id 라 이 배열에 반드시 있다. 없더라도 토글은 하고 토스트만 건너뛴다.
-      const bookmark = bookmarks.find((item) => item.id === id);
-      const faved = toggle(id);
-
-      if (bookmark !== undefined) toast(favToastText(bookmark.title, faved));
-    },
-    [bookmarks, toggle],
-  );
-
-  /**
-   * 카드 열기 — 클릭을 기록하고(F2 로 보내는 fire-and-forget) 열었다고 알린다. 세 섹션이 모두 이
-   * 배선을 쓴다: 즐겨찾기든 관리자가 정한 자리든 클릭 집계 대상인 것은 같다.
-   *
-   * 가운데 클릭도 여기로 온다(카드가 onClick·onAuxClick 양쪽에서 부른다 — C2).
-   * 이동을 가로채지 않으므로 `event` 를 받지 않는다.
-   *
-   * ⓘ 토스트 스토어는 슬롯이 하나라(Toast.tsx) 이 문구가 직전의 핀 토스트를 밀어낸다.
-   *   프로토타입도 토스트가 하나뿐이라 같은 동작이다.
-   */
-  const handleOpen = useCallback(
-    (id: string) => {
-      recordClick(id);
-
-      // 카드가 돌려준 id 라 이 배열에 반드시 있다. 없더라도 기록은 하고 토스트만 건너뛴다.
-      const bookmark = bookmarks.find((item) => item.id === id);
-      if (bookmark !== undefined) toast(openToastText(bookmark.title));
-    },
-    [bookmarks],
-  );
 
   const daily = bookmarks.filter((bookmark) => bookmark.is_pinned);
 
@@ -112,15 +85,17 @@ export function HomeView({ data }: HomeViewProps) {
   // 섹션 간격은 프로토타입 sectionGap 그대로다 — narrow 20px · 데스크톱 26px (D5).
   return (
     <main className="flex flex-col gap-[20px] min-[820px]:gap-[26px]">
-      <section aria-label="내 즐겨찾기">
+      <section aria-label={FAVS_TITLE}>
         <SectionHeader
-          title="내 즐겨찾기"
+          title={FAVS_TITLE}
           note={
             favItems.length > 0
               ? `핀으로 직접 담은 ${favItems.length}개 · 이 브라우저에만 저장됩니다`
               : undefined
           }
+          // 0개면 버튼 자체가 없다(DESIGN_SPEC 3장) — 그래서 여기서는 빈 목록 분기를 걱정하지 않는다.
           openLabel={favItems.length > 0 ? `${favItems.length}개 한 번에 열기` : undefined}
+          onOpenAll={() => openMany(favItems, FAVS_TITLE)}
         />
 
         {favItems.length > 0 ? (
@@ -142,11 +117,12 @@ export function HomeView({ data }: HomeViewProps) {
         )}
       </section>
 
-      <section aria-label="매일 사용하는 사이트">
+      <section aria-label={DAILY_TITLE}>
         <SectionHeader
-          title="매일 사용하는 사이트"
+          title={DAILY_TITLE}
           note={`직접 고정한 ${daily.length}개 · 자리가 바뀌지 않습니다`}
           openLabel={`${daily.length}개 한 번에 열기`}
+          onOpenAll={() => openMany(daily, DAILY_TITLE)}
         />
 
         {/* 관리자가 정하는 자리라 핀을 노출하지 않는다(DESIGN_SPEC 3장). */}
@@ -163,11 +139,12 @@ export function HomeView({ data }: HomeViewProps) {
       </section>
 
       {operating !== null && (
-        <section aria-label="현재 운영 중인 사이트">
+        <section aria-label={OPERATING_CATEGORY_NAME}>
           <SectionHeader
-            title="현재 운영 중인 사이트"
+            title={OPERATING_CATEGORY_NAME}
             note={`회사가 직접 운영하는 서비스 ${operatingItems.length}개`}
             openLabel={`${operatingItems.length}개 한 번에 열기`}
+            onOpenAll={() => openMany(operatingItems, OPERATING_CATEGORY_NAME)}
             aside={
               <Link
                 href={`/category/${operating.id}`}

@@ -42,7 +42,7 @@ describe('SectionHeader', () => {
     expect(button).toHaveAttribute('type', 'button');
   });
 
-  it('열기 버튼을 누르면 onOpenAll을 부른다 (실제 열기 동작은 G4 몫)', () => {
+  it('열기 버튼을 누르면 onOpenAll을 부른다 (실제 열기는 소비자 몫 — HomeView)', () => {
     const onOpenAll = vi.fn();
     render(
       <SectionHeader

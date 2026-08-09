@@ -13,6 +13,7 @@ import { recordClick } from '@/lib/clicks';
 import type { BookmarkWithCount } from '@/lib/types';
 import { middleClick } from '@/test/events';
 import { setFavs, storedFavs } from '@/test/favs';
+import { openedUrls, setupWindowOpen } from '@/test/open';
 import { setupToastTimers } from '@/test/toast';
 
 /**
@@ -98,6 +99,15 @@ const openLink = (title: string) => screen.getByRole('link', { name: title });
 const chip = (name: string) => screen.getByRole('button', { name });
 const chips = () => screen.getAllByRole('button', { name: /^(전체|대화·검색|영상) \d+$/ });
 const chipRow = () => screen.getByRole('group', { name: '하위 분류' });
+
+/** 툴바 (DESIGN_SPEC 4장) — 라벨의 숫자는 화면 상태를 따라 바뀌므로 정규식으로 잡는다. */
+const openAllButton = () => screen.getByRole('button', { name: /^전체 \d+개 열기$/ });
+const openCheckedButton = () => screen.getByRole('button', { name: /^선택 \d+개 열기$/ });
+const clearButton = () => screen.getByRole('button', { name: '선택 해제' });
+const toolbarNote = '체크한 것만 열거나, 전체를 크롬 탭 그룹으로 묶어 엽니다';
+
+/** 카드의 체크 버튼 — 접근성 이름은 `<제목> 선택` 이다 (C2 LinkCard). */
+const check = (title: string) => screen.getByLabelText(`${title} 선택`);
 
 beforeEach(() => {
   localStorage.clear();
@@ -256,13 +266,10 @@ describe('ListView — 본문 (홈과 같은 카드 그리드)', () => {
     expect(screen.getByLabelText('대화A 즐겨찾기')).toHaveAttribute('aria-pressed', 'false');
   });
 
-  it('체크와 툴바는 2단계 G4 몫이라 아직 렌더하지 않는다', () => {
-    renderList({ subTabs: SUB_TABS });
+  it('목록 화면이라 카드마다 체크도 보인다 (계획서 V3 — 카테고리·매일·즐겨찾기)', () => {
+    renderList();
 
-    expect(screen.queryAllByLabelText(/ 선택$/)).toHaveLength(0);
-    expect(screen.queryByText(/^전체 \d+개 열기$/)).toBeNull();
-    expect(screen.queryByText(/^선택 \d+개 열기$/)).toBeNull();
-    expect(screen.queryByText('선택 해제')).toBeNull();
+    expect(screen.getAllByLabelText(/ 선택$/)).toHaveLength(4);
   });
 });
 
@@ -376,6 +383,318 @@ describe('ListView — 카드 클릭 기록 (F3)', () => {
     fireEvent.click(screen.getByLabelText('대화A 즐겨찾기'));
 
     expect(recordClick).not.toHaveBeenCalled();
+  });
+});
+
+describe('ListView — 툴바 (DESIGN_SPEC 4장 · G4)', () => {
+  it('칩 줄 아래, 카드 그리드 위에 놓는다', () => {
+    const { container } = renderList({ subTabs: SUB_TABS });
+
+    const toolbar = openAllButton().parentElement!;
+
+    expect(
+      chipRow().compareDocumentPosition(toolbar) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      toolbar.compareDocumentPosition(container.querySelector('.grid')!) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('전체 열기는 검은 버튼이다 (높이 32px · 패딩 13px · 라운드 7px · 12px/600)', () => {
+    renderList();
+
+    expect(openAllButton()).toHaveClass(
+      'h-[32px]',
+      'px-[13px]',
+      'rounded-[7px]',
+      'bg-ink',
+      'text-white',
+      'text-[12px]',
+      'font-semibold',
+    );
+    expect(openAllButton()).toHaveAttribute('type', 'button');
+  });
+
+  it('선택 열기는 흰 버튼이다 (테두리 border-strong · 배경 card)', () => {
+    renderList();
+
+    expect(openCheckedButton()).toHaveClass(
+      'h-[32px]',
+      'px-[13px]',
+      'rounded-[7px]',
+      'border-border-strong',
+      'bg-card',
+      'text-[12px]',
+      'font-semibold',
+    );
+    expect(openCheckedButton()).not.toHaveClass('bg-ink');
+  });
+
+  it('선택 해제는 버튼 모양 없는 흐린 글자다 (11.5px faint)', () => {
+    renderList();
+
+    expect(clearButton()).toHaveClass('text-[11.5px]', 'text-faint');
+    expect(clearButton()).toHaveAttribute('type', 'button');
+  });
+
+  it('우측 안내문은 프로토타입 원문이고 <820px 에서는 숨는다', () => {
+    renderList();
+
+    // 프로토타입의 `descColDisplay`(narrow ? none : block)를 그대로 옮긴 것이다.
+    expect(screen.getByText(toolbarNote)).toHaveClass(
+      'ml-auto',
+      'hidden',
+      'min-[820px]:block',
+      'text-[11.5px]',
+      'text-fainter',
+    );
+  });
+
+  it('전체 열기의 개수는 지금 보이는 링크 수다 — 하위 탭을 고르면 함께 줄어든다', () => {
+    renderList({ subTabs: SUB_TABS });
+
+    expect(openAllButton()).toHaveTextContent('전체 4개 열기');
+
+    fireEvent.click(chip('대화·검색 2'));
+
+    expect(openAllButton()).toHaveTextContent('전체 2개 열기');
+  });
+
+  it('목록이 비어도 툴바는 남는다 (프로토타입도 목록 화면이면 언제나 그린다)', () => {
+    renderList({ bookmarks: [] });
+
+    expect(openAllButton()).toHaveTextContent('전체 0개 열기');
+    expect(openCheckedButton()).toHaveTextContent('선택 0개 열기');
+    expect(clearButton()).toBeInTheDocument();
+  });
+});
+
+describe('ListView — 체크 선택 (G4)', () => {
+  it('체크를 누르면 켜지고 다시 누르면 꺼진다', () => {
+    renderList();
+
+    expect(check('대화A')).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(check('대화A'));
+    expect(check('대화A')).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.click(check('대화A'));
+    expect(check('대화A')).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('선택한 카드만 바뀐다 — 옆 카드는 그대로다', () => {
+    renderList();
+
+    fireEvent.click(check('대화A'));
+
+    for (const title of ['직속', '대화B', '영상A']) {
+      expect(check(title)).toHaveAttribute('aria-pressed', 'false');
+    }
+  });
+
+  it('선택한 카드 수가 "선택 N개 열기" 에 그대로 붙는다', () => {
+    renderList();
+
+    expect(openCheckedButton()).toHaveTextContent('선택 0개 열기');
+
+    fireEvent.click(check('대화A'));
+    fireEvent.click(check('영상A'));
+
+    expect(openCheckedButton()).toHaveTextContent('선택 2개 열기');
+  });
+
+  it('"선택 해제"가 전부 끈다', () => {
+    renderList();
+
+    fireEvent.click(check('대화A'));
+    fireEvent.click(check('영상A'));
+
+    fireEvent.click(clearButton());
+
+    expect(openCheckedButton()).toHaveTextContent('선택 0개 열기');
+    for (const title of ['직속', '대화A', '대화B', '영상A']) {
+      expect(check(title)).toHaveAttribute('aria-pressed', 'false');
+    }
+  });
+
+  it('하위 탭을 옮기면 선택이 비워진다 (프로토타입 aiTabs.go 가 checked 를 비운다)', () => {
+    renderList({ subTabs: SUB_TABS });
+
+    fireEvent.click(check('대화A'));
+    expect(openCheckedButton()).toHaveTextContent('선택 1개 열기');
+
+    fireEvent.click(chip('영상 1'));
+    expect(openCheckedButton()).toHaveTextContent('선택 0개 열기');
+
+    // 되돌아와도 꺼진 채다 — 숨어 있던 사이에 되살아나지 않는다.
+    fireEvent.click(chip('전체 4'));
+    expect(check('대화A')).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('같은 분류 안에서 상위↔하위를 오가도(initialSubId 변화) 선택이 비워진다', () => {
+    const { rerender } = renderList({ subTabs: SUB_TABS, initialSubId: 'chat' });
+
+    fireEvent.click(check('대화A'));
+    expect(openCheckedButton()).toHaveTextContent('선택 1개 열기');
+
+    rerender({ initialSubId: null });
+
+    expect(openCheckedButton()).toHaveTextContent('선택 0개 열기');
+    expect(check('대화A')).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('체크는 여는 동작이 아니다 — 클릭을 기록하지 않는다', () => {
+    vi.mocked(recordClick).mockClear();
+    renderList();
+
+    fireEvent.click(check('대화A'));
+
+    expect(recordClick).not.toHaveBeenCalled();
+  });
+});
+
+describe('ListView — 한 번에 열기 (G4)', () => {
+  setupToastTimers();
+  const windowOpen = setupWindowOpen();
+
+  beforeEach(() => {
+    vi.mocked(recordClick).mockClear();
+  });
+
+  it('전체 열기는 보이는 카드를 순서대로 새 탭에 연다', () => {
+    renderList();
+
+    fireEvent.click(openAllButton());
+
+    expect(windowOpen.mock.calls).toEqual([
+      ['https://example.com/직속', '_blank', 'noopener,noreferrer'],
+      ['https://example.com/대화A', '_blank', 'noopener,noreferrer'],
+      ['https://example.com/대화B', '_blank', 'noopener,noreferrer'],
+      ['https://example.com/영상A', '_blank', 'noopener,noreferrer'],
+    ]);
+  });
+
+  it('연 링크마다 isBulk=true 로 기록한다 (F3 — handleOpen 재사용이 아니다)', () => {
+    renderList();
+
+    fireEvent.click(openAllButton());
+
+    expect(vi.mocked(recordClick).mock.calls).toEqual([
+      ['직속', true],
+      ['대화A', true],
+      ['대화B', true],
+      ['영상A', true],
+    ]);
+  });
+
+  it('탭 그룹 명칭과 팝업 차단을 함께 알린다', () => {
+    renderList();
+    render(<Toaster />);
+
+    fireEvent.click(openAllButton());
+
+    expect(
+      screen.getByText(
+        '4개를 새 탭으로 엽니다 · 크롬 탭 그룹 "AI 도구 모음"으로 묶임 · 열리지 않으면 팝업 차단을 확인하세요',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('하위 탭으로 좁혀 놓으면 보이는 것만 열고 명칭도 "상위 · 하위" 가 된다', () => {
+    renderList({ subTabs: SUB_TABS });
+    render(<Toaster />);
+
+    fireEvent.click(chip('대화·검색 2'));
+    fireEvent.click(openAllButton());
+
+    expect(openedUrls(windowOpen)).toEqual([
+      'https://example.com/대화A',
+      'https://example.com/대화B',
+    ]);
+    expect(
+      screen.getByText(
+        '2개를 새 탭으로 엽니다 · 크롬 탭 그룹 "AI 도구 모음 · 대화·검색"으로 묶임 · 열리지 않으면 팝업 차단을 확인하세요',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('선택 열기는 체크한 것만 목록 순서대로 연다', () => {
+    renderList();
+    render(<Toaster />);
+
+    fireEvent.click(check('영상A'));
+    fireEvent.click(check('직속'));
+
+    fireEvent.click(openCheckedButton());
+
+    expect(openedUrls(windowOpen)).toEqual([
+      'https://example.com/직속',
+      'https://example.com/영상A',
+    ]);
+    expect(vi.mocked(recordClick).mock.calls).toEqual([
+      ['직속', true],
+      ['영상A', true],
+    ]);
+    expect(
+      screen.getByText(
+        '2개를 새 탭으로 엽니다 · 크롬 탭 그룹 "AI 도구 모음"으로 묶임 · 열리지 않으면 팝업 차단을 확인하세요',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('체크해 둔 카드가 탭 전환으로 숨으면 열지 않는다 (D3 인계)', () => {
+    renderList({ subTabs: SUB_TABS });
+
+    fireEvent.click(check('직속'));
+    fireEvent.click(chip('영상 1'));
+    fireEvent.click(openCheckedButton());
+
+    expect(windowOpen).not.toHaveBeenCalled();
+    expect(recordClick).not.toHaveBeenCalled();
+  });
+
+  it('체크한 카드가 다른 하위로 옮겨져 화면에서 빠지면 열지 않는다 (shown 과 교차)', () => {
+    // 탭도 `initialSubId` 도 그대로라 선택 비우기가 돌지 않는 경로다 — `shown` 과의 교차만이
+    // 이 경우를 잡는다. 서버가 데이터를 다시 내려 링크의 분류가 바뀐 상황을 모사한다.
+    const { rerender } = renderList({ subTabs: SUB_TABS, initialSubId: 'chat' });
+
+    fireEvent.click(check('대화A'));
+    expect(openCheckedButton()).toHaveTextContent('선택 1개 열기');
+
+    rerender({
+      bookmarks: BOOKMARKS.map((bookmark) =>
+        bookmark.id === '대화A' ? { ...bookmark, category_id: 'video' } : bookmark,
+      ),
+    });
+
+    expect(openCheckedButton()).toHaveTextContent('선택 0개 열기');
+
+    fireEvent.click(openCheckedButton());
+
+    expect(windowOpen).not.toHaveBeenCalled();
+    expect(recordClick).not.toHaveBeenCalled();
+  });
+
+  it('아무것도 고르지 않고 선택 열기를 누르면 아무 탭도 열지 않고 안내만 한다', () => {
+    renderList();
+    render(<Toaster />);
+
+    fireEvent.click(openCheckedButton());
+
+    expect(windowOpen).not.toHaveBeenCalled();
+    expect(recordClick).not.toHaveBeenCalled();
+    expect(screen.getByText('열 링크를 먼저 선택하세요')).toBeInTheDocument();
+  });
+
+  it('빈 목록에서 전체 열기를 눌러도 같은 안내만 한다', () => {
+    renderList({ bookmarks: [] });
+    render(<Toaster />);
+
+    fireEvent.click(openAllButton());
+
+    expect(windowOpen).not.toHaveBeenCalled();
+    expect(screen.getByText('열 링크를 먼저 선택하세요')).toBeInTheDocument();
   });
 });
 

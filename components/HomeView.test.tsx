@@ -12,6 +12,7 @@ import type { BookmarkWithCount, Category, SiteData } from '@/lib/types';
 import { middleClick } from '@/test/events';
 import { setFavs, storedFavs } from '@/test/favs';
 import { BOOKMARKS, CATEGORIES, siteData } from '@/test/fixtures/seed';
+import { setupWindowOpen } from '@/test/open';
 import { setupToastTimers } from '@/test/toast';
 
 /**
@@ -449,5 +450,100 @@ describe('HomeView — 카드 클릭 기록 (F3)', () => {
     fireEvent.click(pins('내 즐겨찾기')[0]);
 
     expect(recordClick).not.toHaveBeenCalled();
+  });
+});
+
+describe('HomeView — 섹션 한 번에 열기 (G4)', () => {
+  const DAILY = BOOKMARKS.filter((bookmark) => bookmark.is_pinned);
+  const OPERATING = BOOKMARKS.filter((bookmark) => bookmark.category_id === OPERATING_ID);
+  const FAV_ITEMS = [BOOKMARKS[200], BOOKMARKS[5], BOOKMARKS[40]];
+
+  setupToastTimers();
+  const windowOpen = setupWindowOpen();
+
+  beforeEach(() => {
+    vi.mocked(recordClick).mockClear();
+  });
+
+  const openAll = (name: string) =>
+    within(section(name)).getByRole('button', { name: /한 번에 열기$/ });
+
+  function renderHome() {
+    setFavs(FAV_IDS);
+    render(
+      <>
+        <HomeView data={DATA} />
+        <Toaster />
+      </>,
+    );
+  }
+
+  /** 그 섹션의 카드가 놓인 순서 그대로 새 탭에 열리고 bulk 로 기록됐는지 본다. */
+  function expectOpened(expected: readonly BookmarkWithCount[]): void {
+    expect(windowOpen.mock.calls).toEqual(
+      expected.map((bookmark) => [bookmark.url, '_blank', 'noopener,noreferrer']),
+    );
+    // 카드 클릭(F3)과 달리 두 번째 인자가 true 다 — 순위 왜곡을 막는 bulk 플래그(PRD).
+    expect(vi.mocked(recordClick).mock.calls).toEqual(
+      expected.map((bookmark) => [bookmark.id, true]),
+    );
+  }
+
+  it('내 즐겨찾기 — 담긴 순서대로 열고 섹션 이름으로 묶는다', () => {
+    renderHome();
+
+    fireEvent.click(openAll('내 즐겨찾기'));
+
+    expectOpened(FAV_ITEMS);
+    expect(
+      screen.getByText(
+        '3개를 새 탭으로 엽니다 · 크롬 탭 그룹 "내 즐겨찾기"으로 묶임 · 열리지 않으면 팝업 차단을 확인하세요',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('매일 사용하는 사이트 — 12개를 연다', () => {
+    renderHome();
+
+    fireEvent.click(openAll('매일 사용하는 사이트'));
+
+    expectOpened(DAILY);
+    expect(
+      screen.getByText(
+        '12개를 새 탭으로 엽니다 · 크롬 탭 그룹 "매일 사용하는 사이트"으로 묶임 · 열리지 않으면 팝업 차단을 확인하세요',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('현재 운영 중인 사이트 — 16개를 연다', () => {
+    renderHome();
+
+    fireEvent.click(openAll('현재 운영 중인 사이트'));
+
+    expectOpened(OPERATING);
+    expect(
+      screen.getByText(
+        '16개를 새 탭으로 엽니다 · 크롬 탭 그룹 "현재 운영 중인 사이트"으로 묶임 · 열리지 않으면 팝업 차단을 확인하세요',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('즐겨찾기가 0개면 열기 버튼이 없어 누를 것도 없다 (DESIGN_SPEC 3장)', () => {
+    render(<HomeView data={DATA} />);
+
+    expect(
+      within(section('내 즐겨찾기')).queryByRole('button', { name: /한 번에 열기$/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('핀을 빼서 줄어든 목록만 연다 — 버튼 라벨과 실제로 여는 수가 같다', () => {
+    renderHome();
+
+    fireEvent.click(pins('내 즐겨찾기')[0]);
+    vi.mocked(recordClick).mockClear();
+
+    fireEvent.click(openAll('내 즐겨찾기'));
+
+    expectOpened([BOOKMARKS[5], BOOKMARKS[40]]);
   });
 });

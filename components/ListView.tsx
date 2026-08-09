@@ -4,9 +4,7 @@ import { useCallback, useState } from 'react';
 import { CardGrid } from '@/components/CardGrid';
 import { EmptyBox } from '@/components/EmptyBox';
 import { LinkCard } from '@/components/LinkCard';
-import { toast } from '@/components/Toast';
-import { openToastText, recordClick } from '@/lib/clicks';
-import { favToastText, useFavorites } from '@/lib/favorites';
+import { useCardHandlers } from '@/components/useCardHandlers';
 import type { BookmarkWithCount } from '@/lib/types';
 
 /** 칩 하나 = 하위 분류 하나. 개수는 사이드바와 같은 값이어야 하므로 화면(서버)이 계산해 넘긴다. */
@@ -40,6 +38,19 @@ const CHIP_ON = 'border-ink bg-ink font-semibold text-white';
 /** 비선택 칩의 글자색은 스펙 표에 없는 프로토타입 고유값이라 임의 값으로 옮긴다(사이드바와 같은 처리). */
 const CHIP_OFF = 'border-border-strong bg-card font-normal text-[#3a3833]';
 
+/** 툴바 버튼 둘의 공통 몸통 — 높이 32px, 패딩 0 13px, 라운드 7px, 12px/600 (프로토타입 원값). */
+const TOOL_BUTTON =
+  'flex h-[32px] cursor-pointer items-center rounded-[7px] px-[13px] text-[12px] font-semibold whitespace-nowrap';
+/** `전체 N개 열기` — 검은 버튼 (DESIGN_SPEC 4장). */
+const OPEN_ALL = `${TOOL_BUTTON} bg-ink text-white hover:bg-ink-hover`;
+/** `선택 N개 열기` — 흰 버튼. 호버에서 테두리만 잉크로 바뀐다. */
+const OPEN_CHECKED = `${TOOL_BUTTON} border border-border-strong bg-card hover:border-ink`;
+/** `선택 해제` — 버튼 모양 없이 글자만. */
+const CLEAR_CHECKED = 'cursor-pointer text-[11.5px] text-faint hover:text-ink';
+
+/** 툴바 우측 안내문 — 프로토타입 원문. */
+const TOOLBAR_NOTE = '체크한 것만 열거나, 전체를 크롬 탭 그룹으로 묶어 엽니다';
+
 /**
  * 카테고리 · 내 즐겨찾기 · 매일 사용하는 사이트가 공유하는 목록 화면 (DESIGN_SPEC 4장).
  *
@@ -67,58 +78,45 @@ export function ListView({
   initialSubId = null,
   emptyMessage,
 }: ListViewProps) {
-  // 뷰 레벨에서 한 번만 읽고 카드에는 결과만 내려보낸다(카드마다 호출하면 렌더당 localStorage 를
-  // 카드 수만큼 읽는다 — lib/favorites.ts 사용 규칙).
-  const { favs, toggle } = useFavorites();
-
-  /**
-   * 핀 토글 — 담고/빼고 토스트로 알린다(DESIGN_SPEC 7장). 방향은 `toggle` 이 돌려준다.
-   * 카테고리·매일·즐겨찾기 화면이 모두 이 배선을 쓴다. `/favorites` 에서는 뺀 카드가 곧바로
-   * 목록에서 사라진다 — 그 화면이 넘기는 `bookmarks` 자체가 담긴 것만 골라낸 배열이기
-   * 때문이다(FavoritesView).
-   */
-  const handleToggleFav = useCallback(
-    (id: string) => {
-      // 카드가 돌려준 id 라 이 배열에 반드시 있다. 없더라도 토글은 하고 토스트만 건너뛴다.
-      const bookmark = bookmarks.find((item) => item.id === id);
-      const faved = toggle(id);
-
-      if (bookmark !== undefined) toast(favToastText(bookmark.title, faved));
-    },
-    [bookmarks, toggle],
-  );
-
-  /**
-   * 카드 열기 — 클릭을 기록하고(F2 로 보내는 fire-and-forget) 열었다고 알린다. 홈과 같은 배선이다.
-   *
-   * 하위 탭으로 좁혀 놓은 화면에서도 `bookmarks`(화면 전체)에서 찾는다 — 보이는 카드는 언제나 그
-   * 부분집합이라 못 찾는 일이 없다. 가운데 클릭도 여기로 온다(카드가 양쪽에서 부른다 — C2).
-   *
-   * ⓘ 토스트 스토어는 슬롯이 하나라(Toast.tsx) 이 문구가 직전의 핀 토스트를 밀어낸다.
-   *   프로토타입도 토스트가 하나뿐이라 같은 동작이다.
-   */
-  const handleOpen = useCallback(
-    (id: string) => {
-      recordClick(id);
-
-      // 카드가 돌려준 id 라 이 배열에 반드시 있다. 없더라도 기록은 하고 토스트만 건너뛴다.
-      const bookmark = bookmarks.find((item) => item.id === id);
-      if (bookmark !== undefined) toast(openToastText(bookmark.title));
-    },
-    [bookmarks],
-  );
+  // 핀 토글(D6)·카드 열기(F3)·한 번에 열기(G4)는 홈과 글자 하나까지 같은 배선이라 훅 하나가
+  // 들고 있다. `useFavorites` 도 그 안에서 뷰당 한 번만 불린다(lib/favorites.ts 사용 규칙).
+  const { favs, handleToggleFav, handleOpen, openMany } = useCardHandlers(bookmarks);
 
   const tabs = subTabs ?? [];
   const [selected, setSelected] = useState(initialSubId);
 
   /**
+   * 체크한 카드 (DESIGN_SPEC 4장 — '선택 N개 열기'). 탭을 옮길 때마다 비운다.
+   *
+   * 비우지 않으면 지금 화면에 보이지도 않는 카드가 '선택 N개 열기'에 딸려 열린다. 프로토타입도
+   * 탭 이동(`aiTabs.go`)과 화면 이동(`nav`)에서 `checked: {}` 로 되돌린다. 아래 `checkedItems` 가
+   * `shown` 과 교차하는 것은 그 위의 이중 안전장치다 — 목록(props)이 통째로 갈리는 경우까지 막는다.
+   */
+  const [checked, setChecked] = useState<ReadonlySet<string>>(() => new Set());
+  const clearChecked = useCallback(() => {
+    setChecked(new Set());
+  }, []);
+
+  const handleToggleCheck = useCallback((id: string) => {
+    setChecked((prev) => {
+      const next = new Set(prev);
+      // delete 는 지운 것이 있을 때만 true 다 — 있으면 빼고 없으면 담는 토글이 한 줄로 끝난다.
+      if (!next.delete(id)) next.add(id);
+
+      return next;
+    });
+  }, []);
+
+  /**
    * 장치 2 — 같은 분류 안에서 상위↔하위를 오가면 리마운트가 없으므로(위 JSDoc),
    * 서버가 준 선택이 바뀔 때 렌더 중에 맞춘다(렌더 중 상태 조정 패턴 — Sidebar 의 펼침 처리와 같다).
+   * 칩 클릭과 같은 '탭 이동'이므로 체크도 함께 비운다.
    */
   const [seenInitial, setSeenInitial] = useState(initialSubId);
   if (seenInitial !== initialSubId) {
     setSeenInitial(initialSubId);
     setSelected(initialSubId);
+    clearChecked();
   }
 
   /**
@@ -127,10 +125,18 @@ export function ListView({
    * (돌아온 분류에는 그 하위가 다시 있으므로 이 조건에 걸리지 않는다 — 위 JSDoc 1번 참조).
    */
   const activeId = tabs.some((tab) => tab.id === selected) ? selected : null;
+  const activeTab = tabs.find((tab) => tab.id === activeId);
   const shown =
     activeId === null
       ? bookmarks
       : bookmarks.filter((bookmark) => bookmark.category_id === activeId);
+
+  // 보이는 것 중에서만 고른다 — 선택은 탭을 옮길 때 비워지지만(위 `checked` 주석), 목록 자체가
+  // 갈리는 경우까지 여기서 잘라 낸다. 순서는 `shown`(sort_order) 을 따라 체크한 차례와 무관하다.
+  const checkedItems = shown.filter((bookmark) => checked.has(bookmark.id));
+
+  /** 탭 그룹 명칭 — 프로토타입 `openMany` 의 두 번째 인자(`st.sub ? key + ' · ' + sub : key`). */
+  const groupLabel = activeTab === undefined ? title : `${title} · ${activeTab.name}`;
 
   return (
     <main>
@@ -159,7 +165,11 @@ export function ListView({
                 key={tab.id ?? '전체'}
                 type="button"
                 aria-pressed={on}
-                onClick={() => setSelected(tab.id)}
+                onClick={() => {
+                  setSelected(tab.id);
+                  // 탭을 옮기면 선택을 버린다 — 프로토타입 `aiTabs.go` 와 같다.
+                  clearChecked();
+                }}
                 className={`${CHIP} ${on ? CHIP_ON : CHIP_OFF}`}
               >
                 {tab.name} <span className="opacity-60">{tab.count}</span>
@@ -169,10 +179,31 @@ export function ListView({
         </div>
       )}
 
-      {/* 툴바(전체 열기 · 선택 열기 · 선택 해제 · 우측 안내문)와 카드의 체크(showCheck)는
-          2단계 G4 몫이다. 지금은 자리만 비워 둔다.
-          G4 에게: 체크한 id 는 탭을 바꿔도 남으므로 그대로 두면 '선택 N개 열기'가 지금 화면에
-          보이지도 않는 카드를 연다. 탭 전환 시 선택을 비우거나 `shown` 과 교차시켜라. */}
+      {/* 툴바 (DESIGN_SPEC 4장). 목록이 비어도 남는다 — 프로토타입도 목록 화면이면 언제나 그리고,
+          '열 것이 없다'는 말은 눌렀을 때 토스트가 한다(lib/clicks 의 bulkOpenToastText). */}
+      <div className="mb-[12px] flex items-center gap-[8px]">
+        <button
+          type="button"
+          onClick={() => openMany(shown, groupLabel)}
+          className={OPEN_ALL}
+        >
+          전체 {shown.length}개 열기
+        </button>
+        <button
+          type="button"
+          onClick={() => openMany(checkedItems, groupLabel)}
+          className={OPEN_CHECKED}
+        >
+          선택 {checkedItems.length}개 열기
+        </button>
+        <button type="button" onClick={clearChecked} className={CLEAR_CHECKED}>
+          선택 해제
+        </button>
+        {/* 프로토타입 `descColDisplay`(narrow ? none : block) 그대로 — <820px 에서는 숨는다. */}
+        <span className="ml-auto hidden text-[11.5px] text-fainter min-[820px]:block">
+          {TOOLBAR_NOTE}
+        </span>
+      </div>
 
       {shown.length === 0 ? (
         <EmptyBox>{emptyMessage}</EmptyBox>
@@ -180,9 +211,14 @@ export function ListView({
         <CardGrid>
           {shown.map((bookmark) => (
             // showPin 은 LinkCard 기본값(true)을 그대로 쓴다 — 목록 화면은 전부 핀이 보인다.
+            // 체크는 이 화면들만 켠다(계획서 V3) — 홈에는 없다. 켜진 카드의 잉크 테두리는
+            // 카드가 알아서 처리한다(C2).
             <LinkCard
               key={bookmark.id}
               bookmark={bookmark}
+              showCheck
+              checked={checked.has(bookmark.id)}
+              onToggleCheck={handleToggleCheck}
               isFaved={favs.has(bookmark.id)}
               onToggleFav={handleToggleFav}
               onOpen={handleOpen}

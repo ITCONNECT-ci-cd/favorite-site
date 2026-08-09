@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // F2 의 검증기를 값으로 가져오는 것은 **테스트라서** 괜찮다 — logic.ts 는 node:crypto 를 끌고 오므로
 // 브라우저로 가는 코드(lib/clicks.ts 본체)에서는 여전히 `import type` 만 써야 한다(그 파일 주석 참조).
 import { parseClickBody } from '@/app/api/click/logic';
-import { openToastText, recordClick } from '@/lib/clicks';
+import { bulkOpenToastText, openToastText, recordClick } from '@/lib/clicks';
 import { VISITOR_KEY } from '@/lib/constants';
 import { getVisitorId } from '@/lib/visitor';
 
@@ -187,5 +187,28 @@ describe('recordClick — fire-and-forget', () => {
 describe('openToastText', () => {
   it('프로토타입 open() 의 문구를 그대로 쓴다', () => {
     expect(openToastText('ChatGPT')).toBe('ChatGPT · 새 탭으로 이동');
+  });
+});
+
+describe('bulkOpenToastText (G4 한 번에 열기)', () => {
+  it('프로토타입 openMany() 의 문구 뒤에 팝업 차단 안내를 붙인다', () => {
+    expect(bulkOpenToastText(12, '매일 사용하는 사이트')).toBe(
+      '12개를 새 탭으로 엽니다 · 크롬 탭 그룹 "매일 사용하는 사이트"으로 묶임 · 열리지 않으면 팝업 차단을 확인하세요',
+    );
+  });
+
+  it('탭 그룹 명칭을 그대로 따옴표 안에 넣는다 (하위 탭이면 "상위 · 하위")', () => {
+    expect(bulkOpenToastText(3, 'AI 도구 모음 · 영상')).toContain('"AI 도구 모음 · 영상"으로 묶임');
+  });
+
+  it('팝업 차단 안내는 개수와 무관하게 언제나 붙는다 (V4 · noopener 라 차단 감지 불가)', () => {
+    expect(bulkOpenToastText(1, '내 즐겨찾기')).toContain('열리지 않으면 팝업 차단을 확인하세요');
+    expect(bulkOpenToastText(118, 'AI 도구 모음')).toContain(
+      '열리지 않으면 팝업 차단을 확인하세요',
+    );
+  });
+
+  it('0개면 프로토타입의 가드 문구를 대신 쓴다 — 열 것이 없다는 말만 한다', () => {
+    expect(bulkOpenToastText(0, '내 즐겨찾기')).toBe('열 링크를 먼저 선택하세요');
   });
 });
