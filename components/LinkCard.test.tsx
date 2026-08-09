@@ -543,9 +543,14 @@ describe('LinkCard 상태 슬롯 (J2·J3 인계)', () => {
      * 슬롯에 **false** 가 담겨 온다. "undefined·null 이 아니면 노드"로 보면 그 한 줄이 곧바로
      * 교체를 발동시켜, 폼은 없는데 본문만 사라진 빈 카드가 된다. 기준은 값의 종류가 아니라
      * **React 가 무언가를 그리는가**여야 한다.
+     *
+     * `true` 도 같은 줄에 세운다 — `cond || <Form/>` 는 cond 가 참일 때 **true** 를 넘기고,
+     * React 는 그 값 역시 아무것도 그리지 않는다. `false` 한 값만 막아 두면 규칙과 구현이
+     * 여기서 어긋나 같은 빈 카드가 다시 열린다.
      */
     it.each([
       ['false — `cond && <Form/>` 의 거짓 가지', false],
+      ['true — `cond || <Form/>` 의 참 가지', true],
       ['빈 문자열', ''],
     ] as const)('editSlot 이 %s 면 슬롯 없음으로 보고 본문을 남긴다', (_label, slot) => {
       silenceWarn();

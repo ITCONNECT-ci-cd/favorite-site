@@ -138,8 +138,11 @@ export default async function PublicLayout({ children }: LayoutProps<"/">) {
    * 방향이다(lib/supabase/server.ts "실패는 전부 비로그인으로 접는다").
    *
    * ⚠️ 이 catch 를 `getAdminSession()` **안쪽**의 전역 try/catch 로 옮기지 마라 — 그 함수는
-   * `cookies()` 를 부르고, Next 는 그 자리에서 제어 흐름용 예외를 던질 수 있다. 안에서 삼키면
-   * 그것까지 함께 사라진다. 여기(호출부)에서 잡는 것은 셸 한 곳의 결정으로 남는다.
+   * `cookies()` 를 부르고, Next 는 그 자리에서 제어 흐름용 예외를 던질 수 있다. 그 예외를
+   * 삼킨다는 점은 여기도 똑같다(호출부 catch 라고 통과시켜 주지 않는다). 다른 것은 **삼키는
+   * 범위** 하나다: 함수 안에 두면 그 게이트를 부르는 **모든 호출자**가 함께 잃고, 여기에 두면
+   * 셸 한 곳의 결정으로 끝난다. 이 셸에 한해 삼켜도 동적 렌더는 유지된다 — 빌드 라우트 표에
+   * ƒ(Dynamic) 로 남는 것을 실측 확인했다(bea8b34).
    */
   const dataPromise = getAllData();
   const sessionPromise = getAdminSession().catch((error: unknown) => {

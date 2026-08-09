@@ -53,8 +53,9 @@ export type LinkCardProps = {
    * 반쪽 상태를 만들지 않기 위해서다. 두 값을 한 곳에서 같이 내려보내라.
    *
    * '노드가 있다'의 기준은 **React 가 무언가를 그리는가**다: `null`·`undefined` 는 물론
-   * `false`·빈 문자열도 '슬롯 없음'이라 교체하지 않는다. `editSlot={cond && <Form/>}` 로
-   * 넘기는 관용구가 흔해서, 이 검사를 느슨하게 두면 그 한 줄이 곧바로 빈 카드를 만든다.
+   * boolean(`false`·`true` 둘 다)·빈 문자열도 '슬롯 없음'이라 교체하지 않는다.
+   * `editSlot={cond && <Form/>}`·`editSlot={cond || <Form/>}` 로 넘기는 관용구가 흔해서,
+   * 이 검사를 느슨하게 두면 그 한 줄이 곧바로 빈 카드를 만든다.
    *
    * 판정도 상태도 이 카드가 갖지 않는다. '한 번에 한 장만 편집' 같은 규칙은 여러 카드를 아는
    * 화면(HomeView·ListView)이 들고, 카드는 받은 값대로 자리만 바꾼다.
@@ -237,12 +238,18 @@ export function LinkCard({
   // (isEditing·editSlot JSDoc). 편집 폼이 없는데 본문만 지워지는 빈 카드를 만들지 않기 위해서다.
   //
   // "노드가 있다"의 기준은 **React 가 실제로 무언가를 그리는가**다. null·undefined 뿐 아니라
-  // false·'' 도 React 는 아무것도 그리지 않으므로 전부 '슬롯 없음'으로 친다. undefined·null 만
+  // boolean·'' 도 React 는 아무것도 그리지 않으므로 전부 '슬롯 없음'으로 친다. undefined·null 만
   // 걸러 내면 호출부의 관용구 `editSlot={cond && <Form/>}` 가 cond 거짓일 때 **false** 를
   // 넘겨 검사를 통과하고, 교체는 일어나는데 그려지는 것은 없는 — 위 JSDoc 이 금지한 바로 그
   // 빈 카드가 된다. 0 과 NaN 은 뺀다: React 는 그 둘을 "0"·"NaN" 으로 **그리므로** 슬롯이 맞다.
+  //
+  // `false` 한 값이 아니라 `typeof` 로 boolean 전체를 거르는 이유: **둘 다 아무것도 그리지
+  // 않는다** — `&&` 가 만드는 false 도, `cond || <Form/>` 가 cond 참일 때 만드는 true 도.
+  // 한쪽만 막으면 규칙("React 가 그리는가")과 구현이 true 한 값에서 어긋나 그 관용구가
+  // 그대로 빈 카드를 만든다. `[]`·`<></>` 도 아무것도 그리지 않지만 prop 검사로는 판별할 수
+  // 없어(자식이 있는 배열·프래그먼트와 구별되지 않는다) 쫓지 않는다.
   const hasEditSlot =
-    editSlot !== undefined && editSlot !== null && editSlot !== false && editSlot !== '';
+    editSlot !== undefined && editSlot !== null && typeof editSlot !== 'boolean' && editSlot !== '';
   const showEditSlot = isEditing && hasEditSlot;
 
   // 무시된 요청은 화면상 "편집을 눌렀는데 아무 일도 없다"로만 보인다 — 개발 중에만 이유를 준다.
@@ -253,7 +260,7 @@ export function LinkCard({
     console.warn(
       `LinkCard(${id}): isEditing=true 인데 editSlot 이 비어 있어 본문 교체를 건너뛴다. ` +
         '두 값은 한 곳에서 같이 내려보내라 — React 가 아무것도 그리지 않는 값(null·undefined·' +
-        'false·빈 문자열)은 전부 슬롯 없음으로 친다.',
+        'boolean·빈 문자열)은 전부 슬롯 없음으로 친다.',
     );
   }
 

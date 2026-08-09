@@ -152,6 +152,15 @@ describe('셸 데이터 조회 실패 대비 (O1 게이트 F-1)', () => {
     expect(layoutCode).toMatch(/getAdminSession\(\)\s*\.catch\(/);
   });
 
+  it('세션 왕복을 try 앞에서 띄운다 (폭포 방지 — 본론이 잠겨야 되살아나지 않는다)', () => {
+    // 위 두 단언은 **오류 경로의 안전장치**만 본다. 정작 그 구조를 만든 이유인 병렬화는
+    // 잠겨 있지 않아, 세션 호출을 try 안으로 되돌려도 둘 다 통과한다 — 그러면 DB 왕복이
+    // 끝나야 Auth 왕복이 시작되는 폭포가 조용히 부활하고, 공개 화면 전부가 그 지연을 진다
+    // (layout.tsx "서로 무관한 두 왕복을 먼저 둘 다 띄운다").
+    // 호출이 아예 사라지는 경우는 바로 위 '.catch' 단언이 잡는다.
+    expect(layoutCode.indexOf('getAdminSession()')).toBeLessThan(layoutCode.indexOf('try {'));
+  });
+
   it('실패해도 안내 문구를 내보낸다 (global-error 와 같은 문구)', () => {
     expect(layoutCode).toContain('일시적인 오류가 발생했습니다');
   });

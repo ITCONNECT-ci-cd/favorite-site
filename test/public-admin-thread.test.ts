@@ -45,6 +45,13 @@ const KNOWN_PAGES = [
   `${PUBLIC_ROOT}/favorites/page.tsx`,
 ];
 
+/**
+ * 확장자를 가리지 않는다 — `page.jsx` 로 붙인 화면이 규칙 밖으로 새지 않게.
+ * 자매 스캐너(app/admin/page.test.tsx 의 `PAGE_FILE`)와 같은 규칙을 쓴다: 한쪽만 넓혀 두면
+ * 어느 스캐너가 무엇을 훑는지가 파일마다 달라져 미탐이 생긴다.
+ */
+const PAGE_FILE = /^page\.(t|j)sx?$/;
+
 function pageFiles(dir: string): string[] {
   const entries = readdirSync(join(ROOT, dir), { withFileTypes: true });
 
@@ -53,7 +60,7 @@ function pageFiles(dir: string): string[] {
     if (EXCLUDED.includes(path)) return [];
     if (entry.isDirectory()) return pageFiles(path);
 
-    return entry.name === 'page.tsx' ? [path] : [];
+    return PAGE_FILE.test(entry.name) ? [path] : [];
   });
 }
 
