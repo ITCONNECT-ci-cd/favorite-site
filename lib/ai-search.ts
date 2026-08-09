@@ -126,13 +126,22 @@ export function buildLinkSummaries(data: SiteData): LinkSummary[] {
   }));
 }
 
+/**
+ * 필드 값을 프롬프트 한 줄에 안전하게 실을 수 있게 개행·연속 공백을 공백 하나로 접는다.
+ * title·description 에 개행이 섞여도 가짜 `- id=` 줄을 흉내 내 한 줄 포맷을 쪼갤 수 없다
+ * (최종 방어는 여전히 parseGeminiResponse 의 id 화이트리스트 — 이건 프롬프트 정돈이다).
+ */
+function oneLine(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
 /** 요약 배열을 프롬프트 한 줄씩으로 편다. 구분자(`::`)는 필드 안에 잘 나오지 않는 기호다. */
 function renderSummaries(summaries: readonly LinkSummary[]): string {
   return summaries
     .map(
       (s) =>
-        `- id=${s.id} :: 제목: ${s.title} :: 설명: ${s.description} :: ` +
-        `태그: ${s.tags.join(', ')} :: 분류: ${s.category}`,
+        `- id=${s.id} :: 제목: ${oneLine(s.title)} :: 설명: ${oneLine(s.description)} :: ` +
+        `태그: ${s.tags.map(oneLine).join(', ')} :: 분류: ${oneLine(s.category)}`,
     )
     .join('\n');
 }

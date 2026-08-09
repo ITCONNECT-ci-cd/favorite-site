@@ -239,7 +239,9 @@ describe('POST /api/ai-search — L 레이트리밋(IP당 분당 상한)', () =>
     expect(blocked.status).toBe(200);
     expect(body.source).toBe('keyword');
     expect(body.reason).toBe('rate-limit');
-    expect(body.results).toEqual([]); // 남용 방지: 막힌 요청은 DB·LLM 을 건드리지 않는다
+    // 남용 방지: 막힌 요청은 DB·LLM 을 건드리지 않는다. 이 빈 배열은 "결과 없음"이 아니라 "DB 미조회 —
+    // 잠시 후 재시도"의 신호다(N3 계약). timeout·error 폴백의 빈 배열과 뜻이 다르니 재시도 UI 로 구분한다.
+    expect(body.results).toEqual([]);
     expect(callGemini).toHaveBeenCalledTimes(AI_RATE_LIMIT_MAX); // 늘지 않았다
     expect(getAllData.mock.calls.length).toBe(dataCallsBefore); // DB 도 안 쳤다
   });

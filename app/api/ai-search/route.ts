@@ -64,6 +64,9 @@ export async function POST(request: Request): Promise<Response> {
 
   // 2. 레이트리밋. 막힌 요청은 DB·LLM 을 건드리지 않으므로 여기서 results 없이 즉시 폴백한다.
   //    (인메모리라 Vercel 인스턴스별 근사치 — @/lib/ratelimit 상단 근거.)
+  //    N3 계약 주름: reason='rate-limit' 의 results:[] 는 "검색 결과 없음"이 아니라 "DB 미조회 —
+  //    잠시 후 재시도"다. 다른 폴백(timeout·error·not-configured)은 실제 키워드 결과를 채우므로,
+  //    같은 빈 배열이라도 rate-limit 만은 "0건"이 아닌 "재시도" UI 로 구분해야 한다.
   if (aiSearchRateLimiter.check(ip, Date.now(), false).limited) {
     return respond({ ok: false, source: 'keyword', reason: 'rate-limit', results: [] });
   }
