@@ -649,28 +649,36 @@ graph LR
 
 ## 4단계 — 통계·정리 (EPIC K, L, M) — 세 트랙 완전 병렬
 
-- [ ] **K1. 집계 SQL 계층** `M` — 의존: B2, H1. **전제(G4 품질 리뷰 확정)**: 현재 `bookmark_click_counts` 뷰·카드 표시 카운트는 bulk **포함**(PRD상 절대값 참고용 — 수용). **인기 순위·통계는 반드시 `is_bulk` 제외 + unique visitor 기준** — bulk 기록은 팝업 차단된 탭도 포함될 수 있는 best-effort임(noopener 감지 불가).
+- [x] **K1. 집계 SQL 계층** `M` — 의존: B2, H1. ✅ 2026-08-10 새벽 완료 (af06aa7 + fixup 9ad2c77 — SQL 정밀 리뷰 종결(Critical·Important 0), 하드닝 3건(pg_temp·CYCLE 절·days SQL 이중화). **라이브 DDL은 아침 사용자 실행+rpc 스팟체크 전제.**) **전제(G4 품질 리뷰 확정)**: 현재 `bookmark_click_counts` 뷰·카드 표시 카운트는 bulk **포함**(PRD상 절대값 참고용 — 수용). **인기 순위·통계는 반드시 `is_bulk` 제외 + unique visitor 기준** — bulk 기록은 팝업 차단된 탭도 포함될 수 있는 best-effort임(noopener 감지 불가).
+  - **SQL 정밀 리뷰 종결 가능(Critical·Important 0)** — 익명 거부 coalesce(null email→42501, 없으면 통과 버그 자리)·#variable_conflict use_column·generate_series ::timestamp·KST 버킷·재귀 롤업 종료·grant 설계·search_path=public 전부 정확. 스펙 수치 어긋남 0. fixup-K1(선택 하드닝): M1(search_path에 pg_temp — temp table shadowing), M2(by_category CYCLE 절 — 사이클 시 hang), M3(days SQL 이중화). **아침 확인**: KPI unused_links가 bulk-only 링크를 "미사용"으로 셈(is_bulk 제외 일관 — 의도 확인), count(distinct visitor_hash)는 null 해시 미집계(K2가 "uv 0인데 클릭>0" 행 인지). 아침 rpc 스팟체크: KST 경계·익명 42501·PostgREST 스키마 리로드(안 보이면 `notify pgrst,'reload schema'`).
+  - 구현 완료(af06aa7, 테스트 13) — 삼중 방어(grant authenticated만·assert_admin_stats definer 게이트·앱 getAdminSession), unique visitor·is_bulk 제외, 저장 데이터 독립 재계산 검증. **⚠️ 야간 환경에 DDL 경로 없음(pg·psql·supabase CLI 부재) — 0003 라이브 실행 못 함, SQL 정밀 리뷰가 유일 방어. 아침 사용자가 0003 실행+rpc 스팟체크 필요.** K2 인계: 래퍼 5종·STATS_PERIODS.
   - 파일: `supabase/migrations/0003_stats.sql`, `lib/stats.ts` (**번호 주의**: 0002는 H1 fixup의 admin RLS 축소가 선점)
   - 내용: 관리자 전용 SQL 함수(security definer + 내부에서 인증 확인 또는 RLS 경유) — ①KPI(누적·오늘·미사용 링크 수) ②일별 추이(기간 파라미터) ③링크 순위(**unique visitor_hash 기준** + 참고용 총클릭, bulk 제외 옵션) ④카테고리별 합계 ⑤최근 클릭 14건.
   - 완료 기준: 각 함수 실측 검증(시드+테스트 클릭 데이터), 익명 호출 거부.
 
-- [ ] **K2. 통계 화면** `L` — 의존: K1, H3
+- [x] **K2. 통계 화면** `L` — 의존: K1, H3 ✅ 2026-08-10 새벽 완료 (ff27e80 — 통합 리뷰 종결(Critical·Important 0), 수치 전수 일치·daily(365).slice(-N)=daily(N) SQL 대조·server-only 경계·우아한 실패 실증. 후속 백로그(O4): 추이 막대 sr-only/aria, 0003 적용 후 catch를 error.code로 좁히기, cssUrl→lib/favicon 승격, 순위행 고유 방문자 tooltip.)
   - **H3 인계**: page 통째 교체하되 첫 줄 getAdminSession 가드·`<main>` 소유 규칙 승계, 자리 표시 문구 단언 테스트(app/admin/page.test.tsx)도 함께 교체, 자기 `metadata.title` 달 것. 탭 경로는 lib/routes.ts.
+  - 구현 완료(ff27e80, 테스트 20) — 리뷰 진행 중. 기간 탭=클라 상태(getStatsDaily(365) 서버 1회→slice(-period), daily(365) 마지막 N=daily(N)), 클라 컴포넌트는 lib/stats 타입만 import·STATS_PERIODS는 prop, 0003 미적용 시 안내 카드(우아한 실패). 스펙 밖: 순위 바=unique·숫자=total 참고용+안내문, KPI bulk 제외 안내, 최근 Asia/Seoul 고정. **O4 노트: app/admin/page.test.tsx 자리표시 블록 제거(통계·정리 obsolete — M2에 통지됨), cssUrl 넷째 사본은 lib 승격 후보.**
   - 파일: `app/admin/stats/page.tsx`, `components/admin/StatsView.tsx`
   - 내용: DESIGN_SPEC 6장 통계 — KPI 3장(숫자 26px), 기간 탭 14·30(기본)·90·180·365, 막대(높이 80px, gap 규칙: ≤30일 5px/≤90일 2px/그 외 1px, 날짜 라벨 ≤30일만), 하단 1.4fr/1fr(순위 12행 막대 / 카테고리 합계 / 최근 14건 `M.D HH:MM`).
   - 완료 기준: 테스트 — 기간 전환·gap 규칙·빈 데이터. "순위는 unique 기준, 절대값 참고용" 안내문 노출. **<820px 1단 축소**.
 
-- [ ] **L1. 서버 rate limit** `S` — 의존: F2 · 병렬: K·M과 동시 가능
+- [x] **L1. 서버 rate limit** `S` — 의존: F2 · 병렬: K·M과 동시 가능 ✅ 2026-08-10 새벽 완료 (db8b93c + fixup 034cd2d — 통합 리뷰 종결, 지연 스윕·실바이트 413 회귀·주석 정정. XFF Vercel 실동작 검증.)
+  - **통합 리뷰 종결(Critical 0)** — XFF 판정이 Vercel 실동작과 일치 확인(문서 교차검증), F2 이월 5건 전부 해소/정당 이월. fixup-L1 반영: I-1(save 죽은 삭제 분기+거짓 메모리 주장 → 지연 스윕), M-1(실바이트 재확인 테스트 — ReadableStream 무 content-length), M-2(주석 정정: Next 15 제거·x-real-ip 벤더 권장). **후속 백로그(migrations 경계 밖)**: F2 TOCTOU 정공법 = 시간버킷 컬럼+on conflict 유니크 또는 단일 RPC(**naive (visitor_hash,bookmark_id,clicked_at) 유니크는 무효** — clicked_at 매 행 달라 충돌 안 남), 정밀 전역 상한은 Redis. M-4: 공유 NAT 다수 사용자가 30/분에 걸려 집계 누락 가능(fire-and-forget·"덜 세는 쪽 안전"으로 수용).
+  - 구현 완료(db8b93c, 1513 통과). IP당 60초/30회 인메모리 슬라이딩 윈도(check 동기·원자적), bulk 창당 1유닛(118건 전부 통과), body 2KB 상한(413). **XFF 판정: Vercel이 XFF 덮어써 위조 불가(leftmost 신뢰) — 비Vercel/추가 프록시 환경은 x-vercel-forwarded-for 전환(주석).** F2 이월: TOCTOU는 원자적으로 못 닫음(부분 완화+후속 유니크 인덱스 권고 — migrations 경계 밖), 인덱스 현재 불필요. 후속 백로그: 원자적 upsert 또는 (visitor_hash,bookmark_id,시간버킷) 유니크, 정밀 전역 상한은 Redis.
   - 내용: `/api/click`에 IP당 분당 30회 초과 무시(메모리 슬라이딩 윈도 — Vercel 인스턴스별이라 근사치임을 주석 명시, 초과 시 `counted:false, reason:'rate-limit'`). **bulk 요청(isBulk:true)은 묶음당 1회로 계산**(V5) — "전체 열기" 118건이 상한에 걸려 유실되지 않도록. **F2 스펙 리뷰 이월**: ①body 크기 상한 추가 ②쿨다운/상한의 조회→insert가 비원자적(TOCTOU — 연타 시 중복 insert 가능, 정공법은 단일 RPC) ③조회 인덱스 미스매치 — 일 클릭 커지면 `(visitor_hash, bookmark_id, clicked_at desc)` 인덱스 추가 ④**limiter 키로 쓸 x-forwarded-for의 위조 가능성 확인 필수**(Vercel 플랫폼 보장 여부 — 집계용과 달리 limiter 키는 신뢰성이 요건) ⑤L1 전까지 visitorId 회전에 의한 부풀리기 방어 0임을 인지(L1의 IP 분당 30회가 유일한 예정 방어).
   - 완료 기준: 테스트 — 31번째 일반 요청 무시, bulk 118건은 전부 기록.
 
-- [ ] **M1. 정리 판정 쿼리** `M` — 의존: B2, H1 · 병렬: K·L과 동시 가능
+- [x] **M1. 정리 판정 쿼리** `M` — 의존: B2, H1 · 병렬: K·L과 동시 가능 ✅ 2026-08-10 새벽 완료 (35673af + fixup 92a5b36 — SQL 정밀 리뷰 종결(Critical 0), 하드닝(0004 pg_temp·retention SQL 이중화)+M4 주석, **verify-schema 검사 ⑨⑩(0003·0004 적용 감지) 신설 → 10종 체계**. 강권 후속: 아침 DDL 적용 후 cleanup_abandoned 통합 테스트. 라이브 DDL은 아침 사용자 실행 전제.)
+  - **SQL 정밀 리뷰 종결 가능(Critical 0)** — 이메일 가드 coalesce·방치 WHERE 3절(≤/≥ 경계·상관 조건)·now() 트랜잭션 안정성·롤링 창이라 tz 절단 불요(K1과 정당한 갈림)·결정적 정렬 전부 정확. fixup-M1: 0004 pg_temp 하드닝+retention SQL 이중화+M4 주석, **verify-schema에 검사 ⑨⑩(0003·0004 적용 감지) 추가 → 10종 체계**. **강권 후속(아침 DDL 적용 후)**: cleanup_abandoned 통합 테스트(경계행 시드 — 현재 SQL 계약은 텍스트 정규식만이라 의미 버그 회귀 방어 없음, I1). M2 인계: 한 북마크가 ①②에 모두 등장 가능(M4).
+  - 구현 완료(35673af, 테스트 22) — cleanup_abandoned(security definer+이메일 가드+authenticated grant), 방치=is_pinned false+등록 N일+최근 N일 클릭 0(**bulk 포함=실사용 판정**), ①②는 순수 함수(findDuplicateUrlGroups·findDomainGroups). 방치 경계 8종·고정 11행 유출 0·도메인 10그룹 실측(data-plane 모델). **0004 DDL 라이브 미적용 — 아침 사용자 실행+익명 거부 스팟체크.** M2 인계: CleanupReport 타입·②는 정리 대상 아님(참고용).
   - 파일: `supabase/migrations/0004_cleanup.sql`, `lib/cleanup.ts` (K1의 0003과 파일 분리 — 병렬 안전)
   - 내용: ①완전 동일 URL 중복 ②같은 도메인·다른 페이지 그룹(host 기준, **정리 대상 아님 명시용**) ③방치 = 최근 N일 클릭 0 **AND** 등록 N일 경과, 고정 제외 (N: 30/90/180/365).
   - 완료 기준: 판정 함수 테스트(경계: 등록 직후 링크는 방치 아님).
 
-- [ ] **M2. 정리 도구 화면** `M` — 의존: M1, H3
+- [x] **M2. 정리 도구 화면** `M` — 의존: M1, H3 ✅ 2026-08-10 새벽 완료 (3061409 — 통합 리뷰 종결(Critical·Important 0), 수치 전수 일치·①②/③ 폴백 견고·server-only·미인증 게이트·M4 키 분리·거짓 문구 삭제 3건(utmLabel·favicon·groupLabel — 데이터 계약 부재) 타당. Minor(0004 미적용 시 bookmarks 2회 read — 열화 경로 한정)는 백로그.)
   - **H3 인계**: page 통째 교체하되 첫 줄 getAdminSession 가드·`<main>` 소유 규칙 승계, 자리 표시 문구 단언 테스트도 함께 교체, 자기 `metadata.title` 달 것. 탭 경로는 lib/routes.ts.
+  - 구현 완료(3061409, 테스트 25) — 리뷰 진행 중. 기준 탭=URL ?days= 서버 재조회(K2와 다름 — 방치는 값마다 rpc·상위집합 없음, CleanupView 서버 컴포넌트로 데이터 클라 미유출), 0004 미적용 시 ①②는 공개 bookmarks 순수 함수로 살고 ③만 안내(abandoned null/[] 구분). 거짓 문구 3건 삭제(groupLabel·favicon·utmLabel — CleanupBookmark에 없음·URL 정규화 안 함), "정리 대상 아님" 상시, M4 겹침은 구역별 독립 키(①url ②host ③id). O4 노트: 미인증 title '정리 도구' 노출(K2와 동일 — 탭 이름 수준·본문 게이트).
   - 파일: `app/admin/cleanup/page.tsx`, `components/admin/CleanupView.tsx`
   - 내용: DESIGN_SPEC 6장 — 2열, 기준 탭 30·90·180(기본)·365, 0건 안내문, 도메인 그룹에 "정리 대상이 아닙니다" 명시.
   - 완료 기준: 테스트 — 탭 전환·목록 렌더. **<820px 1단 축소**.
@@ -681,8 +689,20 @@ graph LR
 
 ## 5단계 — AI 의미 검색 (EPIC N) — 순차
 
-- [ ] **N1. 방식 결정 스파이크** `S` — 의존: G2 · **사용자 게이트**: pgvector 임베딩 vs LLM 직접 호출 — 후보별 비용(월 예상)·품질(테스트 질의 10개: "휴가 어떻게 쓰는지" 등)·운영 부담 비교표를 만들어 **상의 후 확정**
-  - 완료 기준: 비교표 + 결정 기록이 이 문서에 추가된다.
+- [x] **N1. 방식 결정 스파이크** `S` — 의존: G2 · **사용자 게이트** ✅ 2026-08-10 결정 완료 (야간 지시로 확정 — 사용자가 Gemini API 키를 AI_SEARCH_API_KEY로 env 게이트에 이미 투입, 방식 선확정)
+  - **결정: Gemini LLM 직접 호출** (pgvector 아님). 비교표:
+  
+  | 축 | pgvector 임베딩 | **LLM 직접(Gemini) — 채택** |
+  |---|---|---|
+  | 인프라 | 임베딩 컬럼·시드 290 임베딩 생성·유사도 인덱스·재임베딩 파이프라인 | 없음 — 링크 요약을 런타임에 컨텍스트로 주입 |
+  | 규모 적합성 | 벡터 검색은 수만~수십만 행에서 이점. 290~580개(PRD 2배)는 규모 미달 | 290개 요약(title/desc/tags/category ≈ 링크당 ~30토큰 → ~9K토큰)이 단일 컨텍스트에 들어감 |
+  | 비용(월 예상) | 시드 임베딩 1회 + 질의마다 임베딩 API 1회 + DB. 링크 추가 시 재임베딩 | 질의당 1회 호출(입력 ~10K·출력 소). Gemini Flash 저단가, 질의 빈도 낮음(팔레트 트리거 한정·타자마다 금지) |
+  | 근거 품질 | top-k 후보만 반환 → "왜 선정" 근거가 약함 | 전체 요약을 보고 3~5개+**근거 한 줄**을 한 번에 생성(N2 완료 기준 충족) |
+  | 운영 부담 | 임베딩 모델 버전·차원·재색인 관리 | env 키 하나. 미설정 시 "준비 중" 폴백(이미 env 게이트 구조) |
+  | 실패 폴백 | 임베딩 실패 시 경로 복잡 | 타임아웃·에러 시 키워드 결과로 폴백(N2) |
+  
+  **근거 요약**: 이 규모(290~580)에서 pgvector의 벡터 검색 이점은 없고 임베딩 인프라·재임베딩 운영 부담만 남는다. LLM 직접 호출은 전체 요약을 컨텍스트로 주어 의미 매칭+선정 근거를 한 번에 내고, 링크 CRUD와 독립(재임베딩 불필요). 사용자가 Gemini 키를 이미 투입해 env 게이트 구조가 확정됨. 리스크(컨텍스트 토큰이 링크 급증 시 커짐)는 580개(PRD 2배)까지 여유이고, 그 이상이면 요약 축약 또는 pgvector 승격을 별도 결정.
+  - 완료 기준: 비교표 + 결정 기록이 이 문서에 추가된다. ✅
 
 - [ ] **N2. 검색 백엔드** `L` — 의존: N1
   - 파일: `app/api/ai-search/route.ts`
