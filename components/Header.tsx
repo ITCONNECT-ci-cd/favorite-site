@@ -7,10 +7,21 @@ export type HeaderProps = {
   faviconCount: number;
   /** 관리자 로그인 여부 — 세션 확인·배선은 3단계 J1. */
   isAdmin?: boolean;
-  /** 검색 트리거 클릭 — ⌘K 팔레트 열기 연결은 2단계 G5. */
-  onSearchClick?: () => void;
-  /** "AI 검색" 클릭 — 2단계 G5 → 5단계 N3. */
-  onAiClick?: () => void;
+  /**
+   * 검색 트리거 클릭 — ⌘K 팔레트를 연다 (G5 PaletteHost).
+   *
+   * required 다. 콜백 없는 헤더는 검색이 죽은 헤더이고, 그 상태를 제품에 둘 이유가 없다.
+   */
+  onSearchClick: () => void;
+  /** "AI 검색" 클릭 — 지금은 팔레트를 열기만 한다. AI 모드 진입은 5단계 N3. */
+  onAiClick: () => void;
+  /**
+   * 팔레트가 열려 있는가 — 검색 트리거의 `aria-expanded` 가 된다.
+   *
+   * 열림 상태를 소유하는 것은 헤더가 아니라 상위(PaletteHost)다. 헤더는 받은 값을 알리기만 한다.
+   * 선택 항목이지만 기본값이 false 라 속성은 늘 붙는다 — 닫힘도 상태이기 때문이다.
+   */
+  isSearchOpen?: boolean;
 };
 
 /**
@@ -30,11 +41,8 @@ export type HeaderProps = {
  * `headPad`(좌우 12px) 하나뿐이라 같은 모습이므로 그대로 둔다. 잘림은 없다 —
  * 헤더 min-content 합이 325px로 375px 화면의 가용 351px보다 작다.
  *
- * G5 배선 시 할 일:
- * - 팔레트 열림 상태를 `aria-expanded`로 스레딩한다 (선택적 `isSearchOpen?: boolean` prop 추가).
- *   지금은 열림 상태를 알 수 없어 `aria-haspopup="dialog"`까지만 걸어 뒀다.
- * - `onSearchClick`·`onAiClick`을 required로 승격한다. 콜백 없는 헤더는 C4 단독 렌더용
- *   임시 상태이지 제품 상태가 아니다.
+ * 이 컴포넌트는 상태를 하나도 갖지 않는다 — 팔레트의 열림 여부는 위(components/PaletteHost.tsx)가
+ * 소유하고, 헤더는 그 값을 `aria-expanded`로 알리고 클릭을 콜백으로 되돌려 줄 뿐이다.
  */
 export function Header({
   totalCount,
@@ -42,6 +50,7 @@ export function Header({
   isAdmin = false,
   onSearchClick,
   onAiClick,
+  isSearchOpen = false,
 }: HeaderProps) {
   return (
     <div className="flex w-full items-center gap-[12px]">
@@ -49,6 +58,7 @@ export function Header({
         type="button"
         onClick={onSearchClick}
         aria-haspopup="dialog"
+        aria-expanded={isSearchOpen}
         aria-keyshortcuts="Meta+K"
         // 호버 두 색은 프로토타입 값 그대로다. #efede8은 DESIGN_SPEC 2-1장(카드 액션 버튼
         // 호버 배경)에도 나오는 정식 스펙 값이고, #b8b2a8은 1장 색상표에 없어 토큰이 없다.

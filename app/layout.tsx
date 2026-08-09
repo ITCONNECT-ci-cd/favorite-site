@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import { Header } from "@/components/Header";
 import { MobileChips } from "@/components/MobileChips";
+import { PaletteHost } from "@/components/PaletteHost";
 import { SidebarContainer } from "@/components/SidebarContainer";
 import { Toaster } from "@/components/Toast";
 import {
@@ -182,10 +182,18 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
           </aside>
 
           <div className="flex min-w-0 flex-1 flex-col">
-            {/* 헤더 (60px, 흰 배경, 하단 1px 테두리, 좌우 패딩 28px) — 내용물은 C4 Header.
-                검색·AI 버튼 콜백 연결은 2단계 G5, isAdmin 은 3단계 J1 몫이라 지금은 생략한다. */}
+            {/* 헤더 (60px, 흰 배경, 하단 1px 테두리, 좌우 패딩 28px) — 내용물은 C4 Header 지만,
+                셸이 직접 렌더하지 않고 G5 의 PaletteHost 를 거친다. 검색창·AI 버튼·전역 ⌘K 가
+                여는 팔레트의 열림 상태를 누군가는 들고 있어야 하는데, 서버 컴포넌트인 셸은
+                그럴 수 없어서다. 호스트가 헤더와 팔레트를 함께 렌더한다(팔레트는 fixed 라
+                이 자리에 있어도 헤더 줄을 밀지 않는다).
+                isAdmin 은 3단계 J1 몫이라 지금은 넘기지 않는다 — 호스트가 그대로 흘려보낸다. */}
             <header className="flex h-[60px] flex-none items-center border-b border-border bg-card px-[12px] min-[820px]:px-[28px]">
-              <Header totalCount={totalCount} faviconCount={faviconCount(bookmarks)} />
+              <PaletteHost
+                data={data}
+                totalCount={totalCount}
+                faviconCount={faviconCount(bookmarks)}
+              />
             </header>
 
             {/* 좁은 화면의 내비게이션 (D5) — 숨은 사이드바 대신 헤더 바로 아래 한 줄로 깐다.
