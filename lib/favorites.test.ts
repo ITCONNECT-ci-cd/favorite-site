@@ -5,7 +5,8 @@ import { hydrateRoot } from 'react-dom/client';
 import { renderToString } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FAVS_KEY } from '@/lib/constants';
-import { type Favorites, useFavorites } from '@/lib/favorites';
+import { favToastText, type Favorites, pickFavorites, useFavorites } from '@/lib/favorites';
+import type { BookmarkWithCount } from '@/lib/types';
 
 /** localStorage에 실제로 저장된 값을 파싱해 돌려준다. */
 function storedFavs(): unknown {
@@ -269,5 +270,81 @@ describe('useFavorites', () => {
       result.current.toggle('a');
     });
     expect(result.current.favs).toEqual(new Set());
+  });
+});
+
+/** pickFavorites 검증용 최소 북마크 — 이 함수는 id 와 배열 순서 말고는 아무것도 보지 않는다. */
+function makeBookmark(id: string): BookmarkWithCount {
+  return {
+    id,
+    category_id: null,
+    title: `제목 ${id}`,
+    url: `https://example.com/${id}`,
+    description: null,
+    tags: [],
+    favicon_url: null,
+    is_pinned: false,
+    sort_order: 0,
+    created_at: '2024-01-01T00:00:00.000Z',
+    click_count: 0,
+  };
+}
+
+const A = makeBookmark('a');
+const B = makeBookmark('b');
+const C = makeBookmark('c');
+const ALL = [A, B, C];
+
+describe('pickFavorites', () => {
+  it('담은 순서를 그대로 지킨다 — sort_order 로 다시 세우지 않는다', () => {
+    // 저장 순서(c → a → b)는 배열 순서(a → b → c)와 일부러 다르게 둔다.
+    expect(pickFavorites(ALL, new Set(['c', 'a', 'b']))).toEqual([C, A, B]);
+  });
+
+  it('담지 않은 링크는 빼고 담은 것만 남긴다', () => {
+    expect(pickFavorites(ALL, new Set(['b']))).toEqual([B]);
+  });
+
+  it('이제 없는 링크 id 가 favs 에 남아 있으면 건너뛴다', () => {
+    expect(pickFavorites(ALL, new Set(['a', '사라진-링크', 'c']))).toEqual([A, C]);
+  });
+
+  it('죽은 id 만 남았으면 빈 배열이다 — favs.size 와 길이가 어긋난다', () => {
+    const favs = new Set(['사라진-링크']);
+
+    expect(pickFavorites(ALL, favs)).toEqual([]);
+    // 사이드바의 favCount 는 favs.size(1)라 화면의 0개와 어긋난다(SidebarContainer 주석 참고).
+    expect(favs.size).toBe(1);
+  });
+
+  it('담은 것이 없거나 링크가 하나도 없으면 빈 배열이다', () => {
+    expect(pickFavorites(ALL, new Set())).toEqual([]);
+    expect(pickFavorites([], new Set(['a']))).toEqual([]);
+  });
+
+  it('원본 배열과 favs 를 건드리지 않는다', () => {
+    const bookmarks = [...ALL];
+    const favs = new Set(['c', 'a']);
+
+    pickFavorites(bookmarks, favs);
+
+    expect(bookmarks).toEqual(ALL);
+    expect([...favs]).toEqual(['c', 'a']);
+  });
+
+  it('같은 북마크 객체를 그대로 돌려준다 (복사하지 않는다)', () => {
+    expect(pickFavorites(ALL, new Set(['b']))[0]).toBe(B);
+  });
+});
+
+describe('favToastText', () => {
+  // 프로토타입 `toggleFav` 원문(docs/prototype/링크 대시보드 v2.dc.html 701행):
+  //   this.say(on ? (b.title + ' · 홈 즐겨찾기에 담김') : (b.title + ' 즐겨찾기 해제'));
+  it('담으면 "<제목> · 홈 즐겨찾기에 담김" 이다', () => {
+    expect(favToastText('노션', true)).toBe('노션 · 홈 즐겨찾기에 담김');
+  });
+
+  it('빼면 "<제목> 즐겨찾기 해제" 다', () => {
+    expect(favToastText('노션', false)).toBe('노션 즐겨찾기 해제');
   });
 });

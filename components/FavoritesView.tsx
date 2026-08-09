@@ -1,7 +1,7 @@
 'use client';
 
 import { ListView } from '@/components/ListView';
-import { useFavorites } from '@/lib/favorites';
+import { pickFavorites, useFavorites } from '@/lib/favorites';
 import type { BookmarkWithCount } from '@/lib/types';
 
 export type FavoritesViewProps = {
@@ -33,13 +33,10 @@ const EMPTY_MESSAGE = '아직 담은 즐겨찾기가 없습니다. 목록에서 
 export function FavoritesView({ bookmarks }: FavoritesViewProps) {
   const { favs } = useFavorites();
 
-  // 담은 순서(favs)를 그대로 지킨다 — sort_order 로 다시 세우지 않는다(홈의 즐겨찾기 섹션과 같은
-  // 규칙이라 두 화면의 순서가 어긋나지 않는다). 지워진 링크의 id 가 localStorage 에 남아 있을 수
-  // 있으므로 데이터에 있는 것만 남긴다.
-  const byId = new Map(bookmarks.map((bookmark) => [bookmark.id, bookmark]));
-  const items = [...favs]
-    .map((id) => byId.get(id))
-    .filter((bookmark): bookmark is BookmarkWithCount => bookmark !== undefined);
+  // 담은 순서 유지 · 죽은 id 제외 — 홈의 즐겨찾기 섹션과 같은 규칙이라 두 화면이 같은 순수 함수를
+  // 쓴다(lib/favorites 의 pickFavorites). 여기서 고른 배열이 그대로 ListView 의 목록이 되므로,
+  // 그 화면에서 핀을 빼면 다음 렌더에 이 배열에서 빠져 카드도 함께 사라진다.
+  const items = pickFavorites(bookmarks, favs);
 
   return (
     <ListView

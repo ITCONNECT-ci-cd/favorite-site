@@ -10,9 +10,10 @@
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import FavoritesPage from '@/app/favorites/page';
+import { TOAST_DURATION_MS, Toaster } from '@/components/Toast';
 import { FAVS_KEY } from '@/lib/constants';
 import type { BookmarkWithCount, Category, SiteData } from '@/lib/types';
 import { buildSeed, toBookmarkRow, type RawLink } from '@/scripts/seed-mapper';
@@ -138,6 +139,46 @@ describe('내 즐겨찾기 — 빈 상태 (DESIGN_SPEC 4장)', () => {
 
     await renderPage();
 
+    expect(
+      screen.getByText('아직 담은 즐겨찾기가 없습니다. 목록에서 카드의 핀을 눌러보세요.'),
+    ).toBeInTheDocument();
+  });
+});
+
+describe('내 즐겨찾기 — 핀 해제 (D6)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    // 모듈 레벨 토스트 스토어가 다음 테스트로 새지 않게 자동 소멸까지 흘려보낸다(Toast.tsx 규약).
+    act(() => {
+      vi.advanceTimersByTime(TOAST_DURATION_MS);
+    });
+    vi.useRealTimers();
+  });
+
+  it('핀을 다시 누르면 그 카드가 곧바로 사라진다 — 이 화면은 담긴 것만 그리기 때문이다', async () => {
+    setFavs(FAV_IDS);
+    const { container } = await renderPage();
+    render(<Toaster />);
+
+    // FAV_IDS 순서라 첫 카드는 BOOKMARKS[200] 이다.
+    fireEvent.click(pins()[0]);
+
+    expectCards(container, [BOOKMARKS[5], BOOKMARKS[40]]);
+    expect(screen.getByText('2개')).toBeInTheDocument();
+    expect(screen.getByText(`${BOOKMARKS[200].title} 즐겨찾기 해제`)).toBeInTheDocument();
+  });
+
+  it('마지막 하나를 빼면 빈 상태 안내로 바뀐다', async () => {
+    setFavs([BOOKMARKS[5].id]);
+    const { container } = await renderPage();
+
+    fireEvent.click(pins()[0]);
+
+    expect(container.querySelector('.grid')).toBeNull();
+    expect(screen.getByText('0개')).toBeInTheDocument();
     expect(
       screen.getByText('아직 담은 즐겨찾기가 없습니다. 목록에서 카드의 핀을 눌러보세요.'),
     ).toBeInTheDocument();

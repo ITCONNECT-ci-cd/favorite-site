@@ -1,9 +1,11 @@
 /** D2. 홈 화면 — DESIGN_SPEC 3장(섹션 3개 + 하단 안내). */
-import { render, screen, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HomeView } from '@/components/HomeView';
+import { TOAST_DURATION_MS, Toaster } from '@/components/Toast';
 import { FAVS_KEY, OPERATING_CATEGORY_NAME } from '@/lib/constants';
+import { useFavorites } from '@/lib/favorites';
 import { rollupCounts } from '@/lib/queries';
 import type { BookmarkWithCount, Category, SiteData } from '@/lib/types';
 import { buildSeed, toBookmarkRow, type RawLink } from '@/scripts/seed-mapper';
@@ -63,6 +65,27 @@ function expectCards(name: string, expected: readonly BookmarkWithCount[]): void
 /** 섹션 안 카드의 핀 버튼 — 없으면 빈 배열. */
 const pins = (name: string) =>
   within(section(name)).queryAllByRole('button', { name: /.+ 즐겨찾기$/ });
+
+/** localStorage 에 실제로 저장된 순서. */
+function storedFavs(): unknown {
+  const raw = localStorage.getItem(FAVS_KEY);
+  return raw === null ? null : JSON.parse(raw);
+}
+
+/**
+ * 다른 화면(목록·카테고리)에서 담는 상황 모사.
+ * 홈에는 담을 수단이 없다 — 즐겨찾기 섹션의 핀은 이미 담긴 카드에만 있고, 매일·운영은 핀 자체가
+ * 없다. 그래서 '담기 → 카드 등장'은 같은 스토어를 쓰는 바깥 인스턴스로 확인한다.
+ */
+function FavToggler({ id }: { id: string }) {
+  const { toggle } = useFavorites();
+
+  return (
+    <button type="button" onClick={() => toggle(id)}>
+      다른 화면에서 담기
+    </button>
+  );
+}
 
 beforeEach(() => {
   localStorage.clear();
@@ -274,6 +297,87 @@ describe('HomeView — 현재 운영 중인 사이트 섹션', () => {
     expect(
       screen.queryByRole('region', { name: '현재 운영 중인 사이트' }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe('HomeView — 핀 토글 (D6)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    // 모듈 레벨 토스트 스토어가 다음 테스트로 새지 않게 자동 소멸까지 흘려보낸다(Toast.tsx 규약).
+    act(() => {
+      vi.advanceTimersByTime(TOAST_DURATION_MS);
+    });
+    vi.useRealTimers();
+  });
+
+  it('즐겨찾기 카드의 핀을 누르면 그 카드가 곧바로 사라지고 해제 토스트가 뜬다', () => {
+    setFavs(FAV_IDS);
+    render(
+      <>
+        <HomeView data={DATA} />
+        <Toaster />
+      </>,
+    );
+
+    // FAV_IDS 순서라 첫 카드는 BOOKMARKS[200] 이다.
+    fireEvent.click(pins('내 즐겨찾기')[0]);
+
+    expectCards('내 즐겨찾기', [BOOKMARKS[5], BOOKMARKS[40]]);
+    expect(screen.getByText(`${BOOKMARKS[200].title} 즐겨찾기 해제`)).toBeInTheDocument();
+    expect(storedFavs()).toEqual([BOOKMARKS[5].id, BOOKMARKS[40].id]);
+  });
+
+  it('보조문·열기 버튼의 개수도 함께 줄어든다', () => {
+    setFavs(FAV_IDS);
+    render(<HomeView data={DATA} />);
+
+    fireEvent.click(pins('내 즐겨찾기')[0]);
+
+    expect(
+      screen.getByText('핀으로 직접 담은 2개 · 이 브라우저에만 저장됩니다'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '2개 한 번에 열기' })).toBeInTheDocument();
+  });
+
+  it('마지막 하나를 빼면 빈 즐겨찾기 안내로 바뀐다', () => {
+    setFavs([BOOKMARKS[5].id]);
+    render(<HomeView data={DATA} />);
+
+    fireEvent.click(pins('내 즐겨찾기')[0]);
+
+    expect(pins('내 즐겨찾기')).toHaveLength(0);
+    expect(
+      within(section('내 즐겨찾기')).getByText(
+        '다른 화면에서 카드 오른쪽 위의 핀을 누르면 이 자리에 모입니다. 매일 사용하는 사이트와 달리 내가 직접 담고 빼는 목록입니다.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('다른 화면에서 담으면 즐겨찾기 섹션에 곧바로 나타난다', () => {
+    render(
+      <>
+        <HomeView data={DATA} />
+        <FavToggler id={BOOKMARKS[5].id} />
+      </>,
+    );
+    expect(pins('내 즐겨찾기')).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole('button', { name: '다른 화면에서 담기' }));
+
+    expectCards('내 즐겨찾기', [BOOKMARKS[5]]);
+    expect(pins('내 즐겨찾기')[0]).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('핀을 배선한 뒤에도 매일·운영 섹션에는 핀이 없다 (관리자 영역)', () => {
+    setFavs(FAV_IDS);
+    render(<HomeView data={DATA} />);
+
+    expect(pins('내 즐겨찾기')).toHaveLength(3);
+    expect(pins('매일 사용하는 사이트')).toHaveLength(0);
+    expect(pins('현재 운영 중인 사이트')).toHaveLength(0);
   });
 });
 

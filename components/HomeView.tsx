@@ -1,14 +1,16 @@
 'use client';
 
 import Link from 'next/link';
+import { useCallback } from 'react';
 
 import { CardGrid } from '@/components/CardGrid';
 import { EmptyBox } from '@/components/EmptyBox';
 import { LinkCard } from '@/components/LinkCard';
 import { SectionHeader } from '@/components/SectionHeader';
+import { toast } from '@/components/Toast';
 import { OPERATING_CATEGORY_NAME } from '@/lib/constants';
-import { useFavorites } from '@/lib/favorites';
-import type { BookmarkWithCount, Category, SiteData } from '@/lib/types';
+import { favToastText, pickFavorites, useFavorites } from '@/lib/favorites';
+import type { Category, SiteData } from '@/lib/types';
 
 export type HomeViewProps = {
   /** 서버(app/page.tsx)가 getAllData 로 읽어 넘긴 전체 데이터. 두 배열 모두 sort_order 순이다. */
@@ -51,19 +53,32 @@ function findOperatingIds(categories: readonly Category[]): { id: string; ids: S
  * **한 번만** 부르고 카드에는 계산된 값을 내린다 — 카드마다 부르면 렌더 때마다 카드 수만큼
  * 동기 localStorage 읽기가 생긴다(E1 규약).
  *
- * 아직 배선하지 않은 것: 열기 버튼(`onOpenAll`)은 2단계 G4, 핀 토글(`onToggleFav`)과 토스트는
- * D6, 클릭 기록(`onOpen`)은 F3 몫이다.
+ * 아직 배선하지 않은 것: 열기 버튼(`onOpenAll`)은 2단계 G4, 클릭 기록(`onOpen`)은 F3 몫이다.
  */
 export function HomeView({ data }: HomeViewProps) {
   const { categories, bookmarks } = data;
-  const { favs } = useFavorites();
+  const { favs, toggle } = useFavorites();
 
-  // 즐겨찾기는 담은 순서(favs)를 그대로 지킨다 — sort_order 로 다시 세우지 않는다.
-  // 지워진 링크의 id 가 localStorage 에 남아 있을 수 있으므로 데이터에 있는 것만 남긴다.
-  const byId = new Map(bookmarks.map((bookmark) => [bookmark.id, bookmark]));
-  const favItems = [...favs]
-    .map((id) => byId.get(id))
-    .filter((bookmark): bookmark is BookmarkWithCount => bookmark !== undefined);
+  // 담은 순서 유지 · 죽은 id 제외는 `/favorites` 와 같은 규칙이라 lib/favorites 의 순수 함수를 쓴다.
+  const favItems = pickFavorites(bookmarks, favs);
+
+  /**
+   * 핀 토글 — 담고/빼고 토스트로 알린다(DESIGN_SPEC 7장).
+   *
+   * 카드마다 새 함수가 생기지 않도록 useCallback 으로 묶는다. `favs` 가 deps 에 있는 것은 토스트
+   * 문구가 방향(담김/해제)을 알아야 하기 때문이고, 그 값이 바뀌는 렌더는 어차피 카드가 다시 그려지는
+   * 렌더다. `bookmarks` 는 서버가 넘긴 배열이라 렌더마다 새로 만들어지지 않는다.
+   */
+  const handleToggleFav = useCallback(
+    (id: string) => {
+      // 카드가 돌려준 id 라 이 배열에 반드시 있다. 없더라도 토글은 하고 토스트만 건너뛴다.
+      const bookmark = bookmarks.find((item) => item.id === id);
+
+      toggle(id);
+      if (bookmark !== undefined) toast(favToastText(bookmark.title, !favs.has(id)));
+    },
+    [bookmarks, favs, toggle],
+  );
 
   const daily = bookmarks.filter((bookmark) => bookmark.is_pinned);
 
@@ -96,9 +111,15 @@ export function HomeView({ data }: HomeViewProps) {
 
         {favItems.length > 0 ? (
           <CardGrid>
-            {/* favs 에서 뽑은 카드라 핀은 언제나 켜짐이다. */}
+            {/* favs 에서 뽑은 카드라 핀은 언제나 켜짐이고, 누르면 빼는 동작뿐이다
+                (빼는 순간 favItems 에서 사라져 카드도 함께 없어진다). */}
             {favItems.map((bookmark) => (
-              <LinkCard key={bookmark.id} bookmark={bookmark} isFaved />
+              <LinkCard
+                key={bookmark.id}
+                bookmark={bookmark}
+                isFaved
+                onToggleFav={handleToggleFav}
+              />
             ))}
           </CardGrid>
         ) : (

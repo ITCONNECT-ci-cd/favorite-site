@@ -2,6 +2,7 @@
 
 import { useCallback, useSyncExternalStore } from 'react';
 import { FAVS_KEY } from '@/lib/constants';
+import type { BookmarkWithCount } from '@/lib/types';
 
 export type Favorites = {
   /**
@@ -137,4 +138,40 @@ export function useFavorites(): Favorites {
   const isFaved = useCallback((id: string) => favs.has(id), [favs]);
 
   return { favs, toggle, isFaved };
+}
+
+/**
+ * 담긴 링크만 **담은 순서대로** 골라낸다. 홈의 즐겨찾기 섹션과 `/favorites` 가 공유하는 규칙이라
+ * 한곳에 둔다 — 두 화면이 같은 목록을 같은 순서로 보여야 한다.
+ *
+ * 순서는 `favs`(localStorage 저장 순서)를 그대로 따르고 `bookmarks` 의 sort_order 로 다시 세우지
+ * 않는다. 지워진 링크의 id 가 localStorage 에 남아 있을 수 있으므로 `bookmarks` 에 있는 것만
+ * 남긴다 — 그래서 결과 길이가 `favs.size` 보다 작을 수 있다(SidebarContainer 의 favCount 주석 참고).
+ *
+ * 순수 함수다 — 인자를 건드리지 않고 북마크 객체도 복사하지 않는다.
+ */
+export function pickFavorites(
+  bookmarks: readonly BookmarkWithCount[],
+  favs: ReadonlySet<string>,
+): BookmarkWithCount[] {
+  const byId = new Map(bookmarks.map((bookmark) => [bookmark.id, bookmark]));
+
+  return [...favs]
+    .map((id) => byId.get(id))
+    .filter((bookmark): bookmark is BookmarkWithCount => bookmark !== undefined);
+}
+
+/**
+ * 핀을 눌렀을 때 띄울 토스트 문구. 프로토타입 `toggleFav` 의 원문을 그대로 옮겼다
+ * (docs/prototype/링크 대시보드 v2.dc.html 701행):
+ *
+ * ```js
+ * this.say(on ? (b.title + ' · 홈 즐겨찾기에 담김') : (b.title + ' 즐겨찾기 해제'));
+ * ```
+ *
+ * `faved` 는 **토글이 끝난 뒤**의 상태다(담겼으면 true). 배선하는 화면이 둘(HomeView·ListView)이라
+ * 문구가 갈라지지 않게 여기서 한 번만 적는다.
+ */
+export function favToastText(title: string, faved: boolean): string {
+  return faved ? `${title} · 홈 즐겨찾기에 담김` : `${title} 즐겨찾기 해제`;
 }

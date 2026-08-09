@@ -5,9 +5,10 @@
  * 카드 내부 DOM(열기 영역이 버튼인지 앵커인지 등)에는 기대지 않는다 — 카드는 C2 의 계약대로
  * 제목을 그리고, 여기서는 '어떤 카드가 몇 장 보이는가'만 본다.
  */
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ListView, type ListViewProps } from '@/components/ListView';
+import { TOAST_DURATION_MS, Toaster } from '@/components/Toast';
 import { FAVS_KEY } from '@/lib/constants';
 import type { BookmarkWithCount } from '@/lib/types';
 
@@ -244,6 +245,78 @@ describe('ListView — 본문 (홈과 같은 카드 그리드)', () => {
     expect(screen.queryByText(/^전체 \d+개 열기$/)).toBeNull();
     expect(screen.queryByText(/^선택 \d+개 열기$/)).toBeNull();
     expect(screen.queryByText('선택 해제')).toBeNull();
+  });
+});
+
+describe('ListView — 핀 토글 (D6)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    // 모듈 레벨 토스트 스토어가 다음 테스트로 새지 않게 자동 소멸까지 흘려보낸다(Toast.tsx 규약).
+    act(() => {
+      vi.advanceTimersByTime(TOAST_DURATION_MS);
+    });
+    vi.useRealTimers();
+  });
+
+  const pin = (title: string) => screen.getByLabelText(`${title} 즐겨찾기`);
+
+  /** localStorage 에 실제로 저장된 순서. */
+  function storedFavs(): unknown {
+    const raw = localStorage.getItem(FAVS_KEY);
+    return raw === null ? null : JSON.parse(raw);
+  }
+
+  it('핀을 누르면 담기고 프로토타입 문구로 알린다', () => {
+    renderList();
+    render(<Toaster />);
+
+    fireEvent.click(pin('대화A'));
+
+    expect(pin('대화A')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('대화A · 홈 즐겨찾기에 담김')).toBeInTheDocument();
+    expect(storedFavs()).toEqual(['대화A']);
+  });
+
+  it('담긴 카드의 핀을 다시 누르면 빠지고 해제 문구로 알린다', () => {
+    localStorage.setItem(FAVS_KEY, JSON.stringify(['대화A']));
+    renderList();
+    render(<Toaster />);
+
+    expect(pin('대화A')).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.click(pin('대화A'));
+
+    expect(pin('대화A')).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByText('대화A 즐겨찾기 해제')).toBeInTheDocument();
+    expect(storedFavs()).toEqual([]);
+  });
+
+  it('토글한 카드만 바뀐다 — 옆 카드는 그대로다', () => {
+    renderList();
+
+    fireEvent.click(pin('대화A'));
+
+    expect(pin('대화A')).toHaveAttribute('aria-pressed', 'true');
+    for (const title of ['직속', '대화B', '영상A']) {
+      expect(pin(title)).toHaveAttribute('aria-pressed', 'false');
+    }
+  });
+
+  it('하위 탭으로 좁혀 놓은 화면에서도 토글된다', () => {
+    renderList({ subTabs: SUB_TABS });
+    render(<Toaster />);
+
+    fireEvent.click(chip('영상 1'));
+    fireEvent.click(pin('영상A'));
+
+    expect(pin('영상A')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('영상A · 홈 즐겨찾기에 담김')).toBeInTheDocument();
+    // 토글이 탭 선택을 되돌리지 않는다.
+    expect(chip('영상 1')).toHaveAttribute('aria-pressed', 'true');
+    expect(shownTitles(screen.getByRole('main'))).toEqual(['영상A']);
   });
 });
 

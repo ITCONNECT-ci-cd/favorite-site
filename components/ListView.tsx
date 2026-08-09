@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { CardGrid } from '@/components/CardGrid';
 import { EmptyBox } from '@/components/EmptyBox';
 import { LinkCard } from '@/components/LinkCard';
-import { useFavorites } from '@/lib/favorites';
+import { toast } from '@/components/Toast';
+import { favToastText, useFavorites } from '@/lib/favorites';
 import type { BookmarkWithCount } from '@/lib/types';
 
 /** 칩 하나 = 하위 분류 하나. 개수는 사이드바와 같은 값이어야 하므로 화면(서버)이 계산해 넘긴다. */
@@ -67,7 +68,27 @@ export function ListView({
 }: ListViewProps) {
   // 뷰 레벨에서 한 번만 읽고 카드에는 결과만 내려보낸다(카드마다 호출하면 렌더당 localStorage 를
   // 카드 수만큼 읽는다 — lib/favorites.ts 사용 규칙).
-  const { favs } = useFavorites();
+  const { favs, toggle } = useFavorites();
+
+  /**
+   * 핀 토글 — 담고/빼고 토스트로 알린다(DESIGN_SPEC 7장). 카테고리·매일·즐겨찾기 화면이 모두
+   * 이 배선을 쓴다. `/favorites` 에서는 뺀 카드가 곧바로 목록에서 사라진다 — 그 화면이 넘기는
+   * `bookmarks` 자체가 담긴 것만 골라낸 배열이기 때문이다(FavoritesView).
+   *
+   * 카드마다 새 함수가 생기지 않도록 useCallback 으로 묶는다. `favs` 가 deps 에 있는 것은 토스트
+   * 문구가 방향(담김/해제)을 알아야 하기 때문이고, 그 값이 바뀌는 렌더는 어차피 카드가 다시
+   * 그려지는 렌더다.
+   */
+  const handleToggleFav = useCallback(
+    (id: string) => {
+      // 카드가 돌려준 id 라 이 배열에 반드시 있다. 없더라도 토글은 하고 토스트만 건너뛴다.
+      const bookmark = bookmarks.find((item) => item.id === id);
+
+      toggle(id);
+      if (bookmark !== undefined) toast(favToastText(bookmark.title, !favs.has(id)));
+    },
+    [bookmarks, favs, toggle],
+  );
 
   const tabs = subTabs ?? [];
   const [selected, setSelected] = useState(initialSubId);
@@ -141,8 +162,13 @@ export function ListView({
         <CardGrid>
           {shown.map((bookmark) => (
             // showPin 은 LinkCard 기본값(true)을 그대로 쓴다 — 목록 화면은 전부 핀이 보인다.
-            // 핀 토글(onToggleFav)·클릭 기록(onOpen)·토스트 배선은 D6·F3 몫이다.
-            <LinkCard key={bookmark.id} bookmark={bookmark} isFaved={favs.has(bookmark.id)} />
+            // 클릭 기록(onOpen) 배선은 F3 몫이다.
+            <LinkCard
+              key={bookmark.id}
+              bookmark={bookmark}
+              isFaved={favs.has(bookmark.id)}
+              onToggleFav={handleToggleFav}
+            />
           ))}
         </CardGrid>
       )}
