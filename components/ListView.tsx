@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import { CardGrid } from '@/components/CardGrid';
 import { EmptyBox } from '@/components/EmptyBox';
 import { LinkCard } from '@/components/LinkCard';
+import { DeleteConfirm } from '@/components/card/DeleteConfirm';
 import { InlineEdit } from '@/components/card/InlineEdit';
 import { useCardHandlers } from '@/components/useCardHandlers';
 import type { BookmarkWithCount } from '@/lib/types';
@@ -130,6 +131,16 @@ export function ListView({
    */
   const [editingId, setEditingId] = useState<string | null>(null);
 
+  /**
+   * 지금 삭제를 묻고 있는 카드 (J3). `editingId` 와 같은 모양·같은 이유로 하나뿐이고, 탭을 옮길 때
+   * 비우지 않는 것도 같다 — 안 보이는 카드의 확인창은 아무도 집어 가지 않고, 그 카드가 목록에서
+   * 빠지는 순간 오버레이도 함께 사라진다.
+   *
+   * **편집과는 서로를 밀어낸다**(아래 두 콜백). 프로토타입이 `askDel` 에서 `editId: null` 을,
+   * `startEdit` 에서 `confirmId: null` 을 함께 넣는 것과 같다(930·928행).
+   */
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
   const handleToggleCheck = useCallback((id: string) => {
     setChecked((prev) => {
       const next = new Set(prev);
@@ -247,32 +258,55 @@ export function ListView({
         <EmptyBox>{emptyMessage}</EmptyBox>
       ) : (
         <CardGrid>
-          {shown.map((bookmark) => (
-            // showPin 은 LinkCard 기본값(true)을 그대로 쓴다 — 목록 화면은 전부 핀이 보인다.
-            // 체크는 이 화면들만 켠다(계획서 V3) — 홈에는 없다. 켜진 카드의 잉크 테두리는
-            // 카드가 알아서 처리한다(C2).
-            <LinkCard
-              key={bookmark.id}
-              bookmark={bookmark}
-              showCheck
-              checked={checked.has(bookmark.id)}
-              onToggleCheck={handleToggleCheck}
-              isFaved={favs.has(bookmark.id)}
-              onToggleFav={handleToggleFav}
-              onOpen={handleOpen}
-              // 관리자 전용 연필·휴지통 (J1). 휴지통이 눌렸을 때의 동작은 J3 이 채운다.
-              isAdmin={isAdmin}
-              // 연필 → 이 카드의 본문·하단을 편집 폼으로 교체 (J2). 플래그와 노드를 함께 준다 —
-              // 하나만 주면 카드가 무시하도록 되어 있지만(폼 없는 빈 카드 금지) 애초에 어긋나지 않게 한다.
-              onEdit={setEditingId}
-              isEditing={editingId === bookmark.id}
-              editSlot={
-                editingId === bookmark.id ? (
-                  <InlineEdit bookmark={bookmark} onDone={() => setEditingId(null)} />
-                ) : undefined
-              }
-            />
-          ))}
+          {shown.map((bookmark) => {
+            // 같은 판정을 플래그와 슬롯이 나눠 쓰므로 한 번만 계산한다 — 두 자리에 적어 두면
+            // 한쪽만 고쳐져 '폼 없는 빈 카드'(LinkCard 의 isEditing JSDoc)가 만들어질 수 있다.
+            const isEditing = editingId === bookmark.id;
+            const isDeleting = deletingId === bookmark.id;
+
+            return (
+              // showPin 은 LinkCard 기본값(true)을 그대로 쓴다 — 목록 화면은 전부 핀이 보인다.
+              // 체크는 이 화면들만 켠다(계획서 V3) — 홈에는 없다. 켜진 카드의 잉크 테두리는
+              // 카드가 알아서 처리한다(C2).
+              <LinkCard
+                key={bookmark.id}
+                bookmark={bookmark}
+                showCheck
+                checked={checked.has(bookmark.id)}
+                onToggleCheck={handleToggleCheck}
+                isFaved={favs.has(bookmark.id)}
+                onToggleFav={handleToggleFav}
+                onOpen={handleOpen}
+                // 관리자 전용 연필·휴지통 (J1).
+                isAdmin={isAdmin}
+                // 연필 → 이 카드의 본문·하단을 편집 폼으로 교체 (J2). 플래그와 노드를 함께 준다 —
+                // 하나만 주면 카드가 무시하도록 되어 있지만(폼 없는 빈 카드 금지) 애초에 어긋나지 않게 한다.
+                // 편집을 열면 묻고 있던 삭제는 닫는다 (프로토타입 928행 `startEdit`).
+                onEdit={(id) => {
+                  setEditingId(id);
+                  setDeletingId(null);
+                }}
+                isEditing={isEditing}
+                editSlot={
+                  isEditing ? (
+                    <InlineEdit bookmark={bookmark} onDone={() => setEditingId(null)} />
+                  ) : undefined
+                }
+                // 휴지통 → 카드 위에 삭제 확인 오버레이 (J3). **여기서 지우지 않는다** — 이 콜백은
+                // '삭제'가 아니라 '삭제를 묻기'이고(DESIGN_SPEC 2-1), 지우는 일은 오버레이의 `삭제` 가 한다.
+                // 삭제를 물으면 열려 있던 편집은 닫는다 (프로토타입 930행 `askDel`).
+                onDelete={(id) => {
+                  setDeletingId(id);
+                  setEditingId(null);
+                }}
+                deleteSlot={
+                  isDeleting ? (
+                    <DeleteConfirm bookmark={bookmark} onDone={() => setDeletingId(null)} />
+                  ) : undefined
+                }
+              />
+            );
+          })}
         </CardGrid>
       )}
     </main>

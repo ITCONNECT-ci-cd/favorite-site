@@ -16,11 +16,18 @@ export type SidebarContainerProps = Omit<SidebarProps, 'favCount'>;
  * SSR·하이드레이션 첫 렌더의 favCount 는 0 이다(useFavorites 의 서버 스냅샷).
  * 하이드레이션이 끝난 뒤 저장된 값으로 채워지므로 불일치 경고가 나지 않는다.
  *
- * **알려진 어긋남**: 여기의 favCount 는 `favs.size`(저장된 원본)이지만, 화면(홈의 즐겨찾기 섹션 ·
+ * **어긋남과 그 처리**: 여기의 favCount 는 `favs.size`(저장된 원본)이지만, 화면(홈의 즐겨찾기 섹션 ·
  * `/favorites`)이 세는 값은 `pickFavorites` 로 죽은 id 를 걸러 낸 뒤의 개수다. 지워진 링크의 id 가
- * localStorage 에 남아 있으면 사이드바가 더 크게 나온다. 1단계에서 이 상태를 만드는 경로는
- * 재시드(링크 id 가 통째로 바뀐다)뿐이라 그대로 둔다 — 삭제로도 생기게 되는 3단계 J2 에서
- * 함께 고친다(계획서에 기록됨).
+ * localStorage 에 남아 있으면 사이드바가 더 크게 나온다.
+ *
+ * 그 id 를 만드는 경로가 **링크 삭제**(J3)이므로, 어긋남을 여기 표시 단계에서 가리는 대신 원인이
+ * 생기는 자리에서 지운다 — `components/card/DeleteConfirm.tsx` 가 삭제에 성공하면 그 id 를 이
+ * 브라우저의 즐겨찾기에서도 곧바로 뺀다. 그래서 이 화면은 셀 것을 늘리지 않아도 된다.
+ *
+ * 남는 경로는 **그 삭제를 겪지 않은 브라우저**뿐이다(다른 방문자 · 재시드로 id 가 통째로 바뀐 경우).
+ * 그쪽까지 맞추려면 셸이 실존 링크 id 를 이 래퍼에 내려보내 교집합을 세야 하는데, 그것은 셸
+ * (app/(public)/layout.tsx)의 소관이라 J3 범위에서는 손대지 않았다. 그 브라우저에서는 사이드바
+ * 숫자가 실제 목록보다 큰 채로 남는다 — 죽은 id 는 스스로 사라지지 않는다.
  */
 export function SidebarContainer(props: SidebarContainerProps) {
   const { favs } = useFavorites();

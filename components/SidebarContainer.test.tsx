@@ -1,13 +1,18 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { renderToString } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { DeleteConfirm } from '@/components/card/DeleteConfirm';
 import { SidebarContainer, type SidebarContainerProps } from '@/components/SidebarContainer';
 import { useFavorites } from '@/lib/favorites';
-import type { Category } from '@/lib/types';
+import { deleteBookmark } from '@/lib/mutations';
+import type { BookmarkWithCount, Category } from '@/lib/types';
 import { setFavs } from '@/test/favs';
 
 /** Sidebar 가 usePathname 을 쓰므로 라우터 컨텍스트 없이 렌더하려면 모킹해야 한다. */
 vi.mock('next/navigation', () => ({ usePathname: () => '/' }));
+
+/** 아래 '즐겨찾기 정합' 묶음이 진짜 삭제 확인 오버레이를 쓰므로 액션만 갈아 끼운다. */
+vi.mock('@/lib/mutations', () => ({ deleteBookmark: vi.fn() }));
 
 const CATEGORIES: Category[] = [
   { id: 'ai', name: 'AI 도구 모음', parent_id: null, sort_order: 0 },
@@ -92,6 +97,44 @@ describe('SidebarContainer', () => {
     // 다시 빼면 되돌아온다 — 구독이 한 방향으로만 도는지까지 본다.
     fireEvent.click(screen.getByRole('button', { name: '토글' }));
     expect(countOf('내 즐겨찾기')).toBe('0');
+  });
+
+  /**
+   * J3 — 지운 링크의 id 가 localStorage 에 남으면 이 숫자만 실제 목록보다 커진다
+   * (화면의 목록은 `pickFavorites` 로 죽은 id 를 걸러 낸다). 그 어긋남을 여기서 가리지 않고
+   * 원인이 생기는 자리(삭제 확인)에서 지우므로, 진짜 오버레이를 함께 세워 확인한다.
+   */
+  it('링크를 지우면 그 id 가 즐겨찾기에서 빠져 개수가 곧바로 줄어든다 (J3)', async () => {
+    vi.mocked(deleteBookmark).mockResolvedValue({ ok: true });
+    setFavs(['bm-1', 'bm-2', 'bm-3']);
+
+    const bookmark: BookmarkWithCount = {
+      id: 'bm-2',
+      category_id: 'ai',
+      title: 'ChatGPT',
+      url: 'https://chat.openai.com',
+      description: null,
+      tags: [],
+      favicon_url: null,
+      is_pinned: false,
+      sort_order: 0,
+      created_at: '2024-01-01T00:00:00.000Z',
+      click_count: 0,
+    };
+
+    render(
+      <>
+        <SidebarContainer {...PROPS} />
+        <DeleteConfirm bookmark={bookmark} onDone={() => {}} />
+      </>,
+    );
+    expect(countOf('내 즐겨찾기')).toBe('3');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '삭제' }));
+    });
+
+    expect(countOf('내 즐겨찾기')).toBe('2');
   });
 
   it('서버 렌더에서는 저장된 값이 있어도 0 이다 (하이드레이션 불일치 방지)', () => {

@@ -10,7 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ListView, type ListViewProps } from '@/components/ListView';
 import { Toaster } from '@/components/Toast';
 import { recordClick } from '@/lib/clicks';
-import { updateBookmark } from '@/lib/mutations';
+import { deleteBookmark, updateBookmark } from '@/lib/mutations';
 import type { BookmarkWithCount } from '@/lib/types';
 import { middleClick } from '@/test/events';
 import { setFavs, storedFavs } from '@/test/favs';
@@ -27,10 +27,17 @@ vi.mock('@/lib/clicks', async (importOriginal) => ({
 }));
 
 /**
- * 쓰기 서버 액션(J2 인라인 편집)도 갈아 끼운다 — 액션의 검사·문구는 `lib/mutations.test.ts` 몫이고,
- * 여기서는 이 화면이 어느 링크에 무엇을 보내는지만 본다.
+ * 쓰기 서버 액션(J2 인라인 편집 · J3 삭제)도 갈아 끼운다 — 액션의 검사·문구는
+ * `lib/mutations.test.ts` 몫이고, 여기서는 이 화면이 어느 링크에 무엇을 보내는지만 본다.
+ *
+ * 위 `@/lib/clicks` 와 같은 **덮어쓰기** 형태다(원본을 펼치고 필요한 것만 vi.fn 으로 바꾼다).
+ * 목록을 손으로 적으면 이 화면이 새 액션을 쓰기 시작하는 순간 그 export 가 통째로 사라진다.
  */
-vi.mock('@/lib/mutations', () => ({ updateBookmark: vi.fn() }));
+vi.mock('@/lib/mutations', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/mutations')>()),
+  updateBookmark: vi.fn(),
+  deleteBookmark: vi.fn(),
+}));
 
 function makeBookmark(
   over: Partial<BookmarkWithCount> & Pick<BookmarkWithCount, 'id'>,
@@ -867,5 +874,112 @@ describe('ListView — 카드 인라인 편집 (J2)', () => {
 
     expect(screen.queryAllByRole('button', { name: /.+ 수정$/ })).toHaveLength(0);
     expect(forms()).toHaveLength(0);
+  });
+});
+
+/**
+ * J3. 카드 삭제 확인 — 목록 화면(카테고리·즐겨찾기·매일)의 카드 렌더 지점 한 곳에 배선한다.
+ *
+ * 오버레이 자체(수치·확인 전 미삭제·실패 처리·포커스)는 `components/card/DeleteConfirm.test.tsx` 가
+ * 고정한다. 여기서 보는 것은 화면의 몫 — **어느 카드가 오버레이를 갖는가**와 **편집과의 상호 배제**다.
+ */
+describe('ListView — 카드 삭제 확인 (J3)', () => {
+  const trash = (title: string) => screen.getByRole('button', { name: `${title} 삭제` });
+  const pencil = (title: string) => screen.getByRole('button', { name: `${title} 수정` });
+  const overlays = () => screen.queryAllByRole('alertdialog');
+  const forms = () => screen.queryAllByRole('form');
+  const button = (name: string) => screen.getByRole('button', { name });
+
+  beforeEach(() => {
+    vi.mocked(updateBookmark).mockReset();
+    vi.mocked(updateBookmark).mockResolvedValue({ ok: true });
+    vi.mocked(deleteBookmark).mockReset();
+    vi.mocked(deleteBookmark).mockResolvedValue({ ok: true });
+  });
+
+  it('휴지통을 눌러도 지우지 않는다 — 그 카드 위에 확인 오버레이만 뜬다', () => {
+    renderList({ isAdmin: true });
+
+    fireEvent.click(trash('대화A'));
+
+    expect(deleteBookmark).not.toHaveBeenCalled();
+    expect(overlays()).toHaveLength(1);
+    expect(screen.getByRole('alertdialog', { name: '대화A 삭제 확인' })).toBeInTheDocument();
+    // 덧대기라 본문은 남는다 — 편집 폼(교체)과 다른 점이다.
+    expect(openLink('대화A')).toBeInTheDocument();
+  });
+
+  it('다른 카드의 휴지통을 누르면 앞 오버레이가 닫힌다 — 동시에 한 링크만', () => {
+    renderList({ isAdmin: true });
+
+    fireEvent.click(trash('대화A'));
+    fireEvent.click(trash('영상A'));
+
+    expect(overlays()).toHaveLength(1);
+    expect(screen.getByRole('alertdialog', { name: '영상A 삭제 확인' })).toBeInTheDocument();
+  });
+
+  it('확인하면 그 링크의 id 를 보내고 오버레이가 닫힌다', async () => {
+    renderList({ isAdmin: true });
+
+    fireEvent.click(trash('대화A'));
+    await act(async () => {
+      fireEvent.click(button('삭제'));
+    });
+
+    expect(deleteBookmark).toHaveBeenCalledExactlyOnceWith('대화A');
+    expect(overlays()).toHaveLength(0);
+    // 목록은 서버가 다시 그려 준다(액션의 revalidatePath) — 이 테스트의 props 는 그대로다.
+    expect(openLink('대화A')).toBeInTheDocument();
+  });
+
+  it('취소하면 아무것도 보내지 않고 오버레이가 닫힌다', () => {
+    renderList({ isAdmin: true });
+
+    fireEvent.click(trash('대화A'));
+    fireEvent.click(button('취소'));
+
+    expect(deleteBookmark).not.toHaveBeenCalled();
+    expect(overlays()).toHaveLength(0);
+  });
+
+  it('삭제를 물으면 열려 있던 편집이 닫힌다 (프로토타입 askDel)', () => {
+    renderList({ isAdmin: true });
+
+    fireEvent.click(pencil('대화A'));
+    expect(forms()).toHaveLength(1);
+
+    fireEvent.click(trash('영상A'));
+
+    expect(forms()).toHaveLength(0);
+    expect(overlays()).toHaveLength(1);
+  });
+
+  it('편집을 열면 묻고 있던 삭제가 닫힌다 (프로토타입 startEdit)', () => {
+    renderList({ isAdmin: true });
+
+    fireEvent.click(trash('대화A'));
+    expect(overlays()).toHaveLength(1);
+
+    fireEvent.click(pencil('영상A'));
+
+    expect(overlays()).toHaveLength(0);
+    expect(forms()).toHaveLength(1);
+  });
+
+  it('하위 탭으로 좁혀 그 카드가 빠지면 오버레이도 함께 사라진다', () => {
+    renderList({ isAdmin: true, subTabs: SUB_TABS });
+
+    fireEvent.click(trash('대화A'));
+    fireEvent.click(chip('영상 1'));
+
+    expect(overlays()).toHaveLength(0);
+  });
+
+  it('비관리자 화면에는 확인 오버레이를 여는 길이 없다', () => {
+    renderList();
+
+    expect(screen.queryAllByRole('button', { name: /.+ 삭제$/ })).toHaveLength(0);
+    expect(overlays()).toHaveLength(0);
   });
 });

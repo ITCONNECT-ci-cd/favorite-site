@@ -7,6 +7,7 @@ import { CardGrid } from '@/components/CardGrid';
 import { EmptyBox } from '@/components/EmptyBox';
 import { LinkCard } from '@/components/LinkCard';
 import { SectionHeader } from '@/components/SectionHeader';
+import { DeleteConfirm } from '@/components/card/DeleteConfirm';
 import { InlineEdit } from '@/components/card/InlineEdit';
 import { useCardHandlers } from '@/components/useCardHandlers';
 import { DAILY_TITLE, FAVORITES_TITLE, OPERATING_CATEGORY_NAME } from '@/lib/constants';
@@ -74,7 +75,8 @@ function findOperatingIds(categories: readonly Category[]): { id: string; ids: S
  * 세 섹션이 모두 같은 배선을 쓴다: 즐겨찾기든 관리자가 정한 자리든 클릭 집계 대상인 것은 같다.
  *
  * `isAdmin` 도 세 섹션 모두에 같이 준다 — 관리자가 고칠 수 있는 대상은 '어느 섹션에 놓였는가'와
- * 무관하다. 연필이 하는 일(J2 인라인 편집)은 아래 `editingId` 가 들고, 휴지통(J3)은 아직 no-op 이다.
+ * 무관하다. 연필이 하는 일(J2 인라인 편집)은 아래 `editingId` 가, 휴지통이 하는 일(J3 삭제 확인)은
+ * `deletingId` 가 든다. 두 상태는 서로를 밀어낸다 — 그 이유는 각 선언에 적어 두었다.
  */
 export function HomeView({ data, isAdmin }: HomeViewProps) {
   const { categories, bookmarks } = data;
@@ -90,6 +92,17 @@ export function HomeView({ data, isAdmin }: HomeViewProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
 
   /**
+   * 지금 삭제를 묻고 있는 카드 (J3). `editingId` 와 같은 모양이고, 같은 이유로 하나뿐이다 —
+   * 확인 오버레이도 동시에 한 링크에만 뜬다.
+   *
+   * **편집과는 서로를 밀어낸다**(아래 두 헬퍼). 프로토타입이 `askDel` 에서 `editId: null` 을,
+   * `startEdit` 에서 `confirmId: null` 을 함께 넣는 것과 같다(930·928행). 한 카드에 폼과
+   * 오버레이가 겹쳐 뜨면 오버레이가 자기 폼을 덮어 버리고, 다른 카드에 남는 확인창은 아무도
+   * 닫지 않는 유령이 된다.
+   */
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  /**
    * 세 섹션이 카드에 똑같이 내려보내는 편집 배선 한 벌. 렌더 지점이 셋이라 여기 모아 둔다 —
    * 한 곳만 고쳐지면 그 섹션에서만 '한 장만' 규칙이 깨진다.
    *
@@ -100,11 +113,36 @@ export function HomeView({ data, isAdmin }: HomeViewProps) {
     const isEditing = editingId === bookmark.id;
 
     return {
-      onEdit: setEditingId,
+      onEdit: (id: string) => {
+        setEditingId(id);
+        // 편집을 열면 묻고 있던 삭제는 닫는다 (프로토타입 928행 `startEdit`).
+        setDeletingId(null);
+      },
       isEditing,
       editSlot: isEditing ? (
         <InlineEdit bookmark={bookmark} onDone={() => setEditingId(null)} />
       ) : undefined,
+    };
+  }
+
+  /**
+   * 같은 자리의 삭제 배선 한 벌 — 위 `editing` 과 나란히 세 렌더 지점 전부에 스프레드한다.
+   *
+   * 카드에는 플래그가 없다(`isEditing` 같은 짝이 없다) — 오버레이는 교체가 아니라 **덧대기**라
+   * 노드가 곧 상태다(LinkCard 의 `deleteSlot` 계약).
+   */
+  function deleting(bookmark: BookmarkWithCount) {
+    return {
+      onDelete: (id: string) => {
+        // 휴지통은 '삭제'가 아니라 '삭제를 묻기'다 — 여기서 지우지 않는다(DESIGN_SPEC 2-1).
+        setDeletingId(id);
+        // 삭제를 물으면 열려 있던 편집은 닫는다 (프로토타입 930행 `askDel`).
+        setEditingId(null);
+      },
+      deleteSlot:
+        deletingId === bookmark.id ? (
+          <DeleteConfirm bookmark={bookmark} onDone={() => setDeletingId(null)} />
+        ) : undefined,
     };
   }
 
@@ -150,6 +188,7 @@ export function HomeView({ data, isAdmin }: HomeViewProps) {
                 onOpen={handleOpen}
                 isAdmin={isAdmin}
                 {...editing(bookmark)}
+                {...deleting(bookmark)}
               />
             ))}
           </CardGrid>
@@ -176,6 +215,7 @@ export function HomeView({ data, isAdmin }: HomeViewProps) {
               onOpen={handleOpen}
               isAdmin={isAdmin}
               {...editing(bookmark)}
+              {...deleting(bookmark)}
             />
           ))}
         </CardGrid>
@@ -207,6 +247,7 @@ export function HomeView({ data, isAdmin }: HomeViewProps) {
                 onOpen={handleOpen}
                 isAdmin={isAdmin}
                 {...editing(bookmark)}
+                {...deleting(bookmark)}
               />
             ))}
           </CardGrid>

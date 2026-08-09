@@ -7,7 +7,7 @@ import { Toaster } from '@/components/Toast';
 import { recordClick } from '@/lib/clicks';
 import { OPERATING_CATEGORY_NAME } from '@/lib/constants';
 import { useFavorites } from '@/lib/favorites';
-import { updateBookmark } from '@/lib/mutations';
+import { deleteBookmark, updateBookmark } from '@/lib/mutations';
 import { rollupCounts } from '@/lib/queries';
 import type { BookmarkWithCount, Category, SiteData } from '@/lib/types';
 import { middleClick } from '@/test/events';
@@ -26,10 +26,18 @@ vi.mock('@/lib/clicks', async (importOriginal) => ({
 }));
 
 /**
- * 쓰기 서버 액션(J2 인라인 편집)도 갈아 끼운다 — 무엇을 검사하고 어떤 문구를 돌려주는지는
+ * 쓰기 서버 액션(J2 인라인 편집 · J3 삭제)도 갈아 끼운다 — 무엇을 검사하고 어떤 문구를 돌려주는지는
  * `lib/mutations.test.ts` 몫이고, 여기서는 화면이 어느 링크에 무엇을 보내는지만 본다.
+ *
+ * 위 `@/lib/clicks` 와 같은 **덮어쓰기** 형태다(원본을 펼치고 필요한 것만 vi.fn 으로 바꾼다).
+ * 목록을 손으로 적으면 이 화면이 새 액션을 쓰기 시작하는 순간 그 export 가 통째로 사라져,
+ * 화면 코드가 아니라 모킹 때문에 테스트가 깨진다.
  */
-vi.mock('@/lib/mutations', () => ({ updateBookmark: vi.fn() }));
+vi.mock('@/lib/mutations', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/mutations')>()),
+  updateBookmark: vi.fn(),
+  deleteBookmark: vi.fn(),
+}));
 
 /**
  * fixture 는 실시드 그대로다 (`test/fixtures/seed.ts`) — 화면에 적히는 실측치
@@ -731,11 +739,223 @@ describe('HomeView — 카드 인라인 편집 (J2)', () => {
     expect(forms()).toHaveLength(0);
   });
 
+  /**
+   * 섹션이 늘어날 때 `{...editing(bookmark)}` 스프레드를 빠뜨리면 그 섹션의 연필만 조용히 아무
+   * 일도 하지 않는다 — 위 테스트들은 세 섹션을 이름으로 짚어 보므로 새 섹션을 보지 못한다.
+   * 그래서 화면에 있는 연필을 **전수** 눌러 본다.
+   */
+  it('화면의 연필 전부가 폼을 연다 — 배선을 빠뜨린 렌더 지점이 없다', () => {
+    renderHome();
+
+    const all = screen.getAllByRole('button', { name: /.+ 수정$/ });
+    expect(all).toHaveLength(31);
+
+    for (const button of all) {
+      fireEvent.click(button);
+      // 같은 링크가 두 섹션에 놓이면 폼도 두 자리에 뜬다 — 개수가 아니라 '열렸는가'를 본다.
+      expect(forms().length).toBeGreaterThan(0);
+    }
+  });
+
   it('비관리자 화면에는 폼을 여는 길이 없다', () => {
     setFavs(FAV_IDS);
     render(<HomeView data={DATA} isAdmin={false} />);
 
     expect(screen.queryAllByRole('button', { name: /.+ 수정$/ })).toHaveLength(0);
     expect(forms()).toHaveLength(0);
+  });
+});
+
+/**
+ * J3. 카드 삭제 확인 — 홈은 **섹션 세 곳의 카드 렌더 지점 전부**에 같은 배선을 흘린다.
+ *
+ * 오버레이 자체(수치·확인 전 미삭제·실패 처리·포커스)는 `components/card/DeleteConfirm.test.tsx` 가
+ * 고정한다. 여기서 보는 것은 화면의 몫 — **어느 카드가 오버레이를 갖는가**와 **편집과의 상호 배제**다.
+ */
+describe('HomeView — 카드 삭제 확인 (J3)', () => {
+  const FAV_FIRST = BOOKMARKS[200];
+  const DAILY_ITEMS = BOOKMARKS.filter((bookmark) => bookmark.is_pinned);
+  const DAILY_FIRST = DAILY_ITEMS[0];
+  const OPERATING_ITEMS = BOOKMARKS.filter((bookmark) => bookmark.category_id === OPERATING_ID);
+
+  /** 운영 중 섹션에만 있는 카드 — 매일과 겹치는 셋을 피한다(J2 describe 와 같은 사정). */
+  const OPERATING_ONLY_INDEX = OPERATING_ITEMS.findIndex((bookmark) => !bookmark.is_pinned);
+  const OPERATING_ONLY = OPERATING_ITEMS[OPERATING_ONLY_INDEX];
+
+  /** 매일·운영 중 두 섹션에 함께 놓이는 링크 — 카드는 둘이지만 링크는 하나다. */
+  const SHARED = OPERATING_ITEMS.find((bookmark) => bookmark.is_pinned)!;
+
+  /** 섹션의 n 번째 카드에 붙은 휴지통·연필. 같은 링크가 두 섹션에 나올 수 있어 카드 안에서 찾는다. */
+  const trash = (name: string, index = 0) =>
+    within(cards(name)[index]).getByRole('button', { name: /.+ 삭제$/ });
+  const pencil = (name: string, index = 0) =>
+    within(cards(name)[index]).getByRole('button', { name: /.+ 수정$/ });
+
+  const overlays = () => screen.queryAllByRole('alertdialog');
+  const forms = () => screen.queryAllByRole('form');
+  const confirmIn = (name: string, index = 0) =>
+    within(cards(name)[index]).getByRole('button', { name: '삭제' });
+
+  function renderHome() {
+    setFavs(FAV_IDS);
+    render(<HomeView data={DATA} isAdmin />);
+  }
+
+  beforeEach(() => {
+    vi.mocked(updateBookmark).mockReset();
+    vi.mocked(updateBookmark).mockResolvedValue({ ok: true });
+    vi.mocked(deleteBookmark).mockReset();
+    vi.mocked(deleteBookmark).mockResolvedValue({ ok: true });
+  });
+
+  it('휴지통을 눌러도 지우지 않는다 — 그 카드 위에 확인 오버레이만 뜬다', () => {
+    renderHome();
+
+    fireEvent.click(trash('내 즐겨찾기'));
+
+    expect(deleteBookmark).not.toHaveBeenCalled();
+    expect(overlays()).toHaveLength(1);
+    expect(
+      within(cards('내 즐겨찾기')[0]).getByRole('alertdialog', {
+        name: `${FAV_FIRST.title} 삭제 확인`,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it('오버레이는 덧대기다 — 본문은 그대로 남는다', () => {
+    renderHome();
+
+    fireEvent.click(trash('내 즐겨찾기'));
+
+    // 편집 폼(교체)과 달리 본문 앵커가 그대로 있다 — 오버레이가 배경으로 덮을 뿐이다.
+    const card = cards('내 즐겨찾기')[0];
+
+    expect(within(card).getByRole('link')).toBeInTheDocument();
+    expect(within(card).getByRole('alertdialog')).toBe(card.lastElementChild);
+  });
+
+  it('오버레이를 연 카드 말고는 그대로다', () => {
+    renderHome();
+
+    fireEvent.click(trash('내 즐겨찾기'));
+
+    expect(overlays()).toHaveLength(1);
+    expect(within(cards('내 즐겨찾기')[1]).queryByRole('alertdialog')).not.toBeInTheDocument();
+  });
+
+  it('섹션이 달라도 한 링크만 묻는다 — 세 렌더 지점이 같은 상태를 나눠 쓴다', () => {
+    renderHome();
+
+    fireEvent.click(trash('내 즐겨찾기'));
+    expect(overlays()[0]).toHaveAccessibleName(`${FAV_FIRST.title} 삭제 확인`);
+
+    fireEvent.click(trash('매일 사용하는 사이트'));
+    expect(overlays()).toHaveLength(1);
+    expect(overlays()[0]).toHaveAccessibleName(`${DAILY_FIRST.title} 삭제 확인`);
+
+    fireEvent.click(trash('현재 운영 중인 사이트', OPERATING_ONLY_INDEX));
+    expect(overlays()).toHaveLength(1);
+    expect(overlays()[0]).toHaveAccessibleName(`${OPERATING_ONLY.title} 삭제 확인`);
+  });
+
+  it('같은 링크가 두 섹션에 놓였으면 두 자리 모두 오버레이가 뜬다 — 지우는 것은 한 건이다', () => {
+    renderHome();
+
+    const dailyIndex = DAILY_ITEMS.findIndex((bookmark) => bookmark.id === SHARED.id);
+
+    fireEvent.click(trash('매일 사용하는 사이트', dailyIndex));
+
+    expect(screen.getAllByRole('alertdialog', { name: `${SHARED.title} 삭제 확인` })).toHaveLength(2);
+  });
+
+  it('두 자리 중 한쪽에서 확인하면 한 번만 보내고 두 자리가 함께 닫힌다', async () => {
+    renderHome();
+
+    const dailyIndex = DAILY_ITEMS.findIndex((bookmark) => bookmark.id === SHARED.id);
+
+    fireEvent.click(trash('매일 사용하는 사이트', dailyIndex));
+    await act(async () => {
+      fireEvent.click(confirmIn('매일 사용하는 사이트', dailyIndex));
+    });
+
+    expect(deleteBookmark).toHaveBeenCalledExactlyOnceWith(SHARED.id);
+    expect(overlays()).toHaveLength(0);
+  });
+
+  it('확인하면 그 링크의 id 를 보내고 오버레이가 닫힌다', async () => {
+    renderHome();
+
+    fireEvent.click(trash('매일 사용하는 사이트'));
+    await act(async () => {
+      fireEvent.click(confirmIn('매일 사용하는 사이트'));
+    });
+
+    expect(deleteBookmark).toHaveBeenCalledWith(DAILY_FIRST.id);
+    expect(overlays()).toHaveLength(0);
+    // 목록은 서버가 다시 그려 준다(액션의 revalidatePath) — 이 테스트의 props 는 그대로다.
+    expect(cards('매일 사용하는 사이트')).toHaveLength(DAILY_ITEMS.length);
+  });
+
+  it('취소하면 아무것도 보내지 않고 오버레이가 닫힌다', () => {
+    renderHome();
+
+    fireEvent.click(trash('현재 운영 중인 사이트', OPERATING_ONLY_INDEX));
+    fireEvent.click(
+      within(cards('현재 운영 중인 사이트')[OPERATING_ONLY_INDEX]).getByRole('button', {
+        name: '취소',
+      }),
+    );
+
+    expect(deleteBookmark).not.toHaveBeenCalled();
+    expect(overlays()).toHaveLength(0);
+  });
+
+  it('삭제를 물으면 열려 있던 편집이 닫힌다 (프로토타입 askDel)', () => {
+    renderHome();
+
+    fireEvent.click(pencil('내 즐겨찾기'));
+    expect(forms()).toHaveLength(1);
+
+    fireEvent.click(trash('매일 사용하는 사이트'));
+
+    expect(forms()).toHaveLength(0);
+    expect(overlays()).toHaveLength(1);
+  });
+
+  it('편집을 열면 묻고 있던 삭제가 닫힌다 (프로토타입 startEdit)', () => {
+    renderHome();
+
+    fireEvent.click(trash('내 즐겨찾기'));
+    expect(overlays()).toHaveLength(1);
+
+    fireEvent.click(pencil('매일 사용하는 사이트'));
+
+    expect(overlays()).toHaveLength(0);
+    expect(forms()).toHaveLength(1);
+  });
+
+  /**
+   * 섹션이 늘어날 때 `{...deleting(bookmark)}` 스프레드를 빠뜨리면 그 섹션의 휴지통만 조용히
+   * 아무 일도 하지 않는다 — 위 테스트들은 세 섹션을 이름으로 짚어 보므로 새 섹션을 보지 못한다.
+   * 그래서 화면에 있는 휴지통을 **전수** 눌러 본다.
+   */
+  it('화면의 휴지통 전부가 오버레이를 연다 — 배선을 빠뜨린 렌더 지점이 없다', () => {
+    renderHome();
+
+    const all = screen.getAllByRole('button', { name: /.+ 삭제$/ });
+    expect(all).toHaveLength(31);
+
+    for (const button of all) {
+      fireEvent.click(button);
+      expect(overlays().length).toBeGreaterThan(0);
+    }
+  });
+
+  it('비관리자 화면에는 확인 오버레이를 여는 길이 없다', () => {
+    setFavs(FAV_IDS);
+    render(<HomeView data={DATA} isAdmin={false} />);
+
+    expect(screen.queryAllByRole('button', { name: /.+ 삭제$/ })).toHaveLength(0);
+    expect(overlays()).toHaveLength(0);
   });
 });
