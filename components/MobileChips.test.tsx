@@ -24,6 +24,9 @@ const CATEGORIES: Category[] = [
   { id: 'op', name: '현재 운영 중인 사이트', parent_id: null, sort_order: 9 },
 ];
 
+/** 셸이 넘기는 것과 같은 조합 — 카테고리 전체 + 운영 중 분류 id. */
+const renderChips = () => render(<MobileChips categories={CATEGORIES} operatingCategoryId="op" />);
+
 const row = () => screen.getByRole('navigation', { name: '바로 가기' });
 const chips = () => within(row()).getAllByRole('link');
 const chip = (name: string) => within(row()).getByRole('link', { name });
@@ -33,8 +36,38 @@ beforeEach(() => {
 });
 
 describe('MobileChips — 구성 (프로토타입 navChips)', () => {
-  it('홈 · 내 즐겨찾기 · 매일 사용 + 상위 카테고리 10개를 순서대로 놓는다', () => {
-    render(<MobileChips categories={CATEGORIES} />);
+  it('빠른 접근 넷 + 나머지 상위 카테고리를 순서대로 놓는다', () => {
+    renderChips();
+
+    expect(chips().map((link) => link.textContent)).toEqual([
+      '홈',
+      '내 즐겨찾기',
+      '매일 사용',
+      '현재 운영 중인 사이트',
+      'AI 도구 모음',
+      '마케팅',
+      '웹 도구',
+      '강의 및 출강',
+      '자사 포트폴리오',
+      'UI/UX 디자인',
+      '기타',
+      '참고자료',
+      '구글 서비스',
+    ]);
+  });
+
+  it('운영 중인 사이트를 빠른 접근 뒤로 올리고 분류 줄에서는 뺀다 — 사이드바와 같은 순서', () => {
+    renderChips();
+
+    // 프로토타입의 그룹 순서(ORDER 상수)가 이 분류로 시작해 거기서도 네 번째로 찍힌다.
+    // 우리 시드에서는 맨 뒤라, 거르지 않으면 프로토타입 화면과도 사이드바와도 어긋난다.
+    expect(chips()).toHaveLength(13);
+    expect(chips()[3]).toHaveTextContent('현재 운영 중인 사이트');
+    expect(chips().filter((c) => c.textContent === '현재 운영 중인 사이트')).toHaveLength(1);
+  });
+
+  it('운영 중 분류가 없는 데이터에서도 나머지 칩은 그대로다', () => {
+    render(<MobileChips categories={CATEGORIES} operatingCategoryId={null} />);
 
     expect(chips().map((link) => link.textContent)).toEqual([
       '홈',
@@ -53,23 +86,15 @@ describe('MobileChips — 구성 (프로토타입 navChips)', () => {
     ]);
   });
 
-  it('운영 중인 사이트를 앞으로 끌어올리지 않는다 — 사이드바와 달리 분류 자리에 그대로 둔다', () => {
-    render(<MobileChips categories={CATEGORIES} />);
-
-    // 프로토타입 navChips 는 catNames 를 거르지 않는다(사이드바 nav 만 걸러 빠른 접근으로 올린다).
-    expect(chips()).toHaveLength(13);
-    expect(chips()[12]).toHaveTextContent('현재 운영 중인 사이트');
-  });
-
   it('하위 분류는 칩이 되지 않는다', () => {
-    render(<MobileChips categories={CATEGORIES} />);
+    renderChips();
 
     expect(within(row()).queryByRole('link', { name: '대화·검색' })).toBeNull();
     expect(within(row()).queryByRole('link', { name: '도구·서비스' })).toBeNull();
   });
 
   it('개수를 적지 않는다 — 칩에는 이름만 있다 (C1 리뷰 확정)', () => {
-    render(<MobileChips categories={CATEGORIES} />);
+    renderChips();
 
     for (const link of chips()) {
       expect(link.textContent).not.toMatch(/\d/);
@@ -77,7 +102,7 @@ describe('MobileChips — 구성 (프로토타입 navChips)', () => {
   });
 
   it('각 칩이 제 화면으로 간다', () => {
-    render(<MobileChips categories={CATEGORIES} />);
+    renderChips();
 
     expect(chip('홈')).toHaveAttribute('href', '/');
     expect(chip('내 즐겨찾기')).toHaveAttribute('href', '/favorites');
@@ -90,7 +115,7 @@ describe('MobileChips — 구성 (프로토타입 navChips)', () => {
 describe('MobileChips — 선택 상태', () => {
   it('현재 경로의 칩만 검은 배경 + aria-current 다', () => {
     pathname.current = '/category/mkt';
-    render(<MobileChips categories={CATEGORIES} />);
+    renderChips();
 
     const selected = chip('마케팅');
     expect(selected).toHaveAttribute('aria-current', 'page');
@@ -103,7 +128,7 @@ describe('MobileChips — 선택 상태', () => {
 
   it('빠른 접근 칩도 같은 규칙을 따른다', () => {
     pathname.current = '/favorites';
-    render(<MobileChips categories={CATEGORIES} />);
+    renderChips();
 
     expect(chip('내 즐겨찾기')).toHaveAttribute('aria-current', 'page');
     expect(chip('홈')).not.toHaveAttribute('aria-current');
@@ -112,7 +137,7 @@ describe('MobileChips — 선택 상태', () => {
 
 describe('MobileChips — 프로토타입 수치', () => {
   it('칩 줄은 <820px 에서만 보이고 가로로 스크롤한다', () => {
-    render(<MobileChips categories={CATEGORIES} />);
+    renderChips();
 
     // 프로토타입 showChips 는 narrow 전용이다 — 데스크톱에서는 사이드바가 같은 일을 한다.
     expect(row()).toHaveClass('min-[820px]:hidden', 'overflow-x-auto');
@@ -122,7 +147,7 @@ describe('MobileChips — 프로토타입 수치', () => {
   });
 
   it('칩 한 개의 수치가 프로토타입 원문 그대로다', () => {
-    render(<MobileChips categories={CATEGORIES} />);
+    renderChips();
 
     // height 30px · radius 8px · padding 0 12px · 12.5px/600 · 테두리 #ddd8d1 고정(선택돼도 같다).
     expect(chip('홈')).toHaveClass(

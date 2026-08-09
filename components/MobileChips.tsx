@@ -10,6 +10,8 @@ export type MobileChipsProps = {
    * 프로토타입 `navChips` 도 `catNames`(그룹 이름)만 훑는다.
    */
   categories: Category[];
+  /** '현재 운영 중인 사이트' 카테고리 id. 빠른 접근 뒤로 올리고 분류 줄에서는 뺀다(사이드바와 같다). */
+  operatingCategoryId: string | null;
 };
 
 /**
@@ -42,22 +44,30 @@ const CHIP_OFF = 'bg-card text-[#3a3833]';
  * 사이드바가 숨는 자리를 대신하지만 **트리가 아니라 한 줄**이다. 그래서 하위 분류는 칩이 되지
  * 않고(상위 칩으로 들어가면 그 화면의 하위 탭이 있다), 개수도 적지 않는다.
  *
- * '현재 운영 중인 사이트'를 앞으로 끌어올리지 않는 것이 사이드바와 다른 점이다. 사이드바는
- * 그 분류를 빠른 접근으로 올리고 분류 목록에서 빼지만(C3), 프로토타입 `navChips` 는
- * `catNames` 를 거르지 않아 제자리(맨 뒤)에 남는다. 스펙 문면의 "카테고리 10개"도 이쪽이다 —
- * 상위 10개가 빠짐없이 칩이 된다.
+ * 순서는 사이드바와 같다: 빠른 접근 넷(홈 · 내 즐겨찾기 · 매일 사용 · 현재 운영 중인 사이트)
+ * 뒤에 나머지 분류가 붙는다. 프로토타입 `navChips` 자체는 `catNames` 를 거르지 않지만, 그쪽
+ * 그룹 순서(`ORDER` 상수)가 '현재 운영 중인 사이트'로 시작해서 **화면에는 네 번째로 찍힌다**.
+ * 우리 카테고리 순서는 시드의 sort_order(B3)라 그 분류가 맨 뒤여서, 거르지 않으면 프로토타입
+ * 화면과도 옆의 사이드바와도 다른 줄이 된다. 그래서 결과가 같아지도록 여기서 올린다.
+ * 스펙 문면의 "카테고리 10개"는 그대로다 — 상위 10개가 빠짐없이 칩이 되고 자리만 다르다.
  */
-export function MobileChips({ categories }: MobileChipsProps) {
+export function MobileChips({ categories, operatingCategoryId }: MobileChipsProps) {
   const pathname = usePathname();
+
+  const tops = categories.filter((category) => category.parent_id === null);
+  const operating = tops.find((category) => category.id === operatingCategoryId);
+  const chipOf = (category: Category) => ({
+    href: `/category/${category.id}`,
+    name: category.name,
+  });
 
   const items = [
     { href: '/', name: '홈' },
     { href: '/favorites', name: '내 즐겨찾기' },
     // 프로토타입은 이 칩만 '매일 사용'으로 줄여 적는다(사이드바는 '매일 사용하는 사이트').
     { href: '/daily', name: '매일 사용' },
-    ...categories
-      .filter((category) => category.parent_id === null)
-      .map((category) => ({ href: `/category/${category.id}`, name: category.name })),
+    ...(operating === undefined ? [] : [chipOf(operating)]),
+    ...tops.filter((category) => category.id !== operatingCategoryId).map(chipOf),
   ];
 
   return (

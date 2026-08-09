@@ -93,7 +93,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
 
             {/* 좁은 화면의 내비게이션 (D5) — 숨은 사이드바 대신 헤더 바로 아래 한 줄로 깐다.
                 자신이 `min-[820px]:hidden` 을 들고 있어 데스크톱에서는 아무것도 그리지 않는다. */}
-            <MobileChips categories={categories} />
+            <MobileChips categories={categories} operatingCategoryId={operatingCategoryId} />
 
             {/* 콘텐츠 — 셸에서 유일하게 스크롤되는 영역.
                 본문 패딩(DESIGN_SPEC 1장, 데스크톱 20px 28px 36px)은 화면이 아니라 셸이 갖는다.
