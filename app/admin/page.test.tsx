@@ -250,18 +250,12 @@ describe('AdminPage — 카테고리 · 링크 (I1 2단)', () => {
   });
 });
 
-/** K2·M2 가 통째로 교체할 자리다. 탭이 404 가 되지 않도록 자리만 잡아 둔다. */
-describe('자리 표시 화면 (통계 · 정리 도구)', () => {
-  it.each([
-    ['통계', StatsPage],
-    ['정리 도구', CleanupPage],
-  ] as const)('%s 화면은 준비 중임을 한 줄로 알린다', async (name, Page) => {
-    const { container } = render((await Page()) as ReactElement);
-
-    expect(container.querySelectorAll('main')).toHaveLength(1);
-    expect(screen.getByText(`${name} 화면은 다음 단계에서 들어옵니다.`)).toBeInTheDocument();
-  });
-});
+/*
+ * (삭제됨) 자리 표시 화면 블록 — 통계·정리 도구가 자리 표시였을 때 "준비 중" 한 줄을 확인하던
+ * 곳이다. 이제 둘 다 실제 화면으로 들어왔고(K2 → `app/admin/stats/page.test.tsx`,
+ * M2 → `app/admin/cleanup/page.test.tsx`) 각자 전용 테스트가 본다. 탭이 404 가 아닌지는
+ * 아래 소스 스캔 블록이 계속 강제한다(디렉터리에서 page 를 찾아 미인증 렌더를 실행).
+ */
 
 /**
  * **미인증 요청에는 아무것도 그리지 않는다.**
