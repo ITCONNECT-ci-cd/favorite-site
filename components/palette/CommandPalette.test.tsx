@@ -890,6 +890,21 @@ describe('↵ 열기 · 행 클릭 = ↵', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it('행에 포커스가 있을 때의 ↵ 도 가로채지 않는다 (짚어 둔 행과 선택 행, 탭이 둘 열린다)', () => {
+    const onClose = vi.fn();
+    renderWithToaster({ data: THREE, onClose });
+    type('문서');
+    // 탭으로 세 번째 행까지 짚어 둔 상태 — 선택(첫 행)과 일부러 어긋나게 둔다.
+    const row = rows()[2];
+    row.focus();
+
+    // 브라우저가 그 행을 활성화한다. 우리가 preventDefault 로 가로채면 그 이동이 사라지고
+    // 대신 선택 행(첫 행)이 열려, 사람이 짚은 것과 다른 링크가 뜬다.
+    expect(press('Enter', {}, row)).toBe(true);
+    expect(recordClick).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('행 클릭도 ↵ 와 같다 — 기록·토스트·알림·닫기', () => {
     const onClose = vi.fn();
     const onOpenLink = vi.fn();
@@ -979,6 +994,32 @@ describe('결과 0건에서의 ↵ · ⌘↵ (AI 검색 자리 — 실동작은 
 
     expect(onAiSearch).toHaveBeenCalledTimes(1);
     expect(recordClick).not.toHaveBeenCalled();
+  });
+
+  it('결과 행에 포커스가 있어도 ⌘↵ 는 AI 검색이다 (수식키 없는 ↵ 의 예외가 여기까지 오면 안 된다)', () => {
+    const onAiSearch = vi.fn();
+    const onClose = vi.fn();
+    renderWithToaster({ data: THREE, onAiSearch, onClose });
+    type('문서');
+    const row = rows()[0];
+    row.focus();
+
+    // 막지 않으면 ⌘+클릭(= 새 탭)으로 그 링크가 열려 AI 검색이 통째로 사라진다.
+    expect(press('Enter', { metaKey: true }, row)).toBe(false);
+    expect(onAiSearch).toHaveBeenCalledTimes(1);
+    expect(recordClick).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('AI 검색 버튼에 포커스가 있어도 ⌘↵ 는 그대로 AI 검색이다', () => {
+    const onAiSearch = vi.fn();
+    renderWithToaster({ data: THREE, onAiSearch });
+    type('문서');
+    const button = screen.getByRole('button', { name: 'AI 검색' });
+    button.focus();
+
+    expect(press('Enter', { metaKey: true }, button)).toBe(false);
+    expect(onAiSearch).toHaveBeenCalledTimes(1);
   });
 
   it('AI 콜백이 없어도 터지지 않는다', () => {

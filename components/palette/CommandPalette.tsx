@@ -127,6 +127,12 @@ export type CommandPaletteProps = {
    * 전역 `⌘K`·`Ctrl+K` 를 눌렀다는 알림. **열림 상태는 이 컴포넌트가 아니라 상위가 소유한다** —
    * 게이트는 open 을 prop 으로 받는 표시 컴포넌트이고, 리스너만 여기(닫혀도 마운트되는 자리)에 산다.
    * 배선은 G5(헤더·레이아웃) 몫이다.
+   *
+   * **이미 열려 있을 때도 그대로 나간다**(프로토타입 641행은 상태를 보지 않는다). 다만 프로토타입
+   * `openPalette`(838행)가 함께 하던 `sel: 0` 리셋과 입력 포커스 복귀는 일어나지 않는다 —
+   * 그 상태는 패널 내부(`selected`)에 있어 `open` 만 쥔 상위가 단독으로 되돌릴 수 없기 때문이다.
+   * 열린 팔레트에서 ⌘K 를 다시 누르는 일이 드물어 현행을 수용했다(G3 판정, 편차 ③).
+   * 되살리려면 패널을 다시 마운트시킬 열기 nonce 를 상위가 들고 `key` 로 내려야 한다.
    */
   onOpenRequest?: () => void;
   /** 서버가 준 한 벌. 분류 이름으로도 찾아야 해서 `categories` 까지 함께 받는다(lib/search). */
@@ -199,6 +205,9 @@ export function CommandPalette({
 
       // Chrome·Firefox 의 Ctrl+K(주소창 검색)를 우리가 가져간다.
       event.preventDefault();
+      // 열려 있든 닫혀 있든 그대로 알린다. 열린 상태에서의 재입력은 상위에서 no-op 이 되므로
+      // 프로토타입이 함께 하던 `sel: 0` 리셋·입력 포커스 복귀는 일어나지 않는다 — 편차 ③,
+      // 근거와 되살리는 방법은 위 `onOpenRequest` JSDoc 에 적었다.
       onOpenRequest?.();
     }
 
@@ -404,17 +413,21 @@ function PalettePanel({
 
       if (event.key !== 'Enter') return;
 
-      // 앵커·버튼에 포커스가 있으면 그 요소를 누르는 것이 ↵ 의 뜻이다. 가로채면 'AI 검색'
-      // 버튼이 눌리지 않고, 탭으로 짚어 둔 행 대신 선택된 행이 열려 탭이 두 개 열린다.
-      if (event.target instanceof Element && event.target.closest('a, button') !== null) return;
-
-      event.preventDefault();
-
+      // ⌘↵ 는 **어디에 포커스가 있든** AI 검색이다(DESIGN_SPEC 7장 · 프로토타입 648행).
+      // 아래 앵커·버튼 예외보다 앞이어야 한다 — 결과 행에 포커스가 있을 때 ⌘↵ 가 예외로 새면
+      // AI 검색 대신 그 링크가 뒤 탭으로 열린다(⌘+클릭 = 새 탭).
       if (event.metaKey || event.ctrlKey) {
+        event.preventDefault();
         onAiSearch?.();
         return;
       }
 
+      // 수식키 없는 ↵ 는 다르다. 앵커·버튼에 포커스가 있으면 그 요소를 누르는 것이 ↵ 의 뜻이다.
+      // 가로채면 'AI 검색' 버튼이 눌리지 않고, 탭으로 짚어 둔 행 대신 선택된 행이 열려
+      // 탭이 두 개 열린다.
+      if (event.target instanceof Element && event.target.closest('a, button') !== null) return;
+
+      event.preventDefault();
       openSelected();
     }
 
