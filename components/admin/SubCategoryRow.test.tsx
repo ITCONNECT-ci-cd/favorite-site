@@ -17,7 +17,12 @@ import {
 } from '@/components/admin/CategoryPanel';
 import { SubCategoryRow, type SubCategoryMap } from '@/components/admin/SubCategoryRow';
 import { Toaster } from '@/components/Toast';
-import { createSubCategory, deleteSubCategory, renameSubCategory } from '@/lib/mutations';
+import {
+  createSubCategory,
+  deleteSubCategory,
+  renameSubCategory,
+  type ActionResult,
+} from '@/lib/mutations';
 import { setupToastTimers } from '@/test/toast';
 
 vi.mock('@/lib/mutations', async (importOriginal) => ({
@@ -66,6 +71,23 @@ const chip = (name: string) => within(row()).getByText(name).parentElement as HT
 const button = (name: string) => within(row()).getByRole('button', { name });
 const addField = () => within(row()).getByRole('textbox', { name: '새 하위 카테고리' });
 const nameField = () => within(row()).getByRole('textbox', { name: '하위 카테고리 이름' });
+/** 펼친 칩의 버튼들 — 글자는 '저장'·'삭제'·'취소'뿐이라 접근성 이름에 하위 이름이 앞선다. */
+const saveButton = (subName: string) => button(`${subName} 이름 저장`);
+const confirmButton = (subName: string) => button(`${subName} 삭제 확인`);
+const renameForm = () => nameField().closest('form') as HTMLFormElement;
+
+/**
+ * 응답이 **언제** 오는지 테스트가 정하는 액션. 요청은 나갔고 응답은 아직인 '왕복 중' 창을 본다 —
+ * `mockResolvedValue` 로는 그 창이 열리자마자 닫혀 잠금을 확인할 수 없다.
+ */
+function deferred() {
+  let settle!: (result: ActionResult) => void;
+  const promise = new Promise<ActionResult>((resolve) => {
+    settle = resolve;
+  });
+
+  return { promise, settle };
+}
 
 /** 액션이 프라미스를 돌려주므로 서버를 지나는 경로는 act 안에서 마이크로태스크까지 흘려보낸다. */
 async function click(element: HTMLElement) {
@@ -236,7 +258,7 @@ describe('SubCategoryRow — 이름 수정', () => {
 
     expect(nameField()).toHaveValue('대화형');
     expect(nameField()).toHaveClass('w-[110px]', 'h-[20px]', 'rounded-[4px]', 'border-ink');
-    expect(button('저장')).toBeInTheDocument();
+    expect(saveButton('대화형')).toBeInTheDocument();
     // 고치는 중인 칩에서는 삭제 자리가 사라진다 — 고치던 이름과 지우려는 대상이 섞이지 않게.
     expect(within(row()).queryByRole('button', { name: '대화형 삭제' })).not.toBeInTheDocument();
   });
@@ -245,7 +267,7 @@ describe('SubCategoryRow — 이름 수정', () => {
     renderRow();
 
     await startRename('대화형', '  챗봇  ');
-    await click(button('저장'));
+    await click(saveButton('대화형'));
 
     expect(renameSubCategory).toHaveBeenCalledWith('sub-chat', '챗봇');
   });
@@ -254,7 +276,7 @@ describe('SubCategoryRow — 이름 수정', () => {
     renderRow();
 
     await startRename('대화형', '챗봇');
-    await click(button('저장'));
+    await click(saveButton('대화형'));
 
     expect(within(row()).queryByRole('textbox', { name: '하위 카테고리 이름' })).not.toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent('대화형 → 챗봇');
@@ -264,7 +286,7 @@ describe('SubCategoryRow — 이름 수정', () => {
     renderRow();
 
     await startRename('대화형', '  대화형  ');
-    await click(button('저장'));
+    await click(saveButton('대화형'));
 
     expect(renameSubCategory).not.toHaveBeenCalled();
     expect(within(row()).queryByRole('textbox', { name: '하위 카테고리 이름' })).not.toBeInTheDocument();
@@ -278,10 +300,37 @@ describe('SubCategoryRow — 이름 수정', () => {
     renderRow();
 
     await startRename('대화형', '챗봇');
-    await click(button('저장'));
+    await click(saveButton('대화형'));
 
     expect(screen.getByRole('status')).toHaveTextContent('하위 카테고리를 찾을 수 없습니다.');
     expect(nameField()).toHaveValue('챗봇');
+    // 실패는 다시 낼 값이므로 잠금이 풀려 있어야 한다 — 성공 경로와 갈리는 곳이다.
+    expect(saveButton('대화형')).not.toBeDisabled();
+  });
+
+  it('요청 자체가 거부되면 잠긴 채로 남지 않는다', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(renameSubCategory).mockRejectedValue(new Error('Failed to fetch'));
+    renderRow();
+
+    await startRename('대화형', '챗봇');
+    await click(saveButton('대화형'));
+
+    // 거부는 서버가 판단한 결과가 아니므로 폼도 고치던 이름도 남는다(실패와 같은 갈래).
+    expect(screen.getByRole('status')).toHaveTextContent('저장하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    expect(saveButton('대화형')).not.toBeDisabled();
+    expect(nameField()).toHaveValue('챗봇');
+    vi.mocked(console.error).mockRestore();
+  });
+
+  it('취소 버튼으로도 닫힌다 — 나가는 길이 Esc 하나가 아니다', async () => {
+    renderRow();
+
+    await startRename('대화형', '버릴 이름');
+    await click(button('대화형 이름 수정 취소'));
+
+    expect(renameSubCategory).not.toHaveBeenCalled();
+    expect(within(row()).getByText('대화형')).toBeInTheDocument();
   });
 
   it('Esc 로 취소된다 (프로토타입 onEditKey)', async () => {
@@ -317,6 +366,99 @@ describe('SubCategoryRow — 이름 수정', () => {
   });
 });
 
+/**
+ * 같은 요청이 두 번 나가는 창을 막는 두 겹 — 각각 막는 창이 다르다.
+ *
+ * 성공 경로가 잠금을 **트랜지션 안에서** 푸는 것(응답이 온 뒤 닫힘이 커밋될 때까지 열린 폼이
+ * 잠긴 채로 있는 것)은 여기서 볼 수 없다. jsdom 에는 트랜지션이 기다릴 새 데이터가 없어
+ * 그 두 커밋이 한 번에 끝나기 때문이다 — 그 창은 라우터가 revalidate 를 물고 오는 실제 화면에만
+ * 있고, 지켜 주는 것은 `setBusy(false)` 가 `startTransition` 안에 함께 들어 있다는 구조다.
+ */
+describe('SubCategoryRow — 이중 제출', () => {
+  setupToastTimers();
+
+  it('같은 틱에 두 번 제출해도 이름 수정 요청은 한 번만 나간다', async () => {
+    renderRow();
+
+    await startRename('대화형', '챗봇');
+    // 한 act 안의 두 제출은 사이에 렌더가 끼지 않는다 — `busy` 도 `disabled` 도 아직 그대로라
+    // 막는 것은 그 자리에서 바뀌는 빗장(ref)뿐이다.
+    await act(async () => {
+      fireEvent.submit(renameForm());
+      fireEvent.submit(renameForm());
+    });
+
+    expect(renameSubCategory).toHaveBeenCalledTimes(1);
+  });
+
+  it('같은 틱에 두 번 눌러도 삭제 요청은 한 번만 나간다', async () => {
+    renderRow();
+
+    await click(button('대화형 삭제'));
+    const confirm = confirmButton('대화형');
+    await act(async () => {
+      fireEvent.click(confirm);
+      fireEvent.click(confirm);
+    });
+
+    expect(deleteSubCategory).toHaveBeenCalledTimes(1);
+  });
+
+  it('왕복이 끝나기 전에는 두 번째 제출을 받지 않는다', async () => {
+    const pending = deferred();
+    vi.mocked(renameSubCategory).mockReturnValue(pending.promise);
+    renderRow();
+
+    await startRename('대화형', '챗봇');
+    await click(saveButton('대화형'));
+    await act(async () => {
+      fireEvent.submit(renameForm());
+    });
+
+    expect(renameSubCategory).toHaveBeenCalledTimes(1);
+    // 폼은 응답이 올 때까지 열려 있고, 잠긴 것이 눈에도 보인다.
+    expect(saveButton('대화형')).toBeDisabled();
+
+    await act(async () => {
+      pending.settle({ ok: true });
+    });
+  });
+
+  it('한 칩이 왕복하는 동안 다른 칩의 수정·× 도 잠긴다', async () => {
+    const pending = deferred();
+    vi.mocked(renameSubCategory).mockReturnValue(pending.promise);
+    renderRow();
+
+    await startRename('대화형', '챗봇');
+    await click(saveButton('대화형'));
+
+    // 여기서 열 수 있으면, 왕복이 끝나며 `active` 가 비워질 때 치던 글자째 사라진다.
+    expect(button('이미지 생성 이름 수정')).toBeDisabled();
+    expect(button('이미지 생성 삭제')).toBeDisabled();
+
+    await act(async () => {
+      pending.settle({ ok: true });
+    });
+
+    // 성공 경로는 잠금을 트랜지션 안에서 푼다 — 풀기는 **푼다**. 여기서 잠긴 채로 남으면
+    // 줄에 남은 칩들이 새로고침 전까지 영영 못 쓰게 된다.
+    expect(button('이미지 생성 이름 수정')).not.toBeDisabled();
+    expect(button('이미지 생성 삭제')).not.toBeDisabled();
+  });
+
+  it('성공한 뒤에도 줄은 이어서 쓸 수 있다', async () => {
+    renderRow();
+
+    await startRename('대화형', '챗봇');
+    await click(saveButton('대화형'));
+
+    await startRename('이미지 생성', '그림');
+    await click(saveButton('이미지 생성'));
+
+    expect(renameSubCategory).toHaveBeenNthCalledWith(2, 'sub-img', '그림');
+  });
+});
+
 describe('SubCategoryRow — 하위 삭제', () => {
   setupToastTimers();
 
@@ -328,8 +470,8 @@ describe('SubCategoryRow — 하위 삭제', () => {
     expect(deleteSubCategory).not.toHaveBeenCalled();
     // 링크가 사라지지 않고 상위로 올라간다는 것을 누르기 전에 알린다(deleteSubCategory 가 하는 일).
     expect(within(row()).getByRole('alert')).toHaveTextContent('링크 3개는 상위로 올라갑니다. 삭제할까요?');
-    expect(button('삭제')).toBeInTheDocument();
-    expect(button('취소')).toBeInTheDocument();
+    expect(confirmButton('대화형')).toBeInTheDocument();
+    expect(button('대화형 삭제 취소')).toBeInTheDocument();
   });
 
   it('링크가 없는 하위에는 옮길 링크 이야기를 하지 않는다', async () => {
@@ -345,7 +487,7 @@ describe('SubCategoryRow — 하위 삭제', () => {
     renderRow();
 
     await click(button('대화형 삭제'));
-    await click(button('삭제'));
+    await click(confirmButton('대화형'));
 
     expect(deleteSubCategory).toHaveBeenCalledWith('sub-chat');
   });
@@ -354,7 +496,7 @@ describe('SubCategoryRow — 하위 삭제', () => {
     renderRow();
 
     await click(button('대화형 삭제'));
-    await click(button('삭제'));
+    await click(confirmButton('대화형'));
 
     expect(screen.getByRole('status')).toHaveTextContent('대화형 하위 카테고리 삭제 · 링크 3개는 상위로 올라감');
   });
@@ -363,7 +505,7 @@ describe('SubCategoryRow — 하위 삭제', () => {
     renderRow();
 
     await click(button('이미지 생성 삭제'));
-    await click(button('삭제'));
+    await click(confirmButton('이미지 생성'));
 
     expect(screen.getByRole('status')).toHaveTextContent('이미지 생성 하위 카테고리 삭제');
     expect(screen.getByRole('status')).not.toHaveTextContent('올라감');
@@ -377,17 +519,32 @@ describe('SubCategoryRow — 하위 삭제', () => {
     renderRow();
 
     await click(button('대화형 삭제'));
-    await click(button('삭제'));
+    await click(confirmButton('대화형'));
 
     expect(screen.getByRole('status')).toHaveTextContent('하위 카테고리를 찾을 수 없습니다.');
-    expect(within(row()).queryByRole('button', { name: '삭제' })).not.toBeInTheDocument();
+    expect(within(row()).queryByRole('button', { name: '대화형 삭제 확인' })).not.toBeInTheDocument();
+    // 실패는 트랜지션 없이 그 자리에서 걷는다 — 기다릴 새 데이터가 없고 칩도 그대로 남는다.
+    expect(button('대화형 삭제')).not.toBeDisabled();
+  });
+
+  it('요청 자체가 거부돼도 잠긴 채로 남지 않는다', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(deleteSubCategory).mockRejectedValue(new Error('Failed to fetch'));
+    renderRow();
+
+    await click(button('대화형 삭제'));
+    await click(confirmButton('대화형'));
+
+    expect(screen.getByRole('status')).toHaveTextContent('저장하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    expect(button('대화형 삭제')).not.toBeDisabled();
+    vi.mocked(console.error).mockRestore();
   });
 
   it('확인 줄에서 취소하면 아무 일도 일어나지 않는다', async () => {
     renderRow();
 
     await click(button('대화형 삭제'));
-    await click(button('취소'));
+    await click(button('대화형 삭제 취소'));
 
     expect(deleteSubCategory).not.toHaveBeenCalled();
     expect(button('대화형 삭제')).toBeInTheDocument();
@@ -404,6 +561,100 @@ describe('SubCategoryRow — 하위 삭제', () => {
     await click(button('대화형 삭제'));
 
     expect(within(row()).queryByRole('textbox', { name: '하위 카테고리 이름' })).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * 갈래를 열면 그것을 연 버튼이 그 자리에서 **사라진다**. 포커스를 옮겨 두지 않으면 `<body>` 로
+ * 떨어져, 키보드 사용자는 화면 맨 앞에서 이 줄까지 다시 걸어와야 한다.
+ */
+describe('SubCategoryRow — 포커스', () => {
+  setupToastTimers();
+
+  it('저장하고 나면 그 칩의 수정 버튼으로 돌아온다', async () => {
+    renderRow();
+
+    await startRename('대화형', '챗봇');
+    await click(saveButton('대화형'));
+
+    expect(button('대화형 이름 수정')).toHaveFocus();
+  });
+
+  it('Esc 로 닫아도 수정 버튼으로 돌아온다', async () => {
+    renderRow();
+
+    await startRename('대화형', '버릴 이름');
+    await act(async () => {
+      fireEvent.keyDown(nameField(), { key: 'Escape' });
+    });
+
+    expect(button('대화형 이름 수정')).toHaveFocus();
+  });
+
+  it('수정을 취소해도 수정 버튼으로 돌아온다', async () => {
+    renderRow();
+
+    await startRename('대화형', '버릴 이름');
+    await click(button('대화형 이름 수정 취소'));
+
+    expect(button('대화형 이름 수정')).toHaveFocus();
+  });
+
+  it('확인 줄이 열리면 덜 위험한 취소가 포커스를 받는다', async () => {
+    renderRow();
+
+    await click(button('대화형 삭제'));
+
+    // × 를 누른 직후의 Enter 한 번이 그대로 삭제가 되면 확인을 거치게 한 의미가 없다(APG).
+    expect(button('대화형 삭제 취소')).toHaveFocus();
+  });
+
+  it('삭제를 취소하면 × 로 돌아온다', async () => {
+    renderRow();
+
+    await click(button('대화형 삭제'));
+    await click(button('대화형 삭제 취소'));
+
+    expect(button('대화형 삭제')).toHaveFocus();
+  });
+
+  it('삭제가 실패해 확인 줄이 걷혀도 × 로 돌아온다', async () => {
+    vi.mocked(deleteSubCategory).mockResolvedValue({
+      ok: false,
+      error: '하위 카테고리를 찾을 수 없습니다.',
+    });
+    renderRow();
+
+    await click(button('대화형 삭제'));
+    await click(confirmButton('대화형'));
+
+    expect(button('대화형 삭제')).toHaveFocus();
+  });
+
+  it('다른 칩을 열어 닫힌 경우에는 포커스를 뺏지 않는다', async () => {
+    renderRow();
+
+    await startRename('대화형', '버릴 이름');
+    await click(button('이미지 생성 이름 수정'));
+
+    // 닫히는 칩이 조건 없이 자기 '수정'을 잡으면, 방금 연 입력에서 포커스를 도로 뺏어 온다.
+    expect(nameField()).toHaveFocus();
+  });
+});
+
+describe('SubCategoryRow — 버튼의 결', () => {
+  it('누를 수 있는 것에는 손가락 커서가, 잠긴 동안에는 기본 커서가 붙는다', () => {
+    renderRow();
+
+    expect(button('대화형 이름 수정')).toHaveClass('cursor-pointer', 'disabled:cursor-default');
+    expect(button('대화형 삭제')).toHaveClass('cursor-pointer', 'disabled:cursor-default');
+    expect(button('하위 카테고리 추가')).toHaveClass('cursor-pointer', 'disabled:cursor-default');
+  });
+
+  it('추가 입력과 버튼은 함께 줄바꿈하고 좁아져도 찌그러지지 않는다', () => {
+    renderRow();
+
+    expect(addField().closest('form')).toHaveClass('flex', 'flex-none', 'items-center');
   });
 });
 
