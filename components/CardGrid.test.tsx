@@ -1,0 +1,43 @@
+import { render, screen } from '@testing-library/react';
+import { describe, expect, it } from 'vitest';
+import { CardGrid } from '@/components/CardGrid';
+
+describe('CardGrid', () => {
+  it('children을 순서대로 배치한다', () => {
+    const { container } = render(
+      <CardGrid>
+        <span>카드 A</span>
+        <span>카드 B</span>
+      </CardGrid>,
+    );
+
+    expect(screen.getByText('카드 A')).toBeInTheDocument();
+    expect(screen.getByText('카드 B')).toBeInTheDocument();
+    expect(container.firstElementChild?.children).toHaveLength(2);
+  });
+
+  it('열 수를 고정하지 않는 auto-fill 그리드다 (DESIGN_SPEC 1장 브레이크포인트 표)', () => {
+    const { container } = render(
+      <CardGrid>
+        <span>카드</span>
+      </CardGrid>,
+    );
+
+    // 최소 폭 158px는 액션 아이콘 4개가 파비콘과 한 줄에 들어가는 하한선이다.
+    expect(container.firstElementChild).toHaveClass(
+      'grid',
+      'grid-cols-[repeat(auto-fill,minmax(158px,1fr))]',
+      'gap-[10px]',
+    );
+  });
+
+  it('className을 덧붙일 수 있다', () => {
+    const { container } = render(
+      <CardGrid className="mt-[10px]">
+        <span>카드</span>
+      </CardGrid>,
+    );
+
+    expect(container.firstElementChild).toHaveClass('grid', 'mt-[10px]');
+  });
+});
