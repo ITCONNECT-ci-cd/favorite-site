@@ -47,6 +47,7 @@ const rows = () => within(list()).getAllByRole('button');
 const row = (name: string) => screen.getByRole('button', { name: new RegExp(name) });
 const nameField = () => screen.getByRole('textbox', { name: '새 카테고리' });
 const addButton = () => screen.getByRole('button', { name: '추가' });
+const addForm = () => nameField().closest('form') as HTMLFormElement;
 
 /** 화면에 보이는 행 순서. 정렬 단언은 전부 이것을 본다. */
 function expectOrder(names: readonly string[]) {
@@ -78,6 +79,14 @@ async function dragOnto(sourceName: string, targetName: string) {
   await act(async () => {
     fireEvent.drop(row(targetName));
   });
+}
+
+/** 액션이 **거부로 끝나는** 상황 — 네트워크 단절·배포로 액션 id 가 바뀐 경우. */
+const REJECTION = new Error('Failed to fetch');
+
+/** 거부 경로는 진단 로그를 남긴다(사용자 문구가 아니다) — 테스트 출력만 조용히 시킨다. */
+function silenceConsoleError() {
+  return vi.spyOn(console, 'error').mockImplementation(() => {});
 }
 
 beforeEach(() => {
@@ -112,6 +121,19 @@ describe('CategoryPanel — 머리말과 추가 줄 (프로토타입 302–310�
     );
     expect(nameField()).toHaveAttribute('placeholder', '새 카테고리');
     expect(addButton()).toHaveClass('h-[34px]', 'rounded-[7px]', 'bg-ink', 'text-white', 'text-[12px]');
+  });
+
+  it('추가 버튼은 손가락 커서를 쓰고 잠긴 동안에는 되돌린다 (프로토타입 309행 `cursor:pointer`)', () => {
+    // Tailwind v4 preflight 에는 버튼 커서 규칙이 없어 적지 않으면 화살표로 남는다.
+    renderPanel();
+
+    expect(addButton()).toHaveClass('cursor-pointer', 'disabled:cursor-default');
+  });
+
+  it('목록 행은 집는 커서다 — 끌어서 순서를 바꾸는 자리다 (프로토타입 313행 `cursor:grab`)', () => {
+    renderPanel();
+
+    expect(row('개발 도구')).toHaveClass('cursor-grab');
   });
 });
 
@@ -253,6 +275,45 @@ describe('CategoryPanel — 카테고리 추가', () => {
     });
     expect(addButton()).toBeEnabled();
   });
+
+  it('같은 틱에 제출이 두 번 들어와도 요청은 한 번만 나간다', async () => {
+    // `disabled` 는 다시 그려진 뒤에야 걸리므로 같은 틱의 두 번째 제출을 막지 못한다
+    // (Enter 를 튕기는 키보드·더블클릭). 빗장이 ref 여야 여기서 걸린다.
+    vi.mocked(createCategory).mockReturnValue(new Promise(() => {}));
+    renderPanel();
+
+    fireEvent.change(nameField(), { target: { value: '리서치' } });
+    await act(async () => {
+      fireEvent.submit(addForm());
+      fireEvent.submit(addForm());
+    });
+
+    expect(createCategory).toHaveBeenCalledTimes(1);
+  });
+
+  it('요청 자체가 거부되면 잠금을 풀고 재시도 문구를 띄운다', async () => {
+    const spy = silenceConsoleError();
+    vi.mocked(createCategory).mockRejectedValue(REJECTION);
+    renderPanel();
+
+    fireEvent.change(nameField(), { target: { value: '리서치' } });
+    await click(addButton());
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '저장하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+    );
+    // 잠긴 채 남으면 새로고침 말고는 다시 추가할 길이 없다.
+    expect(addButton()).toBeEnabled();
+    expect(nameField()).toHaveValue('리서치');
+    expect(spy).toHaveBeenCalled();
+
+    // 빗장(ref)도 함께 풀렸는지 — 같은 자리에서 곧바로 다시 낼 수 있어야 한다.
+    vi.mocked(createCategory).mockResolvedValue({ ok: true });
+    await click(addButton());
+    expect(createCategory).toHaveBeenCalledTimes(2);
+
+    spy.mockRestore();
+  });
 });
 
 describe('CategoryPanel — 드래그 정렬 (DESIGN_SPEC 6장 "draggable 로 순서 변경")', () => {
@@ -310,7 +371,7 @@ describe('CategoryPanel — 드래그 정렬 (DESIGN_SPEC 6장 "draggable 로 �
     expectOrder(['AI 도구 모음', '개발 도구', '마케팅']);
   });
 
-  it('저장에 실패하면 액션의 문구를 그대로 띄운다', async () => {
+  it('저장에 실패하면 액션의 문구를 그대로 띄우고 서버 순서로 되돌린다', async () => {
     vi.mocked(reorderCategories).mockResolvedValue({
       ok: false,
       error: '순서를 저장하지 못했습니다. 새로고침 후 다시 시도해 주세요.',
@@ -320,6 +381,66 @@ describe('CategoryPanel — 드래그 정렬 (DESIGN_SPEC 6장 "draggable 로 �
     await dragOnto('마케팅', 'AI 도구 모음');
 
     expect(screen.getByRole('status')).toHaveTextContent('순서를 저장하지 못했습니다.');
+    // 낙관 순서는 트랜지션이 끝나며 걷힌다 — 저장되지 않은 순서가 화면에 남으면 다음에 무엇을
+    // 끌어 놓든 사람이 보는 순서와 서버가 아는 순서가 어긋난 채로 계산된다.
+    expectOrder(['AI 도구 모음', '개발 도구', '마케팅']);
+  });
+
+  it('요청 자체가 거부돼도 오류 화면 대신 재시도 문구로 끝난다', async () => {
+    // 트랜지션 안에서 던지면 가장 가까운 오류 경계(app/global-error.tsx)로 올라가 관리 화면이
+    // 통째로 날아간다 — 그래서 컴포넌트가 직접 잡는다.
+    const spy = silenceConsoleError();
+    vi.mocked(reorderCategories).mockRejectedValue(REJECTION);
+    renderPanel();
+
+    await dragOnto('마케팅', 'AI 도구 모음');
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '저장하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+    );
+    expectOrder(['AI 도구 모음', '개발 도구', '마케팅']);
+    expect(spy).toHaveBeenCalled();
+
+    // 빗장도 함께 풀린다 — 거부 한 번으로 정렬이 영영 잠기면 안 된다.
+    vi.mocked(reorderCategories).mockResolvedValue({ ok: true });
+    await dragOnto('마케팅', 'AI 도구 모음');
+    expect(reorderCategories).toHaveBeenCalledTimes(2);
+
+    spy.mockRestore();
+  });
+
+  it('끌기 시작이 없던 drop 은 무시한다 (바깥에서 끌어 온 것)', async () => {
+    renderPanel();
+
+    await act(async () => {
+      fireEvent.drop(row('개발 도구'));
+    });
+
+    expect(reorderCategories).not.toHaveBeenCalled();
+  });
+
+  it('dragEnd 로 끝난 드래그는 빗장을 비워 뒤이은 drop 이 먹지 않는다', async () => {
+    renderPanel();
+
+    fireEvent.dragStart(row('마케팅'));
+    fireEvent.dragEnd(row('마케팅'));
+    await act(async () => {
+      fireEvent.drop(row('AI 도구 모음'));
+    });
+
+    expect(reorderCategories).not.toHaveBeenCalled();
+  });
+
+  it('앞선 정렬이 끝나기 전의 두 번째 드롭은 버린다', async () => {
+    // 겹쳐 보내면 두 요청이 각각 자기가 본 순서 **전체**를 보내므로 나중 응답이 먼저 것을 덮는다.
+    vi.mocked(reorderCategories).mockReturnValue(new Promise(() => {}));
+    renderPanel();
+
+    await dragOnto('마케팅', 'AI 도구 모음');
+    await dragOnto('개발 도구', 'AI 도구 모음');
+
+    expect(reorderCategories).toHaveBeenCalledTimes(1);
+    expect(reorderCategories).toHaveBeenCalledWith(['cat-mkt', 'cat-ai', 'cat-dev']);
   });
 });
 

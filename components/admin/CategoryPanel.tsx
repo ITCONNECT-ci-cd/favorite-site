@@ -15,7 +15,8 @@ import {
 } from 'react';
 
 import { toast } from '@/components/Toast';
-import { createCategory, reorderCategories } from '@/lib/mutations';
+import { REQUEST_FAILED } from '@/lib/constants';
+import { createCategory, reorderCategories, type ActionResult } from '@/lib/mutations';
 
 /**
  * 관리 화면의 좌측 패널이 그리는 상위 카테고리 한 줄.
@@ -40,7 +41,15 @@ export type AdminCategory = {
  * 링크 표(I2·I3·I4)가 읽는다.
  */
 export type SelectedCategoryValue = {
-  /** 상위 카테고리 전부, 화면에 보이는 순서(= 서버가 준 `sort_order` 순). */
+  /**
+   * 상위 카테고리 전부, **서버가 준 순서**(`sort_order`)다.
+   *
+   * ⚠️ 드래그로 순서를 바꾸는 동안에는 **좌측 패널에 보이는 순서와 다를 수 있다** — 그동안 패널은
+   * 이 배열이 아니라 자기 낙관적 순서를 그린다(아래 `CategoryPanel` 의 `useOptimistic`). 저장이
+   * 끝나 새 데이터가 도착하면 둘이 다시 같아진다. 지금 이 값을 읽는 쪽(I2·I3·I4)은 순서를 쓰지
+   * 않고 이름·개수만 보므로 문제가 되지 않는다. 순서를 그대로 화면에 그리는 소비자가 생기면
+   * 그때는 이 값이 아니라 패널의 낙관값을 함께 나눠야 한다.
+   */
   categories: readonly AdminCategory[];
   /** 선택된 카테고리. 카테고리가 하나도 없을 때만 `null` 이다. */
   selected: AdminCategory | null;
@@ -121,7 +130,16 @@ export function useSelectedCategory(): SelectedCategoryValue {
 
 /** 목록 행 — 프로토타입 원문 `height:46px; padding:0 14px; gap:9px; border-bottom:1px solid #f2f0ec`. */
 const ROW = 'flex h-[46px] w-full cursor-grab items-center gap-[9px] border-b border-line px-[14px] text-left';
-/** 선택 행: 배경 `#141516`. 비선택 행의 호버 `#f5f3ef` 는 스펙 색상표에 없는 프로토타입 고유값이다. */
+/**
+ * 선택 행: 배경 `#141516`. 비선택 행의 호버 `#f5f3ef` 는 스펙 색상표에 없는 프로토타입 고유값이다.
+ *
+ * **호버는 비선택 행에만 건다 — 프로토타입과 다른 점이다.** 프로토타입은 행 하나에 인라인 배경
+ * (`{{ c.bg }}`, 선택이면 `#141516`)과 `style-hover="background:#f5f3ef"` 를 함께 걸어(313행)
+ * 선택된 행 위에 마우스를 올리면 밝은 회색이 검은 배경을 덮는다 — 가리키는 동안 **어느 행이
+ * 선택인지가 화면에서 사라진다.** 이 목록에서 선택을 알리는 것은 배경·글자색·메타 색이 함께
+ * 뒤집히는 그 한 벌뿐이라(우측 전체가 이 선택을 따라 바뀐다) 호버에 내주지 않는다. 잃는 것은
+ * "누를 수 있다"는 신호인데, 이미 선택된 행은 눌러도 바뀌는 것이 없어 알릴 것도 없다.
+ */
 const ROW_ON = 'bg-ink';
 const ROW_OFF = 'hover:bg-[#f5f3ef]';
 /** 이름 13px/600. 비선택 글자색 `#3a3833` 도 프로토타입 고유값(상단 탭의 비선택 글자와 같은 값). */
@@ -148,7 +166,10 @@ function moveOnto(
   const to = next.findIndex((category) => category.id === targetId);
   if (from < 0 || to < 0) return next;
 
-  next.splice(to, 0, ...next.splice(from, 1));
+  // 두 문장으로 나눠 둔다 — 한 줄로 겹쳐 쓰면(`splice(to, 0, ...splice(from, 1))`) 결과가 인자
+  // 평가 순서에 달려 있어, 읽는 사람이 "빼내기가 먼저인가 to 가 먼저인가"를 매번 되짚어야 한다.
+  const moved = next.splice(from, 1);
+  next.splice(to, 0, ...moved);
 
   return next;
 }
@@ -182,14 +203,31 @@ export function CategoryPanel({ totalLinkCount }: { totalLinkCount: number }) {
   const titleId = useId();
 
   const [name, setName] = useState('');
-  /** 추가 요청이 나가 있는 동안 — 같은 이름이 두 번 들어가는 것을 막는 빗장이다. */
+  /** 추가 요청이 나가 있는 동안 — 버튼을 잠그는 **보이는** 상태다. */
   const [adding, setAdding] = useState(false);
+  /**
+   * 같은 것을 가리키는 **빗장**. 상태 하나로 겸하지 않는 이유는 React 의 일괄 처리다 — 한 틱 안에
+   * 제출 둘이 들어오면(Enter 를 두 번 튕기는 키보드, 더블클릭) 둘 다 같은 렌더의 클로저를 보므로
+   * `adding` 은 아직 false 이고, 화면도 다시 그려지기 전이라 버튼의 `disabled` 도 걸리지 않았다.
+   * 그 사이로 두 번째 요청이 나가면 같은 이름이 두 벌 들어간다. ref 는 그 자리에서 바뀌므로 같은
+   * 틱의 두 번째 호출이 곧바로 막힌다(J3 DeleteConfirm 의 `sending` 과 같은 장치).
+   */
+  const sending = useRef(false);
 
   /**
    * 저장이 끝나기 전에 보여 줄 순서. 서버가 새 순서를 실어 보내면(revalidatePath) 이 값은 걷히고
    * props 가 이긴다 — 실패했을 때 화면이 서버와 어긋난 채 남지 않는 것도 같은 성질 덕이다.
+   *
+   * **완성된 배열이 아니라 리듀서로 든다.** 절대값(`setOrder(next)`)으로 밀어 넣으면 그 배열이
+   * base 데이터를 통째로 가려, 요청이 나가 있는 동안 도착한 새 서버 데이터(다른 창의 이름 수정·
+   * 추가)가 응답이 올 때까지 보이지 않는다. 리듀서 형태에서는 base 가 바뀔 때마다 React 가
+   * 리듀서를 **새 데이터 위에서 다시 돌려** 옮김만 얹는다(Next `interactive-apps.md` Step 5).
    */
-  const [order, setOrder] = useOptimistic<readonly AdminCategory[]>(categories);
+  const [order, moveCategory] = useOptimistic(
+    categories,
+    (current: readonly AdminCategory[], move: { sourceId: string; targetId: string }) =>
+      moveOnto(current, move.sourceId, move.targetId),
+  );
 
   /**
    * 끌고 있는 행. `dataTransfer` 가 아니라 ref 인 이유는 프로토타입(`_drag`)과 같다 — 이 화면
@@ -197,28 +235,75 @@ export function CategoryPanel({ totalLinkCount }: { totalLinkCount: number }) {
    * 돌려주는 브라우저가 있어 판정에 쓸 수 없다.
    */
   const draggingId = useRef<string | null>(null);
+  /**
+   * 정렬 요청이 나가 있는 동안 — 두 번째 드롭을 **버리는** 빗장이다.
+   *
+   * 겹쳐 놓으면 두 요청이 각각 **자기가 본 순서 전체**를 보내므로, 서버에 나중 도착한 쪽이 먼저
+   * 도착한 옮김을 지운다(부분 갱신이 아니라 통째로 덮어쓰기라서다). 사람은 두 번 옮겼는데 남는
+   * 것은 한 번뿐인 상태가 되고, 그 사실은 화면 어디에도 드러나지 않는다. 낙관 표시도 트랜지션
+   * 하나에 얹혀 있어 두 번째 옮김은 첫 응답이 오는 순간 어차피 걷힌다.
+   */
+  const reordering = useRef(false);
 
-  async function handleAdd(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-    if (adding) return;
+  /**
+   * 제출은 **동기 핸들러**가 받고 비동기 몸통은 `void` 로 띄운다(CategoryHeader 와 같은 모양).
+   * `onSubmit` 에 async 함수를 그대로 걸면 React 는 돌아온 프라미스를 아무도 보지 않으므로, 그
+   * 안에서 새는 거부가 '처리되지 않은 거부'로만 남는다 — 아래 `add` 가 직접 잡는 이유이기도 하다.
+   */
+  function handleSubmit(event: FormEvent<HTMLFormElement>): void {
+    event.preventDefault(); // 폼 제출로 페이지가 이동하는 것을 막는다.
+    void add();
+  }
+
+  async function add(): Promise<void> {
+    if (sending.current) return;
 
     // 빈 입력은 서버까지 가지 않는다(프로토타입 `if (!n) return`) — 아무것도 적지 않고 누른
     // 사람에게는 오류가 아니라 "아직 아무 일도 없음"이 맞다.
     const cleanName = name.trim();
     if (cleanName === '') return;
 
+    sending.current = true;
     setAdding(true);
-    const result = await createCategory(cleanName);
-    setAdding(false);
+
+    let result: ActionResult;
+    try {
+      result = await createCategory(cleanName);
+    } catch (error) {
+      // 액션이 **거부로 끝난** 경우다 — 네트워크가 끊겼거나 배포로 액션 id 가 바뀌어 요청이 더는
+      // 닿지 않는 상황. 잡지 않으면 이 함수가 거부로 끝나 빗장도 잠긴 버튼도 선 채 남는다:
+      // 새로고침 말고는 카테고리를 추가할 길이 없는 패널이 된다. 진단은 로그로만 남기고
+      // (사용자에게 보일 문장이 아니다) 다시 누를 수 있게 되돌린다.
+      console.error('[CategoryPanel] 카테고리 추가 요청이 거부됐다', error);
+      sending.current = false;
+      setAdding(false);
+      toast(REQUEST_FAILED);
+
+      return;
+    }
+
+    sending.current = false;
 
     if (!result.ok) {
       // 이름은 지우지 않는다 — 같은 이름이라 거절당했다면 고쳐서 다시 낼 값이다.
+      setAdding(false);
       toast(result.error);
 
       return;
     }
 
-    setName('');
+    // 입력이 비는 것과 새 카테고리가 목록에 나타나는 것을 **한 커밋으로 묶는다.** `await` 뒤의
+    // 상태 갱신은 저절로 트랜지션에 들어가지 않는다(React 의 알려진 한계 — Next
+    // `interactive-apps.md` Step 6 이 이 우회를 권한다). 그냥 부르면 입력이 먼저 비어, 액션의
+    // revalidatePath 로 새 목록이 도착하기 전까지 "적은 것은 사라졌는데 목록에도 없는" 구간이 뜬다.
+    // 잠긴 모습(`adding`)도 같은 커밋까지 끌고 간다 — 버튼만 먼저 열리면 그 구간이 **적어 둔
+    // 이름이 그대로 남은 채 다시 낼 수 있는** 창이 된다(그 요청은 서버에서 중복으로 거절된다).
+    startTransition(() => {
+      setAdding(false);
+      setName('');
+    });
+    // 토스트는 트랜지션 **밖**이다 — React 상태를 건드리지 않는 곁가지라 함께 묶을 커밋이 없다
+    // (Next `interactive-apps.md`: side effects don't need a transition).
     toast(`${cleanName} 카테고리 추가됨`);
   }
 
@@ -242,15 +327,35 @@ export function CategoryPanel({ totalLinkCount }: { totalLinkCount: number }) {
 
     const sourceId = draggingId.current;
     draggingId.current = null;
+    // 이 화면에서 시작한 드래그가 아니면(바깥에서 파일을 끌어다 놓는 등) 아무 일도 하지 않는다.
     if (sourceId === null || sourceId === targetId) return;
+    // 앞선 정렬이 아직 서버에 가 있으면 이번 드롭은 버린다(위 `reordering`).
+    if (reordering.current) return;
 
-    const next = moveOnto(order, sourceId, targetId);
+    // 목록 **전체**를 보낸다 — 서버가 `orderedIds[i]` 를 그대로 sort_order 로 쓴다.
+    const orderedIds = moveOnto(order, sourceId, targetId).map((category) => category.id);
 
+    reordering.current = true;
     startTransition(async () => {
-      setOrder(next);
+      moveCategory({ sourceId, targetId });
 
-      // 목록 **전체**를 보낸다 — 서버가 `orderedIds[i]` 를 그대로 sort_order 로 쓴다.
-      const result = await reorderCategories(next.map((category) => category.id));
+      let result: ActionResult;
+      try {
+        result = await reorderCategories(orderedIds);
+      } catch (error) {
+        // **트랜지션 안에서 던지면 가장 가까운 오류 경계로 올라간다**(Next `interactive-apps.md`
+        // Step 2). 이 화면 위에 있는 경계는 `app/global-error.tsx` 하나뿐이라, 순서 저장 한 번이
+        // 거부된 것으로 관리 화면 전체가 오류 화면으로 바뀐다 — 고치던 이름도 열어 둔 확인 줄도
+        // 함께 사라진다. 잡아서 낙관 순서만 걷고(트랜지션이 끝나면 서버 순서가 다시 이긴다)
+        // 무슨 일이 있었는지 한 줄로 알린다.
+        console.error('[CategoryPanel] 카테고리 정렬 요청이 거부됐다', error);
+        reordering.current = false;
+        toast(REQUEST_FAILED);
+
+        return;
+      }
+
+      reordering.current = false;
       if (!result.ok) toast(result.error);
     });
   }
@@ -273,7 +378,7 @@ export function CategoryPanel({ totalLinkCount }: { totalLinkCount: number }) {
       {/* 폼으로 낸다 — 입력에서 Enter 가 곧 추가다(HTML 암묵적 제출). keydown 으로 직접 듣지
           않는 이유는 조합 입력(IME)이다: 한글을 확정하는 Enter 로 추가가 일어나면 안 되는데,
           그 판정은 브라우저가 이미 한다(J2 InlineEdit 과 같은 근거). */}
-      <form onSubmit={handleAdd} className="mb-[10px] flex gap-[6px]">
+      <form onSubmit={handleSubmit} className="mb-[10px] flex gap-[6px]">
         {/* placeholder 는 값이 들어가면 사라져 이름 역할을 못 하므로 접근성 이름을 따로 준다.
             눈에 보이는 라벨 줄은 프로토타입에 없다(바로 위 제목이 그 몫을 한다). */}
         <input
@@ -283,10 +388,13 @@ export function CategoryPanel({ totalLinkCount }: { totalLinkCount: number }) {
           onChange={(event) => setName(event.target.value)}
           className="h-[34px] min-w-0 flex-1 rounded-[7px] border border-border-strong bg-card px-[11px] text-[12.5px] text-ink"
         />
+        {/* `cursor-pointer` 는 프로토타입 원문 그대로다(309행 `cursor:pointer`). Tailwind v4 의
+            preflight 에는 버튼 커서 규칙이 없어 적지 않으면 화살표로 남는다 — 브라우저 기본값이
+            `default` 라서다. 잠긴 동안에는 되돌린다(J2·J3 와 같은 관례). */}
         <button
           type="submit"
           disabled={adding}
-          className="flex h-[34px] flex-none items-center rounded-[7px] bg-ink px-[13px] text-[12px] font-semibold whitespace-nowrap text-white hover:bg-ink-hover disabled:opacity-60"
+          className="flex h-[34px] flex-none cursor-pointer items-center rounded-[7px] bg-ink px-[13px] text-[12px] font-semibold whitespace-nowrap text-white hover:bg-ink-hover disabled:cursor-default disabled:opacity-60"
         >
           추가
         </button>

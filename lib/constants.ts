@@ -25,3 +25,14 @@ export const BREAKPOINT_NARROW = 820;
  * '내 즐겨찾기'만 자기 문구를 갖는다(담는 방법을 알려 줘야 해서).
  */
 export const EMPTY_LIST_MESSAGE = '이 분류에 링크가 없습니다.';
+
+/**
+ * 서버 액션 호출이 **거부로 끝났을 때**(네트워크 단절 · 배포로 액션 id 가 바뀜) 화면이 대신
+ * 보여 줄 문구. 액션이 `{ ok:false, error }` 로 돌려준 문구는 그대로 쓰고, 이 상수는 응답
+ * 자체가 없는 경우에만 쓴다.
+ *
+ * `lib/mutations.ts` 의 `RETRY_LATER` 와 **같은 문장**이다 — 그 파일은 `'use server'` 라
+ * 상수를 내보낼 수 없어(export 는 전부 async 함수여야 한다) 저쪽 값을 여기서 가져다 쓸 수 없다.
+ * 저쪽 문구를 고치면 여기도 함께 고쳐라.
+ */
+export const REQUEST_FAILED = '저장하지 못했습니다. 잠시 후 다시 시도해 주세요.';

@@ -32,18 +32,30 @@ const ROWS: AdminCategory[] = [
   { id: 'cat-dev', name: '개발 도구', linkCount: 21, clickTotal: 87 },
 ];
 
-function renderHeader(categories: readonly AdminCategory[] = ROWS, children?: ReactNode) {
-  return render(
+function headerTree(categories: readonly AdminCategory[], children?: ReactNode) {
+  return (
     <SelectedCategoryProvider categories={categories}>
       <CategoryHeader>{children}</CategoryHeader>
       <Toaster />
-    </SelectedCategoryProvider>,
+    </SelectedCategoryProvider>
   );
+}
+
+function renderHeader(categories: readonly AdminCategory[] = ROWS, children?: ReactNode) {
+  return render(headerTree(categories, children));
 }
 
 const panel = () => screen.getByRole('region', { name: '선택한 카테고리' });
 const nameField = () => screen.getByRole('textbox', { name: '카테고리 이름' });
 const button = (name: string) => screen.getByRole('button', { name });
+const renameForm = () => nameField().closest('form') as HTMLFormElement;
+
+/** 액션이 **거부로 끝나는** 상황 — 네트워크 단절·배포로 액션 id 가 바뀐 경우. */
+const REJECTION = new Error('Failed to fetch');
+/** 거부 경로가 남기는 진단 로그(사용자 문구가 아니다) — 테스트 출력만 조용히 시킨다. */
+function silenceConsoleError() {
+  return vi.spyOn(console, 'error').mockImplementation(() => {});
+}
 
 /** 액션이 프라미스를 돌려주므로 저장·삭제 경로는 act 안에서 마이크로태스크까지 흘려보낸다. */
 async function click(element: HTMLElement) {
@@ -105,6 +117,7 @@ describe('CategoryHeader — 이름 인라인 수정', () => {
     expect(nameField()).toHaveValue('AI 도구 모음');
     expect(nameField()).toHaveClass('w-[240px]', 'h-[34px]', 'border-[1.5px]', 'border-ink');
     expect(button('저장')).toBeInTheDocument();
+    expect(button('저장')).toHaveClass('cursor-pointer', 'disabled:cursor-default');
     expect(button('취소')).toBeInTheDocument();
     // 편집 중에는 삭제 자리가 사라진다 — 고치던 이름과 지우려는 대상이 섞이지 않게.
     expect(screen.queryByRole('button', { name: '카테고리 삭제' })).not.toBeInTheDocument();
@@ -174,6 +187,45 @@ describe('CategoryHeader — 이름 인라인 수정', () => {
     expect(renameCategory).not.toHaveBeenCalled();
     expect(screen.queryByRole('textbox', { name: '카테고리 이름' })).not.toBeInTheDocument();
   });
+
+  it('같은 틱에 제출이 두 번 들어와도 요청은 한 번만 나간다', async () => {
+    // `disabled` 는 다시 그려진 뒤에야 걸리므로 같은 틱의 두 번째 제출을 막지 못한다
+    // (Enter 를 튕기는 키보드). 빗장이 ref 여야 여기서 걸린다.
+    vi.mocked(renameCategory).mockReturnValue(new Promise(() => {}));
+    renderHeader();
+
+    await startRename('AI 도구');
+    await act(async () => {
+      fireEvent.submit(renameForm());
+      fireEvent.submit(renameForm());
+    });
+
+    expect(renameCategory).toHaveBeenCalledTimes(1);
+  });
+
+  it('요청 자체가 거부되면 잠금을 풀고 재시도 문구를 띄운다', async () => {
+    const spy = silenceConsoleError();
+    vi.mocked(renameCategory).mockRejectedValue(REJECTION);
+    renderHeader();
+
+    await startRename('AI 도구');
+    await click(button('저장'));
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '저장하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+    );
+    // 잠긴 채 남으면 저장·취소·Esc 가 전부 막혀 새로고침 말고는 나갈 길이 없다.
+    expect(button('저장')).toBeEnabled();
+    expect(nameField()).toHaveValue('AI 도구');
+
+    // 빗장(ref)도 함께 풀렸는지 — 같은 자리에서 곧바로 다시 낼 수 있어야 한다.
+    vi.mocked(renameCategory).mockResolvedValue({ ok: true });
+    await click(button('저장'));
+    expect(renameCategory).toHaveBeenCalledTimes(2);
+    expect(spy).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
 });
 
 describe('CategoryHeader — 카테고리 삭제', () => {
@@ -237,6 +289,149 @@ describe('CategoryHeader — 카테고리 삭제', () => {
     expect(deleteCategory).not.toHaveBeenCalled();
     expect(button('카테고리 삭제')).toBeInTheDocument();
   });
+
+  it('같은 틱에 두 번 눌러도 삭제 요청은 한 번만 나간다', async () => {
+    // 두 번째 요청은 "카테고리를 찾을 수 없습니다."로 돌아와, 지워 놓고 실패를 말하는 화면이 된다.
+    vi.mocked(deleteCategory).mockReturnValue(new Promise(() => {}));
+    renderHeader();
+
+    await click(button('카테고리 삭제'));
+    const confirmButton = button('삭제');
+    await act(async () => {
+      fireEvent.click(confirmButton);
+      fireEvent.click(confirmButton);
+    });
+
+    expect(deleteCategory).toHaveBeenCalledTimes(1);
+  });
+
+  it('요청 자체가 거부되면 확인 줄을 열어 둔 채 재시도 문구를 띄운다', async () => {
+    const spy = silenceConsoleError();
+    vi.mocked(deleteCategory).mockRejectedValue(REJECTION);
+    renderHeader();
+
+    await click(button('카테고리 삭제'));
+    await click(button('삭제'));
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '저장하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+    );
+    // 서버가 판단한 결과가 아니라 닿지도 않은 요청이라, 같은 자리에서 그대로 다시 누를 수 있어야 한다.
+    expect(button('삭제')).toBeEnabled();
+
+    vi.mocked(deleteCategory).mockResolvedValue({ ok: true });
+    await click(button('삭제'));
+    expect(deleteCategory).toHaveBeenCalledTimes(2);
+    expect(spy).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+});
+
+describe('CategoryHeader — 포커스가 가는 자리', () => {
+  setupToastTimers();
+
+  it('이름 수정을 열면 입력이 포커스를 받는다', async () => {
+    renderHeader();
+
+    await click(button('이름 수정'));
+
+    // 방금 사라진 '이름 수정' 버튼에 포커스가 남으면 키보드 사용자는 갈 곳을 잃는다.
+    expect(nameField()).toHaveFocus();
+  });
+
+  it('취소하면 포커스가 이름 수정 버튼으로 돌아온다', async () => {
+    renderHeader();
+
+    await click(button('이름 수정'));
+    await click(button('취소'));
+
+    expect(button('이름 수정')).toHaveFocus();
+  });
+
+  it('Esc 로 닫아도 포커스가 이름 수정 버튼으로 돌아온다', async () => {
+    renderHeader();
+
+    await click(button('이름 수정'));
+    await act(async () => {
+      fireEvent.keyDown(nameField(), { key: 'Escape' });
+    });
+
+    expect(button('이름 수정')).toHaveFocus();
+  });
+
+  it('저장에 성공해 닫혀도 포커스가 이름 수정 버튼으로 돌아온다', async () => {
+    renderHeader();
+
+    await startRename('AI 도구');
+    await click(button('저장'));
+
+    expect(button('이름 수정')).toHaveFocus();
+  });
+
+  it('삭제 확인을 열면 포커스는 삭제가 아니라 취소로 간다', async () => {
+    renderHeader();
+
+    await click(button('카테고리 삭제'));
+
+    // 되돌릴 수 없는 동작을 묻는 자리라 기본 포커스는 덜 위험한 쪽이다(WAI-ARIA APG
+    // alertdialog · J3 DeleteConfirm 과 같은 판단) — 여기서 Enter 가 곧 삭제면 확인을 둔 뜻이 없다.
+    expect(button('취소')).toHaveFocus();
+  });
+
+  it('확인 줄에서 취소하면 포커스가 카테고리 삭제 버튼으로 돌아온다', async () => {
+    renderHeader();
+
+    await click(button('카테고리 삭제'));
+    await click(button('취소'));
+
+    expect(button('카테고리 삭제')).toHaveFocus();
+  });
+
+  it('삭제가 거절돼 확인 줄이 걷혀도 포커스가 카테고리 삭제 버튼으로 돌아온다', async () => {
+    vi.mocked(deleteCategory).mockResolvedValue({
+      ok: false,
+      error: '하위 카테고리를 먼저 삭제하세요.',
+    });
+    renderHeader();
+
+    await click(button('카테고리 삭제'));
+    await click(button('삭제'));
+
+    expect(button('카테고리 삭제')).toHaveFocus();
+  });
+
+  it('삭제한 카테고리가 목록에서 빠져도 포커스 되돌리기가 터지지 않는다', async () => {
+    // 성공 경로에서는 이 줄이 통째로 사라진다(revalidatePath 로 새 목록이 온다). 사라진 노드에
+    // focus() 를 부르지 않도록 `isConnected` 를 본다 — 안 보면 떨어져 나간 버튼을 부른다.
+    const { rerender } = renderHeader([ROWS[0]]);
+
+    await click(button('카테고리 삭제'));
+    await click(button('삭제'));
+    await act(async () => {
+      rerender(headerTree([]));
+    });
+
+    expect(
+      screen.getByText('카테고리가 없습니다. ‘상위 카테고리’에서 먼저 추가하세요.'),
+    ).toBeInTheDocument();
+  });
+
+  it('선택이 바뀌어 줄이 다시 마운트돼도 포커스를 가져오지 않는다', async () => {
+    render(
+      <SelectedCategoryProvider categories={ROWS}>
+        <CategoryPanel totalLinkCount={139} />
+        <CategoryHeader />
+      </SelectedCategoryProvider>,
+    );
+
+    const target = screen.getByRole('button', { name: /개발 도구/ });
+    target.focus();
+    await click(target);
+
+    // 마운트마다 포커스를 잡으면 좌측에서 카테고리를 고를 때마다 포커스가 헤더로 끌려간다.
+    expect(target).toHaveFocus();
+  });
 });
 
 describe('CategoryHeader — 아래에 붙는 줄들 (I2·I3·I4 자리)', () => {
@@ -255,6 +450,49 @@ describe('CategoryHeader — 아래에 붙는 줄들 (I2·I3·I4 자리)', () =>
     unmount();
     renderHeader();
     expect(panel().firstElementChild).not.toHaveClass('border-b');
+  });
+
+  /**
+   * "아래 줄이 있다"의 기준은 **React 가 실제로 무언가를 그리는가**다(J1b LinkCard `hasEditSlot`).
+   * `undefined` 만 걸러 내면 아래 세 값이 전부 검사를 통과해, 상자 테두리 바로 안쪽에 아무것도
+   * 나누지 않는 선이 하나 더 그어진다.
+   */
+  function expectNoDivider(children: ReactNode) {
+    const { unmount } = renderHeader(ROWS, children);
+
+    expect(panel().firstElementChild).not.toHaveClass('border-b');
+    expect(panel().children).toHaveLength(1);
+
+    unmount();
+  }
+
+  it('조건이 거짓일 때 넘어오는 false 는 아래 줄로 치지 않는다 (`{cond && <Row/>}`)', () => {
+    expectNoDivider(false);
+  });
+
+  it('null 도 아래 줄로 치지 않는다', () => {
+    expectNoDivider(null);
+  });
+
+  it('빈 문자열도 아래 줄로 치지 않는다', () => {
+    expectNoDivider('');
+  });
+
+  it('카테고리가 없으면 안내 문구만 남기고 아래 줄은 그리지 않는다', () => {
+    // 아래 줄들이 다루는 대상이 없고(하위 줄은 그 상황에서 스스로 null 을 돌려준다 — I2),
+    // 안내 문구 줄은 구분선을 갖지 않으므로 무언가 붙으면 선 없이 맞붙은 두 줄이 된다.
+    renderHeader([], <p>하위 줄</p>);
+
+    expect(screen.queryByText('하위 줄')).not.toBeInTheDocument();
+    expect(panel().children).toHaveLength(1);
+  });
+
+  it('글자 버튼들도 손가락 커서를 쓰고 잠긴 동안에는 되돌린다 (프로토타입 334–335행)', () => {
+    // Tailwind v4 preflight 에는 버튼 커서 규칙이 없어 적지 않으면 화살표로 남는다.
+    renderHeader();
+
+    expect(button('이름 수정')).toHaveClass('cursor-pointer', 'disabled:cursor-default');
+    expect(button('카테고리 삭제')).toHaveClass('cursor-pointer', 'disabled:cursor-default');
   });
 });
 
