@@ -136,9 +136,11 @@ function HeaderRow({ category, divided }: { category: AdminCategory; divided: bo
    * - 보기 줄로 돌아올 때(취소 · Esc · 저장 성공 · 삭제 응답)는 **그 갈래를 연 버튼**으로
    *   돌려준다. 나갔던 자리로 돌아오는 것이 사람이 기억하는 위치다.
    *
-   * 되돌릴 때 `isConnected` 를 보는 것은 삭제 성공 경로 때문이다 — 그때는 카테고리가 목록에서
-   * 빠져 이 줄이 통째로 사라진다(J3 DeleteConfirm 과 같은 검사). 떨어져 나간 노드에 `focus()` 를
-   * 불러 봐야 포커스는 `<body>` 로 간다.
+   * 되돌릴 때 `null` 과 `isConnected` 를 **함께** 보는 것은 삭제 성공 경로 때문이다 — 그때는
+   * 카테고리가 목록에서 빠져 이 줄이 통째로 사라진다. 언마운트된 버튼의 ref 는 React 가 null 로
+   * 되돌리므로 대개 앞엣것에서 걸리고, `isConnected` 는 ref 가 아직 살아 있는데 노드만 문서에서
+   * 떨어진 창을 막는 두 번째 그물이다(J3 DeleteConfirm 은 트리거가 남의 컴포넌트 것이라 그쪽이
+   * 유일한 그물이다). 떨어져 나간 노드에 `focus()` 를 불러 봐야 포커스는 문서 뿌리로 간다.
    */
   useEffect(() => {
     const from = cameFrom.current;

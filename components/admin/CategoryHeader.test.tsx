@@ -498,13 +498,20 @@ describe('CategoryHeader — 포커스가 가는 자리', () => {
     expect(nameField()).toHaveFocus();
   });
 
-  it('삭제한 카테고리가 목록에서 빠져도 포커스 되돌리기가 터지지 않는다', async () => {
-    // 성공 경로에서는 이 줄이 통째로 사라진다(revalidatePath 로 새 목록이 온다). 사라진 노드에
-    // focus() 를 부르지 않도록 `isConnected` 를 본다 — 안 보면 떨어져 나간 버튼을 부른다.
+  it('삭제에 성공하면 카테고리 삭제로 돌아갔다가, 줄이 사라질 때 포커스를 남기지 않는다', async () => {
+    // 이름이 약속하는 것을 실제로 본다. 이 자리에는 "터지지 않는다"만 적힌 단언이 있었는데,
+    // 떨어져 나간 노드에 focus() 를 불러도 jsdom 은 조용히 넘어가므로 `isConnected` 를 지워도
+    // 초록이었다(H3 0e7d04f 관례 — 통과가 보장된 단언은 세우지 않는다). 대신 이 경로에서
+    // 정말로 검사할 수 있는 둘을 본다: 응답 직후의 포커스 자리와, 줄이 사라진 뒤의 포커스 자리.
     const { rerender } = renderHeader([ROWS[0]]);
 
     await click(button('카테고리 삭제'));
     await click(button('삭제'));
+
+    // 응답이 오면 확인 줄이 걷히고, 나갔던 자리로 돌아온다(취소·거절 경로와 같은 규칙).
+    expect(button('카테고리 삭제')).toHaveFocus();
+
+    // 그다음 revalidate 된 새 목록이 도착해 줄 자체가 사라진다.
     await act(async () => {
       rerender(headerTree([]));
     });
@@ -512,6 +519,8 @@ describe('CategoryHeader — 포커스가 가는 자리', () => {
     expect(
       screen.getByText('카테고리가 없습니다. ‘상위 카테고리’에서 먼저 추가하세요.'),
     ).toBeInTheDocument();
+    // 사라진 버튼이 포커스를 붙든 채 남으면 그다음 Tab 이 화면 맨 앞에서 시작한다.
+    expect(document.body).toHaveFocus();
   });
 
   it('선택이 바뀌어 줄이 다시 마운트돼도 포커스를 가져오지 않는다', async () => {
