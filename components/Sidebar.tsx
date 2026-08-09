@@ -34,6 +34,9 @@ const FONT_SUB = 'text-[12.5px] font-normal';
 const INDENT_TOP = 'pl-[11px]';
 const INDENT_SUB = 'pl-[30px]';
 
+/** 펼침 기호 자리 — 하위가 없는 행도 같은 폭을 비워 라벨 말줄임 기준을 맞춘다. */
+const ARROW_SLOT = 'w-[10px] flex-none';
+
 type RowProps = {
   href: string;
   name: string;
@@ -65,18 +68,21 @@ function Row({ href, name, count, active, indent, font, toggle }: RowProps) {
         </span>
       </Link>
 
-      {/* 펼침 기호는 아이콘 라이브러리 없이 텍스트 문자 그대로 쓴다 (+ / – U+2013). */}
+      {/* 펼침 기호는 아이콘 라이브러리 없이 텍스트 문자 그대로 쓴다 (+ / – U+2013).
+          하위가 없는 행도 같은 10px 자리를 비워 둬야 라벨 말줄임 폭이 행마다 같아진다. */}
       {toggle ? (
         <button
           type="button"
           onClick={toggle.onToggle}
           aria-expanded={toggle.open}
           aria-label={`${name} 하위 분류 ${toggle.open ? '접기' : '펼치기'}`}
-          className="w-[10px] flex-none text-center text-[10px] text-ghost"
+          className={`${ARROW_SLOT} text-center text-[10px] text-ghost`}
         >
           {toggle.open ? '–' : '+'}
         </button>
-      ) : null}
+      ) : (
+        <span aria-hidden="true" className={ARROW_SLOT} />
+      )}
 
       <span
         className={`min-w-[22px] flex-none text-right text-[11px] ${
@@ -119,16 +125,20 @@ export function Sidebar({
     (c) => c.parent_id === null && c.id !== operatingCategoryId,
   );
 
-  /**
-   * 선택된 하위가 있으면 그 상위를 기본으로 펼친다 — 접힌 채로 두면 활성 행이 보이지 않는다.
-   * 사용자가 직접 토글한 상위는 그 선택을 우선한다.
-   */
   const activeSub = categories.find(
     (c) => c.parent_id !== null && isActive(categoryHref(c.id)),
   );
-  const isOpen = (id: string) => toggled[id] ?? activeSub?.parent_id === id;
+  /**
+   * 기본 펼침 — 프로토타입은 상위를 누르면 이동과 펼침을 함께 했다. URL이 상태를 쥐는
+   * 구조에서는 "그 가지가 현재 경로에 걸려 있으면 펼친다"로 옮긴다. 상위 자신이 활성이거나
+   * 선택된 하위를 품고 있으면 펼치고, 사용자가 직접 접은 상위는 그 선택을 우선한다.
+   */
+  const autoOpen = (id: string) =>
+    activeSub?.parent_id === id || isActive(categoryHref(id));
+  const isOpen = (id: string) => toggled[id] ?? autoOpen(id);
+  // 이전 값은 반드시 업데이터의 prev 에서 읽는다 — 렌더 스코프의 toggled 를 읽으면 낡은 값이 잡힌다.
   const toggle = (id: string) =>
-    setToggled((prev) => ({ ...prev, [id]: !isOpen(id) }));
+    setToggled((prev) => ({ ...prev, [id]: !(prev[id] ?? autoOpen(id)) }));
 
   const quick = [
     { href: '/', name: '홈', count: totalCount },

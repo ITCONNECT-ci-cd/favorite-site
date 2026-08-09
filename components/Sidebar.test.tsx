@@ -184,6 +184,26 @@ describe('Sidebar', () => {
       expect(
         within(row('마케팅').container).queryByRole('button'),
       ).not.toBeInTheDocument();
+      // 하위가 없는 행도 기호 자리를 비워 둔다 — 링크·기호칸·개수 3칸 구성은 모든 행이 같다.
+      expect(row('마케팅').container.children).toHaveLength(3);
+      expect(row('AI 도구 모음').container.children).toHaveLength(3);
+    });
+
+    it('두 상위를 모두 펼치면 둘 다 열린 채로 남는다 (아코디언 아님)', () => {
+      renderSidebar();
+
+      fireEvent.click(screen.getByRole('button', { name: 'AI 도구 모음 하위 분류 펼치기' }));
+      fireEvent.click(screen.getByRole('button', { name: '참고자료 하위 분류 펼치기' }));
+
+      expect(screen.getByRole('link', { name: '대화·검색' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: '이미지' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: '도구·서비스' })).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'AI 도구 모음 하위 분류 접기' }),
+      ).toHaveAttribute('aria-expanded', 'true');
+      expect(
+        screen.getByRole('button', { name: '참고자료 하위 분류 접기' }),
+      ).toHaveAttribute('aria-expanded', 'true');
     });
 
     it('+ 를 누르면 하위가 펼쳐지고 기호가 – 로 바뀐다', () => {
@@ -294,6 +314,31 @@ describe('Sidebar', () => {
       expect(row('대화·검색').marker).toHaveClass('bg-ink');
       // 하위가 선택된 동안 상위는 활성이 아니다 (프로토타입 `on: key === n && !sub`).
       expect(row('AI 도구 모음').container).not.toHaveClass('bg-select');
+    });
+
+    it('상위 자신이 활성이면 그 하위를 기본으로 펼친다', () => {
+      pathname.current = '/category/ai';
+      renderSidebar();
+
+      expect(row('AI 도구 모음').container).toHaveClass('bg-select');
+      expect(
+        screen.getByRole('button', { name: 'AI 도구 모음 하위 분류 접기' }),
+      ).toHaveAttribute('aria-expanded', 'true');
+      expect(screen.getByRole('link', { name: '대화·검색' })).toBeInTheDocument();
+      // 다른 상위까지 펼쳐지지는 않는다.
+      expect(screen.queryByRole('link', { name: '도구·서비스' })).not.toBeInTheDocument();
+    });
+
+    it('활성 상위도 사용자가 직접 접으면 접힌 채로 둔다', () => {
+      pathname.current = '/category/ai';
+      renderSidebar();
+
+      fireEvent.click(screen.getByRole('button', { name: 'AI 도구 모음 하위 분류 접기' }));
+
+      expect(screen.queryByRole('link', { name: '대화·검색' })).not.toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'AI 도구 모음 하위 분류 펼치기' }),
+      ).toHaveAttribute('aria-expanded', 'false');
     });
 
     it('기본으로 펼쳐진 상위도 – 를 눌러 접을 수 있다', () => {
