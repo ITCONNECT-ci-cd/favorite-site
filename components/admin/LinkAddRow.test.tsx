@@ -443,7 +443,7 @@ describe('LinkAddRow — 등록 실패', () => {
     fill({ url: 'https://perplexity.ai/' });
     await click(addButton());
 
-    expect(screen.getByRole('status')).toHaveTextContent('저장하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    expect(screen.getByRole('status')).toHaveTextContent('처리하지 못했습니다. 잠시 후 다시 시도해 주세요.');
     expect(addButton()).not.toBeDisabled();
     expect(spy).toHaveBeenCalled();
 

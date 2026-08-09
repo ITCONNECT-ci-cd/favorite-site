@@ -41,7 +41,7 @@ describe('공유 상수', () => {
   it('요청 거부 문구가 액션의 RETRY_LATER 와 한 글자도 다르지 않다', () => {
     // `lib/mutations.ts` 는 'use server' 라 상수를 내보낼 수 없어 값을 맞대 볼 수 없다.
     // 그래서 문장을 여기 한 번 더 적어 잠근다 — 한쪽만 고치면 이 테스트가 먼저 걸린다.
-    expect(REQUEST_FAILED).toBe('저장하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    expect(REQUEST_FAILED).toBe('처리하지 못했습니다. 잠시 후 다시 시도해 주세요.');
   });
 
   it('화면 이름 셋이 DESIGN_SPEC 3장 표 그대로다 (홈 섹션 = 목록 화면 = 탭 그룹 명칭)', () => {

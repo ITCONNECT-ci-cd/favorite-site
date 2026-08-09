@@ -298,7 +298,7 @@ describe('CategoryPanel — 카테고리 추가', () => {
     await click(addButton());
 
     expect(screen.getByRole('status')).toHaveTextContent(
-      '저장하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+      '처리하지 못했습니다. 잠시 후 다시 시도해 주세요.',
     );
     // 잠긴 채 남으면 새로고침 말고는 다시 추가할 길이 없다.
     expect(addButton()).toBeEnabled();
@@ -394,7 +394,7 @@ describe('CategoryPanel — 드래그 정렬 (DESIGN_SPEC 6장 "draggable 로 �
     await dragOnto('마케팅', 'AI 도구 모음');
 
     expect(screen.getByRole('status')).toHaveTextContent(
-      '저장하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+      '처리하지 못했습니다. 잠시 후 다시 시도해 주세요.',
     );
     expectOrder(['AI 도구 모음', '개발 도구', '마케팅']);
     expect(spy).toHaveBeenCalled();

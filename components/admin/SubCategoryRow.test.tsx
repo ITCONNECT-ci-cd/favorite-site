@@ -245,7 +245,7 @@ describe('SubCategoryRow — 하위 추가', () => {
 
     await add('코딩 보조');
 
-    expect(screen.getByRole('status')).toHaveTextContent('저장하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    expect(screen.getByRole('status')).toHaveTextContent('처리하지 못했습니다. 잠시 후 다시 시도해 주세요.');
     expect(button('하위 카테고리 추가')).not.toBeDisabled();
     vi.mocked(console.error).mockRestore();
   });
@@ -340,7 +340,7 @@ describe('SubCategoryRow — 이름 수정', () => {
     await click(saveButton('대화형'));
 
     // 거부는 서버가 판단한 결과가 아니므로 폼도 고치던 이름도 남는다(실패와 같은 갈래).
-    expect(screen.getByRole('status')).toHaveTextContent('저장하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    expect(screen.getByRole('status')).toHaveTextContent('처리하지 못했습니다. 잠시 후 다시 시도해 주세요.');
     expect(saveButton('대화형')).not.toBeDisabled();
     expect(nameField()).toHaveValue('챗봇');
     vi.mocked(console.error).mockRestore();
@@ -624,7 +624,7 @@ describe('SubCategoryRow — 하위 삭제', () => {
     await click(button('대화형 삭제'));
     await click(confirmButton('대화형'));
 
-    expect(screen.getByRole('status')).toHaveTextContent('저장하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    expect(screen.getByRole('status')).toHaveTextContent('처리하지 못했습니다. 잠시 후 다시 시도해 주세요.');
     // 위 실패와 갈리는 곳이다 — 요청이 **닿지도 않았다.** 서버가 판단한 결과가 아니므로 확인
     // 줄을 걷지 않고 같은 자리에서 그대로 다시 누르게 둔다(I1 CategoryHeader 와 같은 갈래).
     expect(confirmButton('대화형')).not.toBeDisabled();

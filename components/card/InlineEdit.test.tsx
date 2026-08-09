@@ -378,7 +378,7 @@ describe('InlineEdit — 저장 실패', () => {
   beforeEach(() => {
     vi.mocked(updateBookmark).mockResolvedValue({
       ok: false,
-      error: '저장하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+      error: '처리하지 못했습니다. 잠시 후 다시 시도해 주세요.',
     });
   });
 
@@ -389,7 +389,7 @@ describe('InlineEdit — 저장 실패', () => {
     await save();
 
     expect(
-      screen.getByText('저장하지 못했습니다. 잠시 후 다시 시도해 주세요.'),
+      screen.getByText('처리하지 못했습니다. 잠시 후 다시 시도해 주세요.'),
     ).toBeInTheDocument();
   });
 
@@ -440,7 +440,7 @@ describe('InlineEdit — 요청이 거부됐을 때', () => {
     await save();
 
     expect(
-      screen.getByText('저장하지 못했습니다. 잠시 후 다시 시도해 주세요.'),
+      screen.getByText('처리하지 못했습니다. 잠시 후 다시 시도해 주세요.'),
     ).toBeInTheDocument();
     // 진짜 원인(스택·요청)은 로그로만 간다.
     expect(console.error).toHaveBeenCalled();

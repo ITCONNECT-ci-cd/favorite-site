@@ -236,7 +236,7 @@ describe('CategoryHeader — 이름 인라인 수정', () => {
     await click(button('저장'));
 
     expect(screen.getByRole('status')).toHaveTextContent(
-      '저장하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+      '처리하지 못했습니다. 잠시 후 다시 시도해 주세요.',
     );
     // 잠긴 채 남으면 저장·취소·Esc 가 전부 막혀 새로고침 말고는 나갈 길이 없다.
     expect(button('저장')).toBeEnabled();
@@ -357,7 +357,7 @@ describe('CategoryHeader — 카테고리 삭제', () => {
     await click(button('삭제'));
 
     expect(screen.getByRole('status')).toHaveTextContent(
-      '저장하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+      '처리하지 못했습니다. 잠시 후 다시 시도해 주세요.',
     );
     // 서버가 판단한 결과가 아니라 닿지도 않은 요청이라, 같은 자리에서 그대로 다시 누를 수 있어야 한다.
     expect(button('삭제')).toBeEnabled();

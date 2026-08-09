@@ -197,7 +197,7 @@ function expectOrder(titles: readonly string[]) {
 
 const REJECTION = new Error('요청이 닿지 않았다');
 /** 요청 자체가 거부됐을 때의 문구 — `lib/constants.ts` 의 `REQUEST_FAILED` 와 같은 문장이다. */
-const REQUEST_FAILED = '저장하지 못했습니다. 잠시 후 다시 시도해 주세요.';
+const REQUEST_FAILED = '처리하지 못했습니다. 잠시 후 다시 시도해 주세요.';
 
 setupToastTimers();
 
