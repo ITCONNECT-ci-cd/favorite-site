@@ -4,6 +4,7 @@ import {
   SelectedCategoryProvider,
   type AdminCategory,
 } from '@/components/admin/CategoryPanel';
+import { FilterRow, LinkFilterProvider } from '@/components/admin/FilterRow';
 import { LinkAddRow } from '@/components/admin/LinkAddRow';
 import { LinkTable, type AdminLink, type LinkRowMap } from '@/components/admin/LinkTable';
 import {
@@ -49,6 +50,10 @@ export default async function AdminPage() {
      접는다. 두 벌을 따로 만들어도 화면은 같지만, 그러면 "칩과 select 가 같은 목록"이라는 사실이
      우연이 된다(둘 중 하나만 다른 함수로 갈아 끼워도 아무도 눈치채지 못한다). */
   const subs = subRows(categories, bookmarks);
+  /* 링크 목록도 두 곳이 쓴다 — 표(I4)가 그리고, 필터 줄(I5)의 칩이 같은 목록을 센다. 위 `subs` 와
+     같은 이유로 한 번만 접는다: 두 벌을 따로 만들면 "칩이 세는 것과 표가 그리는 것이 같은 목록"
+     이라는 사실이 우연이 된다. */
+  const links = linkRows(categories, bookmarks);
 
   return (
     /* 프로토타입 원문 `display:flex; gap:20px; align-items:flex-start` + `adminDir`(narrow 면 column).
@@ -81,10 +86,16 @@ export default async function AdminPage() {
               아는 것은 표이고(카테고리는 있는데 링크가 0개면 표가 한 줄로 알린다), 화면은 그
               판단을 나눠 갖지 않는다.
 
-              I5 의 필터 줄은 표 **앞**에 형제로 들어온다 — 프로토타입의 상자 안 차례가
-              추가 줄(360행) → 필터 줄(367행) → 표(382행)다. */}
+              필터 줄은 표 **앞**에 형제로 들어간다 — 프로토타입의 상자 안 차례가 추가 줄(360행)
+              → 필터 줄(367행) → 표(382행)다. 그 줄이 정한 검색어·하위 칩·정렬은 prop 이 아니라
+              `LinkFilterProvider` 를 거쳐 표에 닿는다: 둘은 형제라 prop 으로는 닿지 않고, 값을
+              여기서 들면 "필터가 무엇인가"의 소유자가 화면으로 올라온다(선택 상태와 같은 판단 —
+              `SelectedCategoryProvider`). provider 는 DOM 을 만들지 않아 상자 안의 차례도 그대로다. */}
           <LinkAddRow>
-            <LinkTable linksByCategory={linkRows(categories, bookmarks)} subsByCategory={subs} />
+            <LinkFilterProvider>
+              <FilterRow linksByCategory={links} subsByCategory={subs} />
+              <LinkTable linksByCategory={links} subsByCategory={subs} />
+            </LinkFilterProvider>
           </LinkAddRow>
         </div>
       </SelectedCategoryProvider>

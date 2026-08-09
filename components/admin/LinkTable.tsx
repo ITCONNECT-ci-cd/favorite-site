@@ -11,6 +11,7 @@ import {
 } from 'react';
 
 import { useSelectedCategory, type AdminCategory } from '@/components/admin/CategoryPanel';
+import { useLinkFilter, visibleLinks } from '@/components/admin/FilterRow';
 import type { AdminSubCategory, SubCategoryMap } from '@/components/admin/SubCategoryRow';
 import { EyeIcon } from '@/components/icons';
 import { toast } from '@/components/Toast';
@@ -75,7 +76,16 @@ const ROW =
   'flex flex-wrap items-center gap-x-[12px] gap-y-[10px] min-h-[52px] px-[16px] py-[8px] border-b border-line hover:bg-toolbar';
 
 /** 손잡이 9×12px 두 줄 (`#d8d3cb`). 좌측 패널의 손잡이와 같은 모양이지만 색이 다르다(그쪽은 `#c9c5be`). */
-const HANDLE = 'order-0 w-[9px] h-[12px] flex-none border-t-2 border-b-2 border-dash cursor-grab';
+const HANDLE = 'order-0 w-[9px] h-[12px] flex-none border-t-2 border-b-2 border-dash';
+/**
+ * 끌 수 없는 동안의 손잡이 — 커서를 되돌리고 흐린다.
+ *
+ * 커서만 바꾸면 마우스를 얹어 본 사람에게만 알려진다. 손잡이는 "여기를 집어라"라고 말하는 유일한
+ * 표시라, 집을 수 없게 된 동안에는 눈으로도 물러서 있어야 한다(정렬을 '직접 지정한 순서'로
+ * 되돌리면 그대로 돌아온다 — 사라지지 않는 이유가 그것이다: 자리가 비면 행 전체가 흔들린다).
+ */
+const HANDLE_ON = 'cursor-grab';
+const HANDLE_OFF = 'cursor-default opacity-40';
 
 /** 이름 칸 250px — 헤더의 `링크` 칸과 같은 폭이다. */
 const NAME_CELL = 'order-1 flex items-center gap-[10px] w-[250px] flex-none min-w-0';
@@ -96,8 +106,14 @@ const SUB_FIELD =
 /** 클릭 46px 우측 정렬. `#5a5651` 은 스펙 색상표에 없는 프로토타입 고유값이다(405행). */
 const CLICKS = 'order-4 flex items-center justify-end gap-[4px] w-[46px] flex-none text-[11.5px] font-semibold text-[#5a5651]';
 
-/** 고정 토글 56×26px 알약. 켜짐·꺼짐의 세 색(배경·글자·테두리)이 함께 뒤집힌다(프로토타입 1114행). */
-const PIN = 'order-5 flex items-center justify-center w-[56px] h-[26px] flex-none rounded-[13px] border text-[11px] font-semibold';
+/**
+ * 고정 토글 56×26px 알약. 켜짐·꺼짐의 세 색(배경·글자·테두리)이 함께 뒤집힌다(프로토타입 1114행).
+ *
+ * 손가락 커서는 프로토타입 원문 그대로다(406행 `cursor:pointer`). `disabled:cursor-default` 를
+ * 함께 달지 않는 것은 이 버튼을 **잠그지 않기** 때문이다 — 이중 제출은 `pinningRef` 가 막는다
+ * (아래 버튼의 주석. 잠그는 버튼을 가진 I2·J2 는 그쪽 짝을 함께 단다).
+ */
+const PIN = 'order-5 flex items-center justify-center w-[56px] h-[26px] flex-none cursor-pointer rounded-[13px] border text-[11px] font-semibold';
 const PIN_ON = 'bg-ink text-white border-ink';
 const PIN_OFF = 'bg-card text-ghost border-border-strong';
 
@@ -162,7 +178,15 @@ async function run(call: () => Promise<ActionResult>, what: string): Promise<Act
  * 프로토타입에서 흰 상자 하나가 추가 줄 + 필터 줄 + 표를 함께 담는다(359–412행). 그래서 이
  * 컴포넌트는 상자를 만들지 않고 `<LinkAddRow>` 의 children 으로 들어간다(그쪽 JSDoc
  * "I4·I5 와의 계약") — 추가 줄과 이 표 사이의 구분선은 LinkAddRow 가 그린다. 필터 줄(I5)은
- * 이 표 **앞**에 형제로 들어온다.
+ * 이 표 **앞**에 형제로 들어오고, 그 줄이 정한 것은 prop 이 아니라 문맥으로 닿는다
+ * (`useLinkFilter` — 선택 상태와 같은 모양이다).
+ *
+ * ## 그리는 목록과 보내는 목록은 다르다
+ *
+ * 검색·하위 칩·정렬은 **그리는 쪽에만** 걸린다(`visibleLinks`). 드래그로 바뀐 순서를 서버로
+ * 보낼 때 넘기는 것은 언제나 걸러지지 않은 목록 전체다 — `sort_order` 는 테이블이 공유하는 컬럼
+ * 하나라 일부만 보내면 나머지와 뒤섞인다(아래 `handleDrop`). 그리고 '직접 지정한 순서'가 아닌
+ * 정렬에서는 드래그 자체를 받지 않는다(아래 `sortable`).
  *
  * ## 서버와의 계약
  *
@@ -230,6 +254,29 @@ function Table({
    * 안에서만 오가는 정보이고, dragover 중에는 `dataTransfer.getData()` 가 보안상 빈 문자열을
    * 돌려주는 브라우저가 있어 판정에 쓸 수 없다.
    */
+  /**
+   * 필터 줄(I5)이 정한 것 — 검색어 · 하위 칩 · 정렬. **prop 이 아니라 문맥에서** 온다: 줄과 표는
+   * 형제라 값이 화면(page)을 거쳐 내려오면 "필터가 무엇인가"의 소유자가 화면으로 올라간다
+   * (`components/admin/FilterRow.tsx` `LinkFilterProvider`).
+   */
+  const filter = useLinkFilter();
+
+  /**
+   * **그리는 목록.** 아래 `handleDrop` 이 보내는 목록(`order` 전체)과 다르다 — 그 이유는 그쪽
+   * 주석에 있다. 걸러 낼 밑이 `links` 가 아니라 `order` 인 것은 낙관적 순서 때문이다: 저장이
+   * 끝나기 전의 새 차례도 걸러진 화면에 그대로 보여야 한다.
+   */
+  const shown = visibleLinks(order, subs, filter);
+
+  /**
+   * 지금 끌어 옮길 수 있는가. **'직접 지정한 순서'일 때만이다.**
+   *
+   * 다른 정렬에서는 보이는 차례와 저장되는 차례(`sort_order`)가 서로 다르다. 그 상태에서 놓으면
+   * 사람은 보이는 차례를 바꿨다고 믿지만 서버로 가는 것은 전혀 다른 결과가 되고(놓은 자리가
+   * 보이는 목록에서는 2번이어도 실제 목록에서는 5번일 수 있다), 화면에는 되돌릴 길이 없다.
+   */
+  const sortable = filter.sort === 'order';
+
   const draggingId = useRef<string | null>(null);
   /**
    * 정렬 요청이 나가 있는 동안 — 두 번째 드롭을 **버리는** 빗장이다. 겹쳐 놓으면 두 요청이 각각
@@ -261,6 +308,9 @@ function Table({
     // 이 표에서 시작한 드래그가 아니면(바깥에서 파일을 끌어다 놓는 등) 아무 일도 하지 않는다.
     if (sourceId === null || sourceId === targetId) return;
     if (reordering.current) return;
+    /* 정렬이 '직접 지정한 순서'가 아니면 받지 않는다(위 `sortable`). 행에 `draggable` 을 걸지
+       않는 것만으로는 부족하다 — 바깥에서 시작한 드래그의 drop 은 여전히 이 자리로 들어온다. */
+    if (!sortable) return;
 
     /* **이 카테고리 목록 전체**를 보낸다 — `sort_order` 는 테이블 전체가 공유하는 컬럼 하나라
        일부만 보내면 보낸 것들이 0..k 로 앞당겨져 나머지와 뒤섞인다(`reorderBookmarks` JSDoc).
@@ -300,17 +350,24 @@ function Table({
         <p className="px-[16px] py-[14px] text-[12px] text-fainter">
           아직 링크가 없습니다. 위 줄에서 첫 링크를 추가하세요.
         </p>
+      ) : shown.length === 0 ? (
+        /* 링크는 있는데 걸러 낸 결과가 비었다 — 위 문장은 여기서 **거짓말**이고(추가하라고 하면
+           같은 이름의 링크가 하나 더 생긴다), 가리켜야 할 곳도 추가 줄이 아니라 바로 위 필터 줄이다. */
+        <p className="px-[16px] py-[14px] text-[12px] text-fainter">
+          조건에 맞는 링크가 없습니다. 검색어나 하위 필터를 지워 보세요.
+        </p>
       ) : (
         /* 목록으로 낸다 — 스크린 리더가 몇 개인지, 지금 몇 번째인지 읽어 준다. 표(`role="table"`)로
            내지 않는 것은 이 행이 좁아지면 **줄바꿈**하기 때문이다(DESIGN_SPEC 6장 flex-wrap) —
            칸이 아래로 흐르는 배치에 표 역할을 씌우면 보조기기에 없는 격자를 알리게 된다. */
         <ul aria-label="링크 목록">
-          {order.map((link) => (
+          {shown.map((link) => (
             <Row
               key={link.id}
               link={link}
               parent={category}
               subs={subs}
+              sortable={sortable}
               onDragStart={(event) => handleDragStart(event, link.id)}
               onDragOver={handleDragOver}
               onDrop={(event) => handleDrop(event, link.id)}
@@ -329,6 +386,7 @@ function Row({
   link,
   parent,
   subs,
+  sortable,
   onDragStart,
   onDragOver,
   onDrop,
@@ -337,6 +395,8 @@ function Row({
   link: AdminLink;
   parent: AdminCategory;
   subs: readonly AdminSubCategory[];
+  /** 지금 이 행을 끌어 옮길 수 있는가 — 정렬이 '직접 지정한 순서'일 때만 참이다(`Table` 참조). */
+  sortable: boolean;
   onDragStart: (event: DragEvent<HTMLElement>) => void;
   onDragOver: (event: DragEvent<HTMLElement>) => void;
   onDrop: (event: DragEvent<HTMLElement>) => void;
@@ -488,15 +548,20 @@ function Row({
 
   return (
     <li
-      draggable
+      draggable={sortable}
       onDragStart={onDragStart}
       onDragOver={onDragOver}
       onDrop={onDrop}
       onDragEnd={onDragEnd}
       className={ROW}
     >
-      {/* 손잡이는 장식이라 이름을 주지 않는다 — 집는 자리를 알려 줄 뿐, 행 전체가 draggable 이다. */}
-      <span aria-hidden="true" data-testid="handle" className={HANDLE} />
+      {/* 손잡이는 장식이라 이름을 주지 않는다 — 집는 자리를 알려 줄 뿐, 행 전체가 draggable 이다.
+          끌 수 없는 동안에도 자리는 지킨다(위 `HANDLE_OFF` 주석). */}
+      <span
+        aria-hidden="true"
+        data-testid="handle"
+        className={`${HANDLE} ${sortable ? HANDLE_ON : HANDLE_OFF}`}
+      />
 
       <span data-testid="name-cell" className={NAME_CELL}>
         {/* 파비콘은 배경 이미지다(프로토타입·카드와 같은 방식) — 없으면 선언 자체를 걸지 않는다.
@@ -523,9 +588,16 @@ function Row({
       <form onSubmit={handleDescSubmit} className={DESC_CELL}>
         {/* placeholder 는 값이 들어가면 사라져 이름 역할을 못 하고, 같은 칸이 행마다 반복되므로
             접근성 이름에 어느 링크의 설명인지 담는다(하위 칩의 `${sub.name} 이름 수정` 과 같은 방식). */}
+        {/* 저장이 나가 있는 동안에는 값을 잠근다. `disabled` 가 아니라 `readOnly` 인 것은 포커스
+            때문이다 — 브라우저는 disabled 가 된 요소에서 포커스를 body 로 떨어뜨려 적던 사람이
+            자리를 잃는다(J2 `InlineEdit` 과 같은 짝).
+            **잠그는 이유는 조용한 유실이다**: 왕복 중에 더 적고 떠나면 그 blur 가 부른 저장을
+            `savingDescRef` 가 버리는데, 방금 적은 글자는 초안에만 남아 다시 나갈 길이 없다
+            (초안은 prop 이 새로 와도 덮이지 않는다 — 위 `draft` 주석). */}
         <input
           aria-label={`${link.title} 한 줄 설명`}
           aria-busy={savingDesc}
+          readOnly={savingDesc}
           placeholder="설명을 직접 적으세요"
           value={draft}
           onChange={(event) => setDraft(event.target.value)}

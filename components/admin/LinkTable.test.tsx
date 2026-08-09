@@ -15,6 +15,7 @@ import {
   useSelectedCategory,
   type AdminCategory,
 } from '@/components/admin/CategoryPanel';
+import { LinkFilterProvider, useLinkFilter } from '@/components/admin/FilterRow';
 import { LinkTable, type AdminLink, type LinkRowMap } from '@/components/admin/LinkTable';
 import type { SubCategoryMap } from '@/components/admin/SubCategoryRow';
 import { Toaster } from '@/components/Toast';
@@ -67,7 +68,9 @@ const LINKS: LinkRowMap = {
       clickCount: 42,
       isPinned: true,
     }),
-    link({ id: 'bm-2', title: 'ChatGPT', url: 'https://chat.openai.com/c/1', categoryId: 'sub-chat', clickCount: 7 }),
+    // 주소가 **주소로 해석되지 않는** 한 줄이다(스킴이 없다 — `hostOf` JSDoc 의 그 예). 표가 그
+    // 경우에도 주소 줄을 비우지 않는지 아래에서 본다.
+    link({ id: 'bm-2', title: 'ChatGPT', url: 'chat.openai.com/c/1', categoryId: 'sub-chat', clickCount: 7 }),
     link({ id: 'bm-3', title: 'Claude', url: 'https://claude.ai', description: '글쓰기' }),
   ],
   'cat-mkt': [link({ id: 'bm-9', title: 'GA4', categoryId: 'cat-mkt' })],
@@ -84,14 +87,53 @@ function SelectOther() {
   );
 }
 
+/**
+ * 필터 줄 대신 서는 자리 — 표가 필터를 **prop 이 아니라 문맥에서** 읽는지 본다.
+ *
+ * 진짜 줄(`components/admin/FilterRow.tsx`)을 세우지 않는 것은, 그쪽 칩·검색 칸이 무엇을 세고
+ * 무엇에 맞는지는 그 파일의 테스트가 이미 잠갔기 때문이다. 여기서 볼 것은 **그 결과가 표에 어떻게
+ * 닿는가**뿐이다.
+ */
+function SetFilter() {
+  const { setQuery, setSubFilter, setSort } = useLinkFilter();
+
+  return (
+    <>
+      <button type="button" onClick={() => setQuery('.ai')}>
+        주소로 좁히기
+      </button>
+      <button type="button" onClick={() => setQuery('없는링크')}>
+        아무것도 못 찾기
+      </button>
+      <button type="button" onClick={() => setSubFilter('sub-chat')}>
+        대화형만 보기
+      </button>
+      <button type="button" onClick={() => setSort('clicks')}>
+        클릭순으로 보기
+      </button>
+      <button type="button" onClick={() => setSort('order')}>
+        지정한 순서로 보기
+      </button>
+    </>
+  );
+}
+
 function renderTable(links: LinkRowMap = LINKS, subs: SubCategoryMap = SUBS) {
   return render(
     <SelectedCategoryProvider categories={CATEGORIES}>
-      <SelectOther />
-      <LinkTable linksByCategory={links} subsByCategory={subs} />
-      <Toaster />
+      <LinkFilterProvider>
+        <SelectOther />
+        <SetFilter />
+        <LinkTable linksByCategory={links} subsByCategory={subs} />
+        <Toaster />
+      </LinkFilterProvider>
     </SelectedCategoryProvider>,
   );
+}
+
+/** 필터 줄을 대신하는 버튼 하나 누르기. */
+function setFilter(name: string): void {
+  fireEvent.click(screen.getByRole('button', { name }));
 }
 
 const head = () => screen.getByText('링크').parentElement as HTMLElement;
@@ -238,6 +280,8 @@ describe('LinkTable — 행의 모습 (프로토타입 390–406행)', () => {
       'py-[8px]',
       'border-b',
       'border-line',
+      // 호버 `#faf9f7` — 프로토타입 390행의 `style-hover` 그대로다.
+      'hover:bg-toolbar',
     );
     expect(row('Perplexity')).toHaveAttribute('draggable', 'true');
   });
@@ -288,10 +332,15 @@ describe('LinkTable — 행의 모습 (프로토타입 390–406행)', () => {
     expect(within(row('Claude')).getByTestId('favicon').style.backgroundImage).toBe('');
   });
 
+  /**
+   * `hostOf` 의 catch 갈래다 — 주소로 해석되지 않으면(스킴이 없어 `new URL` 이 던진다) 입력을 그대로
+   * 적는다. 지금 그런 값이 DB 에 들어갈 길은 없지만(`createBookmark` 가 http/https 만 받는다),
+   * 그런 행이 하나 섞여도 표의 주소 줄이 **비지는 않는다**는 것이 이 단언이 지키는 것이다.
+   */
   it('host 를 뽑을 수 없는 주소는 입력 그대로 적는다', () => {
     renderTable();
 
-    expect(within(row('ChatGPT')).getByText('chat.openai.com')).toBeInTheDocument();
+    expect(within(row('ChatGPT')).getByText('chat.openai.com/c/1')).toBeInTheDocument();
   });
 
   it('설명 칸은 240px 를 기준으로 늘어나고 그 아래로는 줄지 않는다', () => {
@@ -318,6 +367,8 @@ describe('LinkTable — 행의 모습 (프로토타입 390–406행)', () => {
   it('고정 토글은 56×26px 알약이다 — 켜짐은 검은 배경 `고정`, 꺼짐은 흰 배경 `☆`', () => {
     renderTable();
 
+    // 손가락 커서는 프로토타입 406행 원문이다. 이 버튼은 잠기지 않으므로 `disabled:` 짝은 없다.
+    expect(pinToggle('Perplexity')).toHaveClass('cursor-pointer');
     expect(pinToggle('Perplexity')).toHaveClass('w-[56px]', 'h-[26px]', 'rounded-[13px]', 'bg-ink', 'text-white', 'border-ink');
     expect(pinToggle('Perplexity')).toHaveTextContent('고정');
     expect(pinToggle('Perplexity')).toHaveAttribute('aria-pressed', 'true');
@@ -436,6 +487,49 @@ describe('LinkTable — 설명 인라인 편집', () => {
 
     expect(updateBookmark).toHaveBeenCalledTimes(2);
   });
+
+  /**
+   * 왕복 중에 더 적고 떠나면 그 blur 가 부른 저장을 `savingDescRef` 가 버린다 — 방금 적은 글자는
+   * 초안에만 남고(초안은 새 prop 이 와도 덮이지 않는다) 다시 나갈 길이 없다. 그래서 나가 있는
+   * 동안에는 값을 잠근다.
+   *
+   * `disabled` 가 아니라 `readOnly` 인 것은 포커스 때문이다 — disabled 가 된 요소에서 브라우저는
+   * 포커스를 body 로 떨어뜨려 적던 사람이 자리를 잃는다(J2 `InlineEdit` 과 같은 짝).
+   */
+  it('저장이 나가 있는 동안 값은 잠기되 `readOnly` 다 — disabled 였다면 포커스가 body 로 떨어진다', async () => {
+    const save = pendingResult();
+    vi.mocked(updateBookmark).mockReturnValue(save.promise);
+    renderTable();
+
+    fireEvent.change(descField('Claude'), { target: { value: '새 설명' } });
+    await flush(() => {
+      fireEvent.blur(descField('Claude'));
+    });
+
+    expect(descField('Claude')).toHaveAttribute('readonly');
+    expect(descField('Claude')).not.toBeDisabled();
+
+    await save.finish();
+    expect(descField('Claude')).not.toHaveAttribute('readonly');
+  });
+
+  it('나가 있는 동안임을 aria-busy 로도 알린다', async () => {
+    const save = pendingResult();
+    vi.mocked(updateBookmark).mockReturnValue(save.promise);
+    renderTable();
+
+    expect(descField('Claude')).toHaveAttribute('aria-busy', 'false');
+
+    fireEvent.change(descField('Claude'), { target: { value: '새 설명' } });
+    await flush(() => {
+      fireEvent.blur(descField('Claude'));
+    });
+
+    expect(descField('Claude')).toHaveAttribute('aria-busy', 'true');
+
+    await save.finish();
+    expect(descField('Claude')).toHaveAttribute('aria-busy', 'false');
+  });
 });
 
 describe('LinkTable — 하위 카테고리 지정', () => {
@@ -505,6 +599,25 @@ describe('LinkTable — 하위 카테고리 지정', () => {
 
     expect(subSelect('Perplexity')).toHaveValue('sub-img');
     await move.finish();
+  });
+
+  /** select 는 **잠그지 않는다**(잠기면 키보드로 고른 사람이 튕겨 나간다) — 대신 상태만 알린다. */
+  it('옮기는 중임을 aria-busy 로 알리되 잠그지는 않는다', async () => {
+    const move = pendingResult();
+    vi.mocked(updateBookmark).mockReturnValue(move.promise);
+    renderTable();
+
+    expect(subSelect('Perplexity')).toHaveAttribute('aria-busy', 'false');
+
+    await flush(() => {
+      fireEvent.change(subSelect('Perplexity'), { target: { value: 'sub-img' } });
+    });
+
+    expect(subSelect('Perplexity')).toHaveAttribute('aria-busy', 'true');
+    expect(subSelect('Perplexity')).not.toBeDisabled();
+
+    await move.finish();
+    expect(subSelect('Perplexity')).toHaveAttribute('aria-busy', 'false');
   });
 
   it('거절당하면 고른 값을 걷고 원래 하위로 돌아간다', async () => {
@@ -616,6 +729,25 @@ describe('LinkTable — 매일 고정', () => {
     await pin.finish();
   });
 
+  /** 버튼도 잠그지 않는다(누른 버튼이 잠기면 포커스가 문서로 튕긴다) — 상태만 알린다. */
+  it('누른 뒤 나가 있는 동안임을 aria-busy 로 알리되 잠그지는 않는다', async () => {
+    const pin = pendingResult();
+    vi.mocked(togglePin).mockReturnValue(pin.promise);
+    renderTable();
+
+    expect(pinToggle('Claude')).toHaveAttribute('aria-busy', 'false');
+
+    await flush(() => {
+      fireEvent.click(pinToggle('Claude'));
+    });
+
+    expect(pinToggle('Claude')).toHaveAttribute('aria-busy', 'true');
+    expect(pinToggle('Claude')).not.toBeDisabled();
+
+    await pin.finish();
+    expect(pinToggle('Claude')).toHaveAttribute('aria-busy', 'false');
+  });
+
   it('요청 자체가 거부되면 한 줄로 알리고 빗장을 푼다', async () => {
     vi.mocked(togglePin).mockRejectedValue(REJECTION);
     renderTable();
@@ -713,6 +845,35 @@ describe('LinkTable — 드래그 정렬', () => {
     await order.finish();
   });
 
+  /**
+   * **그리는 목록과 보내는 목록은 다르다.** 화면에는 걸러진 일부만 보이지만, `reorderBookmarks` 는
+   * 받은 id 배열의 자리를 그대로 `sort_order` 로 쓴다(전역 재부여) — 일부만 보내면 보낸 것들이
+   * 0..k 로 앞당겨져 안 보낸 링크들과 뒤섞인다.
+   */
+  it('걸러 놓고 끌어도 보내는 것은 걸러지지 않은 목록 전체다', async () => {
+    renderTable();
+
+    setFilter('주소로 좁히기');
+    expectOrder(['Perplexity', 'Claude']);
+
+    await drag('Claude', 'Perplexity');
+
+    // 화면에서 사라져 있던 ChatGPT(bm-2)도 제자리 그대로 함께 간다.
+    expect(reorderBookmarks).toHaveBeenCalledWith(['bm-3', 'bm-1', 'bm-2']);
+  });
+
+  it('걸러진 화면에도 새 순서가 곧바로 보인다', async () => {
+    const order = pendingResult();
+    vi.mocked(reorderBookmarks).mockReturnValue(order.promise);
+    renderTable();
+
+    setFilter('주소로 좁히기');
+    await drag('Claude', 'Perplexity');
+
+    expectOrder(['Claude', 'Perplexity']);
+    await order.finish();
+  });
+
   it('거절당하면 서버 문구를 그대로 알린다', async () => {
     vi.mocked(reorderBookmarks).mockResolvedValue({
       ok: false,
@@ -734,5 +895,95 @@ describe('LinkTable — 드래그 정렬', () => {
     expect(console.error).toHaveBeenCalled();
     expect(screen.getByRole('status')).toHaveTextContent(REQUEST_FAILED);
     expect(list()).toBeInTheDocument();
+  });
+});
+
+/**
+ * I5 — 필터 줄이 정한 것을 표가 어떻게 쓰는가. 무엇이 걸러지고 어떻게 늘어서는지(검색 규칙·정렬
+ * 4종)는 `components/admin/FilterRow.test.tsx` 가 잠근다.
+ */
+describe('LinkTable — 필터·정렬을 따르는 목록', () => {
+  it('고른 하위만 남기고, 그 사이 행의 내용은 그대로다', () => {
+    renderTable();
+
+    setFilter('대화형만 보기');
+
+    expectOrder(['ChatGPT']);
+    expect(subSelect('ChatGPT')).toHaveValue('sub-chat');
+  });
+
+  it('정렬을 바꾸면 그 차례로 그린다', () => {
+    renderTable();
+
+    setFilter('클릭순으로 보기');
+
+    expectOrder(['Perplexity', 'ChatGPT', 'Claude']);
+  });
+
+  /**
+   * 링크는 있는데 걸러 낸 결과가 비었다 — 표 헤더만 남으면 고장으로 보인다. "아직 링크가 없습니다"
+   * 는 이 자리에서 **거짓말**이라(링크는 있다) 다른 문장으로 나간다.
+   */
+  it('맞는 링크가 하나도 없으면 추가하라고 하지 않고 조건을 지우라고 한다', () => {
+    renderTable();
+
+    setFilter('아무것도 못 찾기');
+
+    expect(screen.queryByRole('list', { name: '링크 목록' })).not.toBeInTheDocument();
+    expect(
+      screen.getByText('조건에 맞는 링크가 없습니다. 검색어나 하위 필터를 지워 보세요.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/아직 링크가 없습니다/)).not.toBeInTheDocument();
+  });
+
+  /**
+   * **직접 지정한 순서가 아닌 동안에는 끌 수 없다.**
+   *
+   * 화면에 보이는 차례(클릭순·이름순·하위순)와 저장되는 차례(`sort_order`)가 서로 다른데, 그
+   * 상태에서 끌어다 놓으면 사람은 보이는 차례를 바꿨다고 믿고 저장되는 것은 전혀 다른 결과가 된다
+   * (놓은 자리가 보이는 목록에서는 2번이어도 실제 목록에서는 5번일 수 있다). 되돌릴 방법도 화면에
+   * 없다 — 오케스트레이터 결정으로 이 상태의 드래그는 아예 받지 않는다.
+   */
+  it('직접 지정한 순서가 아니면 행을 끌 수 없다', () => {
+    renderTable();
+
+    setFilter('클릭순으로 보기');
+
+    expect(row('Perplexity')).toHaveAttribute('draggable', 'false');
+  });
+
+  it('직접 지정한 순서가 아니면 손잡이도 집을 수 있는 모습이 아니다', () => {
+    renderTable();
+
+    expect(within(row('Perplexity')).getByTestId('handle')).toHaveClass('cursor-grab');
+
+    setFilter('클릭순으로 보기');
+
+    const handle = within(row('Perplexity')).getByTestId('handle');
+    expect(handle).toHaveClass('cursor-default', 'opacity-40');
+    expect(handle).not.toHaveClass('cursor-grab');
+  });
+
+  /** `draggable=false` 로도 브라우저는 드래그를 시작하지 않지만, 바깥에서 끌어 온 drop 은 남는다. */
+  it('직접 지정한 순서가 아니면 드롭이 들어와도 아무것도 보내지 않는다', async () => {
+    renderTable();
+
+    setFilter('클릭순으로 보기');
+    await drag('Claude', 'Perplexity');
+
+    expect(reorderBookmarks).not.toHaveBeenCalled();
+  });
+
+  it('직접 지정한 순서로 되돌리면 다시 끌 수 있다', async () => {
+    renderTable();
+
+    setFilter('클릭순으로 보기');
+    setFilter('지정한 순서로 보기');
+
+    expect(row('Perplexity')).toHaveAttribute('draggable', 'true');
+
+    await drag('Claude', 'Perplexity');
+
+    expect(reorderBookmarks).toHaveBeenCalledWith(['bm-3', 'bm-1', 'bm-2']);
   });
 });

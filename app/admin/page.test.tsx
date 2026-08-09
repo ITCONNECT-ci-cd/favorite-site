@@ -158,6 +158,37 @@ describe('AdminPage — 카테고리 · 링크 (I1 2단)', () => {
     expect(addRow.compareDocumentPosition(linkList())).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
+  /**
+   * I5 — 필터 줄은 추가 줄과 표 **사이**다(프로토타입의 상자 안 차례: 추가 줄 360행 → 필터 줄
+   * 367행 → 표 382행). 줄이 무엇을 할 수 있는지는 `components/admin/FilterRow.test.tsx` 가 본다.
+   */
+  it('링크 추가 줄과 표 사이에 필터 줄이 선다', async () => {
+    render((await AdminPage()) as ReactElement);
+
+    const linkBox = screen.getByRole('region', { name: '링크' });
+    const addRow = within(linkBox).getByRole('form', { name: '링크 추가' });
+    const filterRow = within(linkBox).getByTestId('filter-row');
+
+    expect(addRow.compareDocumentPosition(filterRow)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(filterRow.compareDocumentPosition(linkList())).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  /**
+   * 칩의 숫자는 표에 오르는 목록과 **같은 한 벌**에서 나온다 — 화면이 링크 목록을 두 번 접으면
+   * 칩이 세는 것과 표가 그리는 것이 갈라질 수 있다.
+   */
+  it('필터 칩은 표에 오른 목록을 센다 (전체 · 하위별 · 하위 미지정)', async () => {
+    render((await AdminPage()) as ReactElement);
+
+    const chipRow = screen.getByRole('group', { name: '하위 카테고리 필터' });
+
+    expect(within(chipRow).getAllByRole('button').map((chip) => chip.textContent)).toEqual([
+      '전체 3',
+      '대화형 2',
+      '하위 미지정 1',
+    ]);
+  });
+
   it('표에는 선택한 상위의 트리 전체가 오른다 — 하위 소속 링크도 함께다', async () => {
     render((await AdminPage()) as ReactElement);
 
