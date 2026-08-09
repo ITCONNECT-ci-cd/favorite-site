@@ -1,25 +1,23 @@
 /** D2. 홈 화면 — DESIGN_SPEC 3장(섹션 3개 + 하단 안내). */
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { HomeView } from '@/components/HomeView';
 import { FAVS_KEY, OPERATING_CATEGORY_NAME } from '@/lib/constants';
+import { rollupCounts } from '@/lib/queries';
 import type { BookmarkWithCount, Category, SiteData } from '@/lib/types';
 import { buildSeed, toBookmarkRow, type RawLink } from '@/scripts/seed-mapper';
+import RAW_LINKS from '@/docs/data/links.json';
 
 /**
  * fixture 는 실제 `docs/data/links.json` 을 B3 의 `buildSeed` 로 돌려 만든다(B3·D1 관례).
  * 손으로 적은 숫자가 아니라 시드가 DB 에 넣을 바로 그 형태라, 화면에 적히는 실측치
  * (매일 12 · 운영 중 16 · 나머지 262)가 시드와 어긋나면 여기서 먼저 깨진다.
  *
- * 경로는 vitest 실행 디렉터리(= 프로젝트 루트) 기준이다. D1 테스트처럼 `import.meta.url` 로
- * 잡을 수 없다 — 이 파일은 DOM 이 필요해 jsdom 환경이고, jsdom 은 `import.meta.url` 을
- * 페이지 URL(http:)로 바꿔 버려 `fileURLToPath` 가 던진다.
+ * 읽기는 fs 가 아니라 import 로 한다 — D1 테스트의 `import.meta.url` 방식은 jsdom 환경에서
+ * 쓸 수 없고(jsdom 이 페이지 URL 로 바꾼다) `process.cwd()` 는 실행 위치에 기댄다.
  */
-const LINKS_PATH = resolve(process.cwd(), 'docs/data/links.json');
-const RAW: RawLink[] = JSON.parse(readFileSync(LINKS_PATH, 'utf8')) as RawLink[];
+const RAW = RAW_LINKS as RawLink[];
 const SEED = buildSeed(RAW, new Set<number>());
 
 const CATEGORIES: Category[] = SEED.categories;
@@ -227,6 +225,40 @@ describe('HomeView — 현재 운영 중인 사이트 섹션', () => {
     render(<HomeView data={DATA} />);
 
     expect(pins('현재 운영 중인 사이트')).toHaveLength(0);
+  });
+
+  it('하위 카테고리에 달린 링크도 이 섹션에 넣는다 — 보조문 개수가 사이드바 개수와 같다', () => {
+    // 시드에는 이 카테고리에 하위가 없다. 하위가 생겨도 사이드바 숫자(D1 rollupCounts — 하위
+    // 합산)와 섹션의 "N개"가 어긋나지 않아야 하므로, 합성 하위를 하나 만들어 확인한다.
+    const sub: Category = {
+      id: 'op-sub',
+      name: '운영 중 하위',
+      parent_id: OPERATING_ID,
+      sort_order: 0,
+    };
+    const subLink: BookmarkWithCount = {
+      ...BOOKMARKS[0],
+      id: 'op-sub-link',
+      title: '하위에 달린 운영 링크',
+      category_id: sub.id,
+    };
+    const data: SiteData = {
+      categories: [...CATEGORIES, sub],
+      bookmarks: [...BOOKMARKS, subLink],
+    };
+
+    render(<HomeView data={data} />);
+
+    const sidebarCount = rollupCounts(data.categories, data.bookmarks)[OPERATING_ID];
+
+    expect(sidebarCount).toBe(17);
+    expect(cards('현재 운영 중인 사이트')).toHaveLength(sidebarCount);
+    expect(section('현재 운영 중인 사이트')).toHaveTextContent('하위에 달린 운영 링크');
+    expect(
+      within(section('현재 운영 중인 사이트')).getByText(
+        `회사가 직접 운영하는 서비스 ${sidebarCount}개`,
+      ),
+    ).toBeInTheDocument();
   });
 
   it('운영 중 카테고리가 없으면 섹션을 접는다', () => {

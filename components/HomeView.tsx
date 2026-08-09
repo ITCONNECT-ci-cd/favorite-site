@@ -75,7 +75,10 @@ export function HomeView({ data }: HomeViewProps) {
           (bookmark) => bookmark.category_id !== null && operating.ids.has(bookmark.category_id),
         );
 
-  // 홈에 없는 링크 수. 즐겨찾기는 다른 섹션과 겹치므로 빼지 않는다(프로토타입과 같은 셈).
+  // 하단 안내에 적는 "나머지 N개" — DESIGN_SPEC 3장·프로토타입(1126행)의 셈을 그대로 옮겼다.
+  // 겹침을 보정하지 않는 산식이다: 즐겨찾기는 아예 빼지 않고, 매일과 운영 중 양쪽에 있는
+  // 링크(시드 실측 3건)는 두 번 빠진다. 그래서 실제로 홈에 안 나오는 링크는 265개지만 스펙이
+  // 적는 값은 262다 — '고치면' 스펙·프로토타입 패리티가 깨지므로 이대로 둔다.
   const restCount = bookmarks.length - daily.length - operatingItems.length;
 
   return (
