@@ -88,6 +88,10 @@ export function findDuplicateUrlGroups(bookmarks: readonly CleanupBookmark[]): D
  *
  * **서로 다른 페이지가 2건 이상일 때만** 그룹이다(같은 URL 만 여럿이면 그건 ①의 몫이라 여기서 뺀다).
  * 그래서 두 판정이 겹치지 않고, "정리 대상 아님(다른 페이지)" 과 "정리 대상(완전 중복)" 을 나눠 볼 수 있다.
+ *
+ * 다만 완전히 배타적이지는 않다: 한 host 가 완전중복 URL 과 다른 페이지를 둘 다 가지면 그 중복
+ * 북마크는 ①과 ②에 모두 등장한다(distinctUrls≥2 는 "중복뿐인 host" 만 제외한다) — 소비자(M2)는
+ * 한 북마크가 두 구역에 함께 나타나는 것을 견뎌야 한다.
  */
 export function findDomainGroups(bookmarks: readonly CleanupBookmark[]): DomainGroup[] {
   const byHost = groupBy(bookmarks, (bookmark) => hostOf(bookmark.url));

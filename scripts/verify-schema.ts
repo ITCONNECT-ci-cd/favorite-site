@@ -6,7 +6,7 @@ import { ADMIN_EMAIL } from '@/lib/admin-config';
 import { createServiceRoleClient } from '@/scripts/lib/service-client';
 
 /**
- * 실제 Supabase 프로젝트에 대고 자동 검증한다 — B2 완료 기준 6종 + 배포 요건 2종.
+ * 실제 Supabase 프로젝트에 대고 자동 검증한다 — B2 완료 기준 6종 + 배포 요건 4종(총 10종).
  *
  * 실행: `npx tsx scripts/verify-schema.ts` (PowerShell, 저장소 루트에서)
  * 선행: `supabase/migrations/0001_init.sql` 적용 + `.env.local` 에 URL·anon·service role 키.
@@ -17,13 +17,20 @@ import { createServiceRoleClient } from '@/scripts/lib/service-client';
  * ①~⑥ 은 **임시 행을 넣었다 지우는** 방식이라 시드 전후 아무 때나 돌릴 수 있다.
  * 임시 행은 전부 `__verify_schema__` 마커를 달고, 각 검사가 finally 에서 스스로 지운다.
  *
- * ⑦·⑧ 은 스키마가 아니라 **"사람이 손으로 해야 하는 두 가지"**를 본다. 둘 다 저장소만 봐서는
- * 절대 드러나지 않고, 안 했을 때의 증상이 "아무 일도 안 일어남"이라 잊기 쉽다:
+ * ⑦~⑩ 은 스키마가 아니라 **"사람이 손으로 해야 하는 일들"**을 본다. 저장소만 봐서는 절대
+ * 드러나지 않고, 안 했을 때의 증상이 "아무 일도 안 일어남"이라 잊기 쉽다:
  *
  *   ⑦ 대시보드에서 public signup 을 껐는가 — 열려 있으면 누구나 인증 사용자가 되어
  *     쓰기 정책 안으로 들어온다(C-1). 스키마가 아무리 맞아도 소용없다.
  *   ⑧ `0002_admin_write_policy.sql` 을 SQL Editor 에서 실행했는가 — 안 했으면 쓰기 정책이
  *     `using (true)` 인 채로 남는데, ①~⑥ 은 그래도 전부 통과한다(anon·service role 만 쓰므로).
+ *   ⑨ `0003_stats.sql` 을 실행했는가 — 통계 집계 함수(admin_stats_kpi 등)가 DB 에 있는가.
+ *   ⑩ `0004_cleanup.sql` 을 실행했는가 — 방치 판정 함수(cleanup_abandoned)가 DB 에 있는가.
+ *
+ * ⑧⑨⑩ 은 같은 방식이다 — 각 파일이 만드는 함수 하나의 **존재**로 그 파일의 적용을 대표 확인한다
+ * (같은 파일 안이라 하나가 있으면 전부 적용된 것이다). **아침 절차: 마이그레이션 0002·0003·0004 를
+ * SQL Editor 에서 전부 적용한 뒤 이 스크립트로 10종을 통과시킨다.** 하나라도 미적용이면 해당
+ * 검사가 시끄럽게 실패한다(fail-loud).
  *
  * 한 검사의 실패가 나머지를 가리지 않도록 전부 돌리고 마지막에 합산한다.
  */
@@ -466,6 +473,72 @@ async function checkAdminPolicies(service: SupabaseClient): Promise<Outcome> {
   );
 }
 
+/**
+ * ⑨·⑩ 공통 — "그 마이그레이션이 만드는 대표 함수가 DB 에 있는가"로 적용 여부를 본다.
+ *
+ * ⑧ 이 admin_policy_summary() 하나로 0002 전체를 확인하는 것과 같은 발상이다: 각 파일은
+ * `create or replace` 함수 묶음이라, 그중 하나가 있으면 파일 전체가 적용된 것으로 본다.
+ *
+ * ⑧ 과 다른 점은 이 함수들이 service_role 에 execute 를 주지 않는다는 것이다(authenticated
+ * 전용 — 0003·0004 는 관리자 쿠키 클라이언트가 부른다). 그래서 service 로 호출하면 **함수가
+ * 있어도** 42501(permission denied)로 거부된다. 그건 "미적용"이 아니라 "적용됨"의 신호다 —
+ * 함수를 찾아 권한 검사까지 갔다는 뜻이다. 반대로 함수 자체가 없으면 PostgREST 가 스키마
+ * 캐시에서 못 찾아 PGRST202/42883 로 알린다. 관리자 세션이 아니어도 이 둘을 코드로 가른다:
+ *
+ *   함수 부재(PGRST202·42883·"could not find") → FAIL(미적용)
+ *   그 밖(권한 거부 42501 포함, 심지어 성공)      → PASS(적용됨)
+ *
+ * 그래서 지금(0003·0004 미적용)은 의도된 FAIL 이고, 세 마이그레이션을 모두 적용하면 PASS 가 된다.
+ */
+async function checkMigrationApplied(
+  service: SupabaseClient,
+  spec: { migration: string; file: string; fn: string; params?: Record<string, unknown>; note: string },
+): Promise<Outcome> {
+  const { error } = await service.rpc(spec.fn, spec.params);
+
+  if (!error) return pass(`${spec.fn} 가 호출됐다 — ${spec.migration} 적용됨`);
+
+  if (isMissingFunction(error)) {
+    return fail(
+      [
+        `${spec.migration} 미적용 — ${spec.fn} 가 없습니다 ${describe(error)}`,
+        `        → ${spec.note}`,
+        '        해결: Supabase 대시보드 → SQL Editor 에서',
+        `              supabase/migrations/${spec.file} 을 **파일 전체** 실행하세요`,
+        '              (create or replace 라 재실행해도 안전합니다).',
+        "        방금 실행했는데도 이 메시지가 나온다면 스키마 캐시 문제입니다: notify pgrst, 'reload schema';",
+      ].join('\n'),
+    );
+  }
+
+  // 함수는 존재한다(부재가 아니다) — 거부·기타 사유는 곧 "적용됨"이다.
+  const why = isDenial(error) ? '함수는 있으나 관리자 세션이 아니라 거부됨' : '함수는 있으나 다른 사유로 거부됨';
+  return pass(`${spec.fn} 존재 — ${spec.migration} 적용됨 (${why}: ${describe(error)})`);
+}
+
+/** ⑨ 0003_stats.sql 적용 — 통계 집계 함수 admin_stats_kpi() 가 있는가. */
+function checkStatsApplied(service: SupabaseClient): Promise<Outcome> {
+  return checkMigrationApplied(service, {
+    migration: '0003',
+    file: '0003_stats.sql',
+    fn: 'admin_stats_kpi',
+    note: '통계 화면(K2)이 소비하는 집계 함수 다섯 + 게이트가 아직 DB 에 없습니다(①~⑧ 은 그래도 통과합니다).',
+  });
+}
+
+/** ⑩ 0004_cleanup.sql 적용 — 방치 판정 함수 cleanup_abandoned(int) 가 있는가. */
+function checkCleanupApplied(service: SupabaseClient): Promise<Outcome> {
+  return checkMigrationApplied(service, {
+    migration: '0004',
+    file: '0004_cleanup.sql',
+    fn: 'cleanup_abandoned',
+    // 유효한 기준일 하나를 실어 PostgREST 가 (int) 오버로드를 찾게 한다. 함수는 본문 전에
+    // 신원/권한에서 막히므로 값 자체는 결과에 영향을 주지 않는다(적용됐다면 42501, 없으면 PGRST202).
+    params: { retention_days: 90 },
+    note: '정리 화면(M2)의 방치 판정 rpc 가 아직 DB 에 없습니다(①~⑨ 는 그래도 통과합니다).',
+  });
+}
+
 async function main(): Promise<void> {
   loadEnvLocal();
   const { url, anonKey } = resolveEnv();
@@ -484,9 +557,12 @@ async function main(): Promise<void> {
     { id: '⑥', label: 'service: 동명 상위 카테고리 중복 거부', run: () => checkCategoryUnique(service) },
     { id: '⑦', label: 'auth: public signup·익명 로그인 비활성', run: () => checkSignupDisabled(url, anonKey) },
     { id: '⑧', label: 'rls: 쓰기 정책이 관리자 이메일로 좁혀짐 (0002 적용)', run: () => checkAdminPolicies(service) },
+    { id: '⑨', label: 'rpc: 통계 집계 함수 admin_stats_kpi 존재 (0003 적용)', run: () => checkStatsApplied(service) },
+    { id: '⑩', label: 'rpc: 방치 판정 함수 cleanup_abandoned 존재 (0004 적용)', run: () => checkCleanupApplied(service) },
   ];
 
-  console.log('스키마·설정 검증 — 0001 적용 결과(①~⑥), Auth 설정(⑦), 0002 적용 여부(⑧)를 확인합니다.');
+  console.log('스키마·설정 검증 — 0001 결과(①~⑥), Auth 설정(⑦), 마이그레이션 0002·0003·0004 적용(⑧⑨⑩)을 확인합니다.');
+  console.log('아침 절차: SQL Editor 에서 0002·0003·0004 를 전부 적용한 뒤 이 스크립트로 10종을 통과시킵니다.');
   console.log(`대상: ${url}`);
   console.log('');
 
@@ -511,13 +587,15 @@ async function main(): Promise<void> {
     console.error(`${checks.length}종 중 ${failed}종 실패.`);
     console.error('  ①~⑥ 이 실패했다면: 0001_init.sql 이 그대로 적용됐는지 확인하세요.');
     console.error('  ⑦ 이 실패했다면: 위 안내대로 대시보드에서 signup 을 끄세요 (코드로는 못 고칩니다).');
-    console.error('  ⑧ 이 실패했다면: 0002_admin_write_policy.sql 을 SQL Editor 에서 파일 전체 실행하세요.');
-    console.error('  ⑦·⑧ 은 저장소에서 고칠 수 없는 항목입니다 — 둘 다 사람이 대시보드에서 한 번 해야 합니다.');
+    console.error('  ⑧⑨⑩ 이 실패했다면: 각각 0002·0003·0004 마이그레이션을 SQL Editor 에서 파일 전체 실행하세요.');
+    console.error('  ⑦~⑩ 은 저장소에서 고칠 수 없는 항목입니다 — 대시보드·SQL Editor 에서 사람이 해야 합니다.');
     console.error(`임시 행이 남았을 수 있습니다. 남았다면 title/name 이 '${MARKER}' 로 시작하는 행을 지우세요.`);
     process.exit(1);
   }
 
-  console.log(`${checks.length}종 전부 통과 — B2 완료 기준과 배포 전 설정 요건(signup·0002)을 만족합니다.`);
+  console.log(
+    `${checks.length}종 전부 통과 — B2 완료 기준과 배포 전 설정 요건(signup·0002·0003·0004)을 만족합니다.`,
+  );
 }
 
 main().catch((error: unknown) => {

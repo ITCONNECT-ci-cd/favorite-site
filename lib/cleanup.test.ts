@@ -250,9 +250,10 @@ describe('getCleanupReport — 관리자 게이트와 rpc 계약', () => {
 // ───────────────────────────────────────────────────────── 0004_cleanup.sql 계약
 
 describe('0004_cleanup.sql — clicks 를 definer 로 읽으니 관리자만, bulk 는 사용으로 센다', () => {
-  it('security definer + search_path 고정 (definer 함수의 기본 방어)', () => {
+  it('security definer + search_path 고정 (definer 함수의 기본 방어, pg_temp 를 끝에 둔다)', () => {
     expect(cleanupSql).toMatch(/security\s+definer/i);
-    expect(cleanupSql).toMatch(/search_path\s*=\s*public/i);
+    // pg_temp 를 맨 끝에 둬 temp table shadowing 을 막는다(0003 과 같은 규약).
+    expect(cleanupSql).toMatch(/search_path\s*=\s*public\s*,\s*pg_temp/i);
   });
 
   it('본문에서 관리자 이메일을 확인한다 (2차 방어 — 앱 게이트와 같은 판정)', () => {
@@ -274,6 +275,14 @@ describe('0004_cleanup.sql — clicks 를 definer 로 읽으니 관리자만, bu
     expect(cleanupSql).toContain('created_at');
     // 등록 창 + 클릭 창 두 곳에서 같은 기준일 간격을 만든다.
     expect((cleanupSql.match(/make_interval/g) ?? []).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('retention_days 는 정확 집합(30·90·180·365)만 허용하고 null 도 막는다 (앱 화이트리스트 이중화)', () => {
+    // 값 집합은 lib/cleanup.ts 의 CLEANUP_RETENTION_DAYS 와 같아야 한다 — REST 직접 호출 방어.
+    const set = CLEANUP_RETENTION_DAYS.join('\\s*,\\s*');
+    expect(cleanupSql).toMatch(new RegExp(`retention_days\\s+not\\s+in\\s*\\(\\s*${set}\\s*\\)`, 'i'));
+    // null 은 `not in` 이 걸러 주지 못하므로(널 비교) 따로 막아야 한다.
+    expect(cleanupSql).toMatch(/retention_days\s+is\s+null/i);
   });
 
   it('방치는 실사용 기준이라 bulk 클릭도 사용으로 센다 — clicks 에 is_bulk 필터가 없다', () => {

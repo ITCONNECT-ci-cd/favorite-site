@@ -30,8 +30,11 @@
 -- 앱 겹(lib/cleanup.ts 의 getAdminSession)까지 세 겹이며 서로를 대체하지 못한다 —
 -- 앱을 우회한 REST rpc 는 게이트를 지나지 않고, 게이트만으로는 REST 직접 호출을 막지 못한다.
 --
--- `security definer` 함수의 기본 방어로 `set search_path = public` 을 건다(호출자가 search_path 를
--- 바꿔 다른 스키마의 동명 객체를 끼워 넣는 것을 막는다. auth.jwt() 는 스키마를 명시해 그대로 해석된다).
+-- `security definer` 함수의 기본 방어로 `set search_path = public, pg_temp` 를 건다(호출자가
+-- search_path 를 바꿔 다른 스키마의 동명 객체를 끼워 넣는 것을 막는다. auth.jwt() 는 스키마를
+-- 명시해 그대로 해석된다). `pg_temp` 를 **맨 끝**에 두는 게 핵심이다: 세션 소유자가 `pg_temp.clicks`
+-- 같은 임시 테이블을 만들어 관계 검색을 가로채(temp table shadowing) definer 함수가 그걸 보게
+-- 하는 걸 막는다 — pg_temp 가 마지막이라 실제 `public.clicks` 가 항상 먼저 잡힌다(0003 과 같은 규약).
 --
 -- ## 관리자 이메일이 여기 복사돼 있는 이유
 --
@@ -57,7 +60,7 @@ returns table (
 )
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, pg_temp
 as $$
 begin
   -- 2차 방어: definer 권한으로 clicks 를 읽으므로, 관리자 신원을 본문에서 다시 확인한다.
@@ -65,10 +68,13 @@ begin
     raise exception 'FORBIDDEN: 정리 판정은 관리자 전용입니다' using errcode = '42501';
   end if;
 
-  -- 화면이 고르는 값(30·90·180·365)은 앱(lib/cleanup.ts)이 먼저 검증하지만, REST 직접 호출도
-  -- 있으니 여기서도 방어한다. 창을 만들 수 없는 값(널·0 이하)은 거부한다.
-  if retention_days is null or retention_days < 1 then
-    raise exception 'INVALID: retention_days 는 1 이상의 정수여야 합니다' using errcode = '22023';
+  -- 화면이 고르는 값(30·90·180·365)은 앱(lib/cleanup.ts)의 CLEANUP_RETENTION_DAYS 가 먼저
+  -- 검증하지만, REST 직접 호출도 있으니 여기서도 같은 화이트리스트로 이중화한다(0003 의
+  -- admin_stats_daily days 화이트리스트와 같은 방침). 이 4종은 lib/cleanup.ts 의 RetentionDays 와
+  -- 반드시 같아야 한다 — 한쪽만 바꾸면 어긋난다. null 은 `not in` 이 걸러 주지 못하므로(널 비교는
+  -- 참도 거짓도 아니다) 따로 막는다.
+  if retention_days is null or retention_days not in (30, 90, 180, 365) then
+    raise exception 'INVALID: retention_days 는 30·90·180·365 중 하나여야 합니다' using errcode = '22023';
   end if;
 
   return query
