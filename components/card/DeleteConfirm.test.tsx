@@ -312,7 +312,7 @@ describe('DeleteConfirm — 즐겨찾기 정합', () => {
     expect(storedFavs()).toEqual(['bm-2']);
   });
 
-  it('담겨 있지 않던 링크를 담지는 않는다 — toggle 은 없으면 담는 함수다', async () => {
+  it('담겨 있지 않던 링크를 담지는 않는다 — `remove` 는 없으면 아무 일도 하지 않는다(멱등)', async () => {
     setFavs(['bm-2']);
     renderOverlay();
 
@@ -356,8 +356,9 @@ describe('DeleteConfirm — 즐겨찾기 정합', () => {
 
     await finish();
 
-    // 렌더 클로저가 든 낡은 스냅샷(담김)으로 판정하면 `toggle` 이 **없는 id 를 담아** 방금 지운
-    // 링크를 즐겨찾기에 되살린다 — 정합을 맞추려던 코드가 어긋남을 만드는 셈이다.
+    // 렌더 클로저가 든 낡은 스냅샷(담김)으로 판정하면 **없는 id 를 담아** 방금 지운 링크를
+    // 즐겨찾기에 되살린다 — 정합을 맞추려던 코드가 어긋남을 만드는 셈이다. `remove` 는 판정도
+    // 쓰기도 스토어의 지금 값에서 하므로 그 갈래가 없다(lib/favorites.ts).
     expect(storedFavs()).toEqual([]);
   });
 });

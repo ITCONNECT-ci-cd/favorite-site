@@ -146,6 +146,63 @@ describe('useFavorites', () => {
     expect(storedFavs()).toEqual(['a', 'b']);
   });
 
+  it('remove는 담긴 id를 뺀다', () => {
+    localStorage.setItem(FAVS_KEY, JSON.stringify(['a', 'b']));
+    const { result } = renderHook(() => useFavorites());
+
+    act(() => {
+      result.current.remove('a');
+    });
+
+    expect(result.current.favs).toEqual(new Set(['b']));
+    expect(storedFavs()).toEqual(['b']);
+  });
+
+  it('remove는 담기지 않은 id에는 아무 일도 하지 않는다 (멱등 — 저장도 하지 않는다)', () => {
+    // 방향이 정해진 호출이라 `toggle` 과 달리 없는 id 를 담지 않는다. 같은 값을 다시 저장하면
+    // 다른 탭까지 헛되이 깨우므로 쓰기 자체를 하지 않는다.
+    localStorage.setItem(FAVS_KEY, JSON.stringify(['b']));
+    const { result } = renderHook(() => useFavorites());
+    const write = vi.spyOn(Storage.prototype, 'setItem');
+
+    act(() => {
+      result.current.remove('a');
+      result.current.remove('a');
+    });
+
+    expect(result.current.favs).toEqual(new Set(['b']));
+    expect(storedFavs()).toEqual(['b']);
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it('remove는 렌더 때의 스냅샷이 아니라 스토어의 지금 값을 본다', () => {
+    // J3 삭제 확인이 서버 왕복 **뒤에** 부르는 자리다 — 그사이 다른 탭이 즐겨찾기를 바꾸면
+    // 렌더 클로저의 favs 는 낡는다. 낡은 값으로 판정하면 방금 지운 링크가 되살아난다.
+    const { result } = renderHook(() => useFavorites());
+    const staleRemove = result.current.remove;
+
+    localStorage.setItem(FAVS_KEY, JSON.stringify(['a', 'b']));
+    dispatchStorage(FAVS_KEY, JSON.stringify(['a', 'b']));
+
+    act(() => {
+      staleRemove('a');
+    });
+
+    expect(storedFavs()).toEqual(['b']);
+  });
+
+  it('remove는 렌더가 바뀌어도 같은 참조를 유지한다', () => {
+    const { result, rerender } = renderHook(() => useFavorites());
+    const before = result.current.remove;
+
+    act(() => {
+      result.current.remove('a');
+    });
+    rerender();
+
+    expect(result.current.remove).toBe(before);
+  });
+
   it('저장값에 중복이 있어도 한 번만 유지하고, 중복 없이 다시 저장한다', () => {
     localStorage.setItem(FAVS_KEY, JSON.stringify(['a', 'a', 'b']));
 

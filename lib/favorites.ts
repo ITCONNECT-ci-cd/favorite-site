@@ -17,6 +17,17 @@ export type Favorites = {
    * 않아도 방향(담김/해제)을 알 수 있다. 덕분에 핀 배선의 콜백이 `favs` 에 묶이지 않는다.
    */
   toggle: (id: string) => boolean;
+  /**
+   * 담겨 있으면 뺀다. **없으면 아무 일도 하지 않는다**(멱등 — 저장도 알림도 없다).
+   *
+   * `toggle` 과 나눠 두는 이유는 **방향이 정해진 호출**이 있기 때문이다. "이 링크는 이제 없다"를
+   * 아는 자리(삭제 성공)는 담긴 상태를 확인할 필요가 없어야 하는데, `toggle` 하나로 하면 부르는
+   * 쪽이 먼저 담겼는지 보고 불러야 하고 — 그 판정을 렌더 클로저의 낡은 `favs` 로 하면 **없는 id 를
+   * 담아** 방금 지운 링크를 되살린다(J3 DeleteConfirm 이 실제로 우회하던 자리다).
+   *
+   * `toggle` 과 마찬가지로 판정은 호출 시점의 라이브 스토어 기준이다.
+   */
+  remove: (id: string) => void;
   isFaved: (id: string) => boolean;
 };
 
@@ -124,8 +135,17 @@ function commit(next: Set<string>): void {
  * SSR 안전: 서버 렌더와 하이드레이션 첫 렌더는 항상 빈 값이고,
  * 하이드레이션이 끝난 뒤 저장된 값으로 동기화된다.
  *
- * 사용 규칙: **뷰 레벨에서 한 번만 호출하고 `isFaved`·`toggle`을 props로 내려라.**
- * 카드 컴포넌트 안에서 직접 호출하면 렌더마다 카드 수만큼 동기 localStorage 읽기가 발생한다.
+ * ## 사용 규칙 (E1)
+ *
+ * **렌더 지점이 카드 수에 비례하는 컴포넌트에서는 부르지 마라** — 뷰에서 한 번 부르고
+ * `isFaved`·`toggle`·`remove` 를 props 로 내려라. 막으려는 것은 **위치가 아니라 불변식**이다:
+ * 이 훅은 렌더마다 동기 localStorage 읽기를 한 번 하므로, 살아 있는 인스턴스 수가 목록 길이를
+ * 따라가면 그 읽기가 그대로 목록 길이만큼이 된다(카테고리 화면 기준 118장).
+ *
+ * 뒤집어 말하면 **인스턴스 수가 상수로 묶이는 자리는 예외다.** 열려 있는 동안에만 사는 오버레이가
+ * 그렇다 — `components/card/DeleteConfirm.tsx` 는 확인창이 떠 있는 동안 많아야 두 자리에 산다
+ * (같은 링크가 홈의 두 섹션에 놓이는 경우). "카드 안이냐 밖이냐" 가 아니라 "이 컴포넌트가 한 번에
+ * 몇 벌 살아 있을 수 있는가" 로 판단하라.
  *
  * 반환된 `favs`는 모든 인스턴스가 공유하는 스냅샷이다. 변형하지 말고 새 Set을 만들어 써라.
  */
@@ -146,9 +166,22 @@ export function useFavorites(): Favorites {
     return faved;
   }, []);
 
+  const remove = useCallback((id: string) => {
+    // 판정도 쓰기도 **스토어의 지금 값**에서 출발한다(`toggle` 과 같은 이유) — 그래서 서버 왕복
+    // 뒤처럼 렌더 클로저가 낡아 있을 수 있는 자리에서도 부르는 쪽이 스냅샷을 들고 있지 않아도 된다.
+    const current = getSnapshot();
+    // 없으면 아무것도 쓰지 않는다 — 같은 값을 다시 저장하면 다른 탭까지 헛되이 깨운다.
+    if (!current.has(id)) return;
+
+    const next = new Set(current);
+    next.delete(id);
+
+    commit(next);
+  }, []);
+
   const isFaved = useCallback((id: string) => favs.has(id), [favs]);
 
-  return { favs, toggle, isFaved };
+  return { favs, toggle, remove, isFaved };
 }
 
 /**
