@@ -9,7 +9,9 @@ import PublicNotFound from '@/app/(public)/not-found';
  * 공개 그룹의 404 — `notFound()` 를 부른 화면(지금은 없는 분류 id 하나)이 여기로 떨어진다.
  *
  * 셸(사이드바·헤더)에 감싸이는지는 여기서 볼 수 없다. 그건 파일이 `app/(public)/` 안에
- * 있다는 사실이 정하고, 실제 확인은 프로덕션 빌드 실측이 했다(H2 픽스업 보고서).
+ * 있다는 사실이 정하고, 실제 확인은 프로덕션 빌드 실측이 했다 — 그 절차와 결과는
+ * `docs/superpowers/plans/2026-08-09-link-dashboard-full-plan.md` 의 **H2 항목**에 있다
+ * (`GET /category/<없는 id>` 선행 실측 → 셸 안 한국어 404 신설).
  * 이 테스트가 지키는 것은 **화면이 한국어로 무엇을 말하고 어디로 보내는가**다.
  */
 describe('공개 404 화면', () => {

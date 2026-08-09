@@ -91,6 +91,26 @@ describe('공개 화면에 /admin 진입점이 없다', () => {
     expect(offenders.map((path) => relative('.', path))).toEqual([]);
   });
 
+  /**
+   * 상수를 거친 우회도 막는다 — 관리 주소 상수는 관리 화면만 가져다 쓴다.
+   *
+   * 위 리터럴 검사는 `'/admin'` 이 소스에 적힌 것만 본다. `lib/routes.ts` 가 그 주소를
+   * 상수로 내놓은 뒤로는 `href={ADMIN_PATH}` 한 줄이면 리터럴 없이 링크가 생긴다 — 검사는
+   * 초록인데 공개 화면에 진입점이 선다. 3단계 J 계열이 공개 트리에 관리자용 UI 를 얹고 있는
+   * 지금이 그 실수가 가장 나기 쉬운 시점이라, 위반이 0인 채로 미리 잠근다.
+   *
+   * 이름으로 보는 이유: 상수는 `import { ADMIN_PATH } from '@/lib/routes'` 로 들어오므로
+   * 모듈 지정자가 아니라 식별자를 찾는 것이 정확하다. 관리 화면 자신은 애초에 SCAN 대상이
+   * 아니라 이 규칙에 걸리지 않는다.
+   */
+  it('공개 소스가 lib/routes 의 관리 주소 상수를 쓰지 않는다', () => {
+    const offenders = files.filter((path) =>
+      /ADMIN_(PATH|STATS_PATH|CLEANUP_PATH)/.test(code(path)),
+    );
+
+    expect(offenders.map((path) => relative('.', path))).toEqual([]);
+  });
+
   /** 매처 자신의 회귀 방지 — 오탐(모듈 지정자)과 미탐(링크) 양쪽을 한 번에 잠근다. */
   it.each([
     ['href="/admin"', true],

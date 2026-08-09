@@ -6,6 +6,7 @@ import { render } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { describe, expect, it } from 'vitest';
 import { CheckIcon, EyeIcon, PencilIcon, PinIcon, TrashIcon } from '@/components/icons';
+import { PENCIL_PATH, TRASH_PATH } from '@/test/icon-paths';
 
 function svgOf(element: ReactElement): SVGSVGElement {
   const { container } = render(element);
@@ -19,7 +20,15 @@ function pathsOf(svg: SVGSVGElement): string[] {
   return [...svg.querySelectorAll('path')].map((path) => path.getAttribute('d') ?? '');
 }
 
-/** DESIGN_SPEC 2-1: 아이콘 | stroke-width | path 목록 */
+/**
+ * DESIGN_SPEC 2-1: 아이콘 | stroke-width | path 목록
+ *
+ * 연필·휴지통의 조각 하나씩은 리터럴 대신 `@/test/icon-paths` 의 상수로 적는다. 그 상수는
+ * 다른 파일들의 **음성** 단언(`not.toContain` — 비관리자 응답에 아이콘 마크업이 없다)이
+ * 쓰는 값이고, 음성 단언만으로는 문자열이 틀려도 통과한다. 여기 아래 `path가 스펙과 같다`
+ * 케이스가 렌더 결과와 그 상수를 **양성**으로 맞춰 보므로, 상수가 실제 아이콘에서 떨어져
+ * 나가는 순간 이 파일이 먼저 빨개진다 — 그것이 이 상수의 앵커다.
+ */
 const ICONS: [string, ReactElement, string, string[]][] = [
   [
     '눈',
@@ -33,13 +42,8 @@ const ICONS: [string, ReactElement, string, string[]][] = [
     '1.7',
     ['M9.4 3h5.2l-.8 5.6 3.2 3.1v1.7H6.9v-1.7l3.3-3.1L9.4 3z', 'M12 13.4V21'],
   ],
-  ['연필', <PencilIcon key="pencil" />, '1.8', ['M4 20.5h4L20 8.5l-4-4L4 16.5v4z', 'M14.5 6l4 4']],
-  [
-    '휴지통',
-    <TrashIcon key="trash" />,
-    '1.8',
-    ['M4 6.5h16', 'M9 6.5V4h6v2.5', 'M6.5 6.5l1 13.5h9l1-13.5'],
-  ],
+  ['연필', <PencilIcon key="pencil" />, '1.8', [PENCIL_PATH, 'M14.5 6l4 4']],
+  ['휴지통', <TrashIcon key="trash" />, '1.8', ['M4 6.5h16', 'M9 6.5V4h6v2.5', TRASH_PATH]],
   ['체크', <CheckIcon key="check" />, '2.6', ['M4.5 12.5l5 5 10-11']],
 ];
 

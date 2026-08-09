@@ -121,9 +121,36 @@ function ShellUnavailable() {
  * 이 실패를 여기서 직접 잡는 이유는 ShellUnavailable 의 주석에 적어 뒀다.
  */
 export default async function PublicLayout({ children }: LayoutProps<"/">) {
+  /**
+   * 서로 무관한 두 왕복(DB · Auth)을 **먼저 둘 다 띄운다.**
+   *
+   * 이어서 await 하면 DB 왕복이 끝나야 Auth 왕복이 시작되는 폭포가 된다 — 공개 화면 전부가
+   * 이 셸을 지나므로 그 지연은 모든 요청에 붙는다. 대신 데이터 조회가 실패하는 경로에서는
+   * 이미 떠난 Auth 왕복 하나가 버려진다. **오류 경로에서 버려질 왕복 1회를 감수하고 정상
+   * 경로의 폭포 가능성을 없앤다** — 정상이 압도적으로 흔하고, 오류 경로는 어차피 화면을
+   * 못 그리는 길이라 거기서 아낀 왕복은 아무에게도 이득이 아니다.
+   *
+   * 세션 쪽 `.catch` 는 **만드는 즉시** 붙인다. 아래 조회 실패 경로는 이 프라미스를 await
+   * 하지 않고 반환해 버리는데, 핸들러가 없으면 그때 unhandled rejection 이 된다(런타임에
+   * 따라 프로세스가 죽는다). 겸사겸사 구멍 하나가 메워진다: 예전에는 `getAdminSession()` 이
+   * try 밖에 있어 그 예외가 ShellUnavailable 로 가지 못하고 셸 전체를 500 으로 떨어뜨렸다.
+   * 이제 인증 왕복이 실패하면 **비관리자로 그린다** — 게이트의 fail-closed 방침과 같은
+   * 방향이다(lib/supabase/server.ts "실패는 전부 비로그인으로 접는다").
+   *
+   * ⚠️ 이 catch 를 `getAdminSession()` **안쪽**의 전역 try/catch 로 옮기지 마라 — 그 함수는
+   * `cookies()` 를 부르고, Next 는 그 자리에서 제어 흐름용 예외를 던질 수 있다. 안에서 삼키면
+   * 그것까지 함께 사라진다. 여기(호출부)에서 잡는 것은 셸 한 곳의 결정으로 남는다.
+   */
+  const dataPromise = getAllData();
+  const sessionPromise = getAdminSession().catch((error: unknown) => {
+    console.error("관리자 세션 조회 실패 — 비관리자로 그린다", error);
+
+    return null;
+  });
+
   let data;
   try {
-    data = await getAllData();
+    data = await dataPromise;
   } catch (error) {
     // 삼키면 원인을 볼 곳이 사라진다 — 원문은 서버 로그에만 남기고 화면에는 내지 않는다.
     console.error("셸 데이터 조회 실패 — 오류 화면으로 대체한다", error);
@@ -137,14 +164,13 @@ export default async function PublicLayout({ children }: LayoutProps<"/">) {
    * 헤더의 '관리자 편집 모드' 칩 조건 (J1). 판정은 통째로 `getAdminSession()`(H1)에 맡긴다 —
    * non-null 이면 요청자가 그 관리자다. 이메일 같은 안쪽 값은 보지 않는다.
    *
-   * 조회 실패로 셸이 서지 않는 경우에는 애초에 헤더가 없으므로 위 try 뒤에서 읽는다.
    * 이 왕복은 화면당 한 번뿐이다: 같은 렌더 패스의 page 도 같은 함수를 부르지만 React
    * `cache()` 가 묶어 준다(그 함수의 JSDoc "cache() 로 감싼 이유").
    *
    * C1 이 남긴 `getShellData()` 추출은 하지 않았다 — 아래 값 넷은 셸만 쓰고 세션은 화면들이
    * 각자 `getAdminSession()` 을 불러 받으므로, 묶어 봐야 호출자가 하나뿐인 함수가 된다.
    */
-  const isAdmin = (await getAdminSession()) !== null;
+  const isAdmin = (await sessionPromise) !== null;
 
   /** 셸이 내려보내는 값 넷 — 사이드바·헤더가 쓰는 숫자다. */
   const totalCount = bookmarks.length;

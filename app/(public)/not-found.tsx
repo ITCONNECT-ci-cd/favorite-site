@@ -17,6 +17,13 @@ import { EmptyBox } from '@/components/EmptyBox';
  *
  * `<main>` 과 `flex-1` 은 다른 공개 화면과 같은 계약이다(셸 JSDoc "화면과의 계약") —
  * 내용이 짧아도 세로를 채워 안내가 콘텐츠 영역 가운데에 선다.
+ *
+ * **알려진 편차**: `notFound()` 경로의 SSR HTML 은 Next 16.3 의 non-streamed 중단 때문에 빈
+ * 문서(상태 404)로 나가고, 아래 화면은 하이드레이션 후에 그려진다. JS 없는 소비자(크롤러·
+ * 상태만 보는 스크립트)는 **상태 코드만** 받는다 — 의도된 트레이드다. 상태 코드가 기계
+ * 소비자와의 진짜 계약이고, `loading.tsx` 로 본문을 채우는 우회는 그 상태를 200 으로
+ * 떨어뜨려 기각했다(근거·재검증 동의는 계획서
+ * `docs/superpowers/plans/2026-08-09-link-dashboard-full-plan.md` 의 H2 항목).
  */
 export default function PublicNotFound() {
   return (

@@ -12,6 +12,7 @@ import { getAdminSession } from '@/lib/supabase/server';
 import type { BookmarkWithCount, SiteData } from '@/lib/types';
 import { adminSession } from '@/test/admin-session';
 import { siteData, subId, topId } from '@/test/fixtures/seed';
+import { PENCIL_PATH } from '@/test/icon-paths';
 
 const getAllData = vi.hoisted(() => vi.fn());
 
@@ -237,7 +238,6 @@ describe('그 밖의 계약', () => {
  * 비로그인 응답에는 마크업 자체가 없어야 한다(README 주의사항 7).
  */
 describe('카테고리 — 관리자 편집 노출 (J1)', () => {
-  const PENCIL_PATH = 'M4 20.5h4L20 8.5l-4-4L4 16.5v4z';
   const edits = () => screen.queryAllByRole('button', { name: /.+ 수정$/ });
   const deletes = () => screen.queryAllByRole('button', { name: /.+ 삭제$/ });
 
@@ -254,6 +254,9 @@ describe('카테고리 — 관리자 편집 노출 (J1)', () => {
 
     const { container } = await renderPage(topId('AI 도구 모음'));
 
+    // 기대값을 cardCount 로 적으면 카드가 0장인 회귀에서 `0 === 0` 으로 통과해 버린다 —
+    // "카드마다 붙는다"를 확인하려면 카드가 실제로 있었다는 사실이 먼저 서야 한다.
+    expect(cardCount(container)).toBe(118);
     expect(edits()).toHaveLength(cardCount(container));
     expect(deletes()).toHaveLength(cardCount(container));
   });

@@ -52,6 +52,10 @@ export type LinkCardProps = {
    * 하나만 준 경우(플래그만 · 노드만)는 무시하고 평소대로 그린다 — 편집 폼 없이 본문만 사라지는
    * 반쪽 상태를 만들지 않기 위해서다. 두 값을 한 곳에서 같이 내려보내라.
    *
+   * '노드가 있다'의 기준은 **React 가 무언가를 그리는가**다: `null`·`undefined` 는 물론
+   * `false`·빈 문자열도 '슬롯 없음'이라 교체하지 않는다. `editSlot={cond && <Form/>}` 로
+   * 넘기는 관용구가 흔해서, 이 검사를 느슨하게 두면 그 한 줄이 곧바로 빈 카드를 만든다.
+   *
    * 판정도 상태도 이 카드가 갖지 않는다. '한 번에 한 장만 편집' 같은 규칙은 여러 카드를 아는
    * 화면(HomeView·ListView)이 들고, 카드는 받은 값대로 자리만 바꾼다.
    */
@@ -63,6 +67,11 @@ export type LinkCardProps = {
    * 상단 줄(파비콘 타일 · 체크 · 핀 · 연필 · 휴지통)은 **편집 중에도 그대로 남는다** — 스펙이
    * 교체 대상으로 적은 것이 그 둘뿐이고, 카드 밖 모달을 쓰지 않는 이상 나가는 길(취소)은
    * 폼 자신이 들기 때문이다. 액션 줄을 `isEditing` 으로 감추는 변경은 스펙 2-1장을 먼저 고쳐라.
+   *
+   * **교체 자리는 flex-col 의 중간 항목이다** — 카드 높이는 `min-h-[126px]`(모바일 104px)로
+   * 정해져 있고, 지금 본문 앵커가 `mt-auto` 로 아래에 붙어 그 높이를 메운다. 폼이 `mt-auto`
+   * 나 `flex-1` 을 갖지 않으면 폼은 위에 붙고 그 아래로 빈 공간이 남는다. 카드는 그 여백을
+   * 대신 메워 주지 않는다(자리만 준다는 계약이라 그렇다) — 세로 배치는 폼의 몫이다 (J2 참고).
    *
    * **병렬 안전 계약**: J2 는 자기 컴포넌트 파일(`components/card/InlineEdit.tsx`)을 만들고
    * 화면에서 `editSlot={<InlineEdit …/>}` 로 주입하기만 한다. 이 파일(LinkCard.tsx)을 다시
@@ -82,6 +91,13 @@ export type LinkCardProps = {
    * 본문을 지우지 않는 것도 스펙대로다 — 오버레이가 배경 `rgba(251,250,248,.97)` 로 덮는다.
    * 그래서 `editSlot` 과 달리 교체가 아니라 **덧대기**이고, 편집 슬롯과 동시에 열려도 서로를
    * 밀어내지 않는다.
+   *
+   * ⚠️ **덮는 것은 포인터까지다.** 오버레이가 위에 깔려도 그 아래 본문 앵커·핀·연필은 여전히
+   * DOM 에 있고 **키보드 포커스를 받는다** — 카드는 형제들에게 `inert` 를 걸지 않는다(그러면
+   * 카드가 오버레이의 내부 구조를 알아야 하고, 자리만 준다는 이 계약이 깨진다). 그래서
+   * 마운트 시 포커스 이동과 Tab 트랩(+Esc 로 닫기)은 **오버레이 자신의 몫**이다. 그것이 없으면
+   * 삭제 확인이 떠 있는데 Tab 이 뒤의 링크로 새어 나가 확인 없이 다른 곳으로 갈 수 있다.
+   * J3 착수 전에 반드시 읽어라.
    *
    * **병렬 안전 계약**: J3 도 자기 컴포넌트 파일 + 화면 배선만 한다. LinkCard.tsx 재수정 없음.
    */
@@ -137,6 +153,18 @@ const ACTION_BASE =
 
 /** 체크·핀·연필의 공통 호버 배경 (DESIGN_SPEC 2-1 아이콘 표). */
 const ACTION = `${ACTION_BASE} hover:bg-[#efede8]`;
+
+/**
+ * 연필만의 호버 — 공통 배경 위에 글자만 #141516(= --color-ink)으로 진해진다(스펙 2-1 아이콘 표).
+ *
+ * 호출부에 `hover:text-ink` 를 직접 적지 않고 상수로 올린 이유는 **대칭** 하나다: 휴지통의
+ * 호버 글자색은 아래 ACTION_DANGER 안에 있는데 연필 것만 JSX 에 남으면, 두 버튼의 같은
+ * 성질(호버 시 글자색)을 읽으려고 서로 다른 곳을 봐야 한다. 한쪽을 고치며 다른 쪽을 놓치기
+ * 딱 좋은 배치라 "버튼별 호버 색은 상수에 있다"로 통일했다.
+ *
+ * 배경을 공유하는 것은 스펙 그대로다 — 다른 것은 글자색뿐이라 ACTION 을 재료로 쓴다.
+ */
+const ACTION_EDIT = `${ACTION} hover:text-ink`;
 
 /**
  * 휴지통만의 호버 — 배경 #f4e8e6 + 글자 #a8443a(= --color-danger).
@@ -207,7 +235,27 @@ export function LinkCard({
 
   // 플래그와 노드가 **둘 다** 있을 때에만 교체한다 — 하나만 온 요청은 무시하고 평소대로 그린다
   // (isEditing·editSlot JSDoc). 편집 폼이 없는데 본문만 지워지는 빈 카드를 만들지 않기 위해서다.
-  const showEditSlot = isEditing && editSlot !== undefined && editSlot !== null;
+  //
+  // "노드가 있다"의 기준은 **React 가 실제로 무언가를 그리는가**다. null·undefined 뿐 아니라
+  // false·'' 도 React 는 아무것도 그리지 않으므로 전부 '슬롯 없음'으로 친다. undefined·null 만
+  // 걸러 내면 호출부의 관용구 `editSlot={cond && <Form/>}` 가 cond 거짓일 때 **false** 를
+  // 넘겨 검사를 통과하고, 교체는 일어나는데 그려지는 것은 없는 — 위 JSDoc 이 금지한 바로 그
+  // 빈 카드가 된다. 0 과 NaN 은 뺀다: React 는 그 둘을 "0"·"NaN" 으로 **그리므로** 슬롯이 맞다.
+  const hasEditSlot =
+    editSlot !== undefined && editSlot !== null && editSlot !== false && editSlot !== '';
+  const showEditSlot = isEditing && hasEditSlot;
+
+  // 무시된 요청은 화면상 "편집을 눌렀는데 아무 일도 없다"로만 보인다 — 개발 중에만 이유를 준다.
+  // 반대 방향(슬롯만 있고 isEditing=false)은 **경고하지 않는다**: 편집 중이 아닌 카드에도 폼
+  // 노드를 미리 만들어 넘기는 것은 정상 사용법이라, 경고를 걸면 목록을 한 번 그릴 때마다
+  // 카드 수만큼(카테고리 화면 기준 118줄) 콘솔이 쏟아진다.
+  if (process.env.NODE_ENV !== 'production' && isEditing && !hasEditSlot) {
+    console.warn(
+      `LinkCard(${id}): isEditing=true 인데 editSlot 이 비어 있어 본문 교체를 건너뛴다. ` +
+        '두 값은 한 곳에서 같이 내려보내라 — React 가 아무것도 그리지 않는 값(null·undefined·' +
+        'false·빈 문자열)은 전부 슬롯 없음으로 친다.',
+    );
+  }
 
   return (
     <div className={`${CARD} ${border}`}>
@@ -255,11 +303,15 @@ export function LinkCard({
               조건을 `hidden` 클래스나 `display:none`으로 바꾸지 마라. */}
           {isAdmin && (
             <>
+              {/* aria-expanded 가 보는 것은 `isEditing` 플래그가 아니라 **실제로 교체됐는지**다.
+                  플래그만 오고 슬롯이 비어 교체를 건너뛴 경우에도 참이라고 알리면, 화면을 볼 수
+                  없는 사용자에게만 있지도 않은 폼이 열렸다고 말하는 셈이 된다. */}
               <button
                 type="button"
                 aria-label={`${title} 수정`}
+                aria-expanded={showEditSlot}
                 onClick={() => onEdit?.(id)}
-                className={`${ACTION} text-faint hover:text-ink`}
+                className={`${ACTION_EDIT} text-faint`}
               >
                 <PencilIcon />
               </button>

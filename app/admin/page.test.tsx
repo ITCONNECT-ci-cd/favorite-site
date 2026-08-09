@@ -119,14 +119,25 @@ describe('app/admin 아래 모든 page 가 자기 세션을 다시 확인한다'
    * 디렉터리에서 찾은 경로를 그대로 import 하므로, I·K·M 시리즈가 화면을 붙이는 순간
    * 등록 없이도 이 단언에 걸린다. 파일 경로로 부르는 것이라 `@/` 별칭 목록과도 어긋나지 않는다.
    */
+  /**
+   * 스캔이 찾아낸 화면에 넘길 최소 props.
+   *
+   * 인자 없이 부르면 지금은 통과하지만, 동적 세그먼트를 가진 관리 화면(`admin/links/[id]`
+   * 같은 것)이 생기는 순간 본문의 `await params` 가 `undefined` 를 만나 TypeError 로 터진다 —
+   * **게이트가 뚫린 것이 아닌데 이 단언이 빨개진다.** 그건 이 테스트가 지키려는 것이 아니므로
+   * 미리 스텁을 넘긴다. 게이트는 props 를 보기 전에 세션부터 확인하므로 값은 비어 있어도 된다
+   * (Next 16 에서 둘 다 Promise 다).
+   */
+  const PAGE_PROPS = { params: Promise.resolve({}), searchParams: Promise.resolve({}) };
+
   it.each(pages)('%s 는 미인증이면 아무것도 그리지 않는다', async (path) => {
     vi.mocked(getAdminSession).mockResolvedValue(null);
 
     const loaded: unknown = await import(/* @vite-ignore */ pathToFileURL(path).href);
-    const Page = (loaded as { default: () => Promise<unknown> }).default;
+    const Page = (loaded as { default: (props: typeof PAGE_PROPS) => Promise<unknown> }).default;
 
     expect(typeof Page).toBe('function');
-    expect(await Page()).toBeNull();
+    expect(await Page(PAGE_PROPS)).toBeNull();
     // 모킹이 이 모듈까지 닿았다는 증거 — 안 닿았다면 진짜 세션 조회가 돌아 위 null 이
     // 다른 이유로 나왔을 수 있다. 그러면 이 단언은 아무것도 지키지 않는다.
     expect(getAdminSession).toHaveBeenCalled();
@@ -138,6 +149,10 @@ describe('app/admin 아래 모든 page 가 자기 세션을 다시 확인한다'
    * 실행만 보면 "세션을 안 보고 늘 null 을 돌려주는 화면"도 통과한다(I1 이 내용을 채우다
    * 잠시 그런 상태를 만들 수 있다). 그래서 `getAdminSession()` 을 부르고 그 결과로 곧장
    * null 을 돌려주는 형태까지 본다. 사이에 `=== null)` 정도만 들어가므로 200자면 넉넉하다.
+   *
+   * ⚠️ 이것만 빨개졌다면 위반이 아니라 **형태 차이**일 수 있다 — 게이트를 헬퍼로 뽑거나 사이에
+   * 코드가 길어지면 200자 창을 넘긴다. 위 실행 단언이 초록인지부터 보고, 그렇다면 게이트를
+   * 되돌리지 말고 이 창(또는 정규식)을 새 형태에 맞춰라.
    */
   it.each(pages)('%s 가 세션을 보고 나서 null 을 돌려준다 (소스)', (path) => {
     // 주석은 블록·줄 둘 다 걷어낸다 — 규칙을 설명하는 주석 자체가 통과 근거가 되면 안 된다.

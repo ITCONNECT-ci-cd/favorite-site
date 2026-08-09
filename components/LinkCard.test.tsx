@@ -3,10 +3,11 @@
  * 수치의 원본은 docs/DESIGN_SPEC.md 2-1장이며, 이 테스트가 그 값을 고정한다.
  */
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LinkCard, type LinkCardProps } from '@/components/LinkCard';
 import type { BookmarkWithCount } from '@/lib/types';
 import { middleClick, rightClick } from '@/test/events';
+import { PENCIL_PATH, TRASH_PATH } from '@/test/icon-paths';
 
 const BOOKMARK: BookmarkWithCount = {
   id: 'bm-1',
@@ -31,6 +32,21 @@ function renderCard({ bookmark, ...props }: Overrides = {}) {
 
   return container.firstElementChild as HTMLElement;
 }
+
+/**
+ * 카드의 개발 경고(`console.warn`)를 가로채고 스파이를 돌려준다.
+ *
+ * 경고 자체가 계약이라 없애지 않고 삼키기만 한다 — 무시된 슬롯 요청을 일부러 만드는 테스트가
+ * 여럿이라, 그냥 두면 그 문구가 출력을 덮어 진짜 경고를 못 보게 된다. 복원은 아래 afterEach.
+ */
+function silenceWarn() {
+  return vi.spyOn(console, 'warn').mockImplementation(() => {});
+}
+
+// spyOn 으로 만든 것만 되돌린다 — 개별 테스트의 vi.fn() 콜백은 건드리지 않는다.
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 /**
  * 파비콘 타일 — 본문과 같은 곳으로 가는 마우스 전용 보조 영역이라
@@ -326,10 +342,6 @@ describe('LinkCard 테두리 3상태', () => {
  * 마크업 원문(스펙 2-1 의 path 문자열)까지 본다 — display:none 류의 회귀를 잡는 유일한 단언이다.
  */
 describe('LinkCard 관리자 — 연필·휴지통 (J1)', () => {
-  /** DESIGN_SPEC 2-1 아이콘 표의 path 첫 조각. 렌더되면 이 문자열이 DOM 에 남는다. */
-  const PENCIL_PATH = 'M4 20.5h4L20 8.5l-4-4L4 16.5v4z';
-  const TRASH_PATH = 'M6.5 6.5l1 13.5h9l1-13.5';
-
   it('기본(비관리자)에는 연필·휴지통이 렌더되지 않는다 — 마크업 자체가 없다', () => {
     const card = renderCard({ showCheck: true });
 
@@ -406,6 +418,34 @@ describe('LinkCard 관리자 — 연필·휴지통 (J1)', () => {
     expect(deleteButton()).not.toHaveClass('hover:bg-[#efede8]');
   });
 
+  /**
+   * 연필은 카드 안에서 폼을 여닫는 버튼이라 그 상태를 이름 말고 `aria-expanded` 로도 알린다.
+   * 값의 근거는 `isEditing` 플래그가 아니라 **본문이 실제로 슬롯으로 바뀌었는지**다 —
+   * 플래그만 오고 슬롯이 비어 교체를 건너뛴 경우까지 참이라고 말하면, 화면을 볼 수 없는
+   * 사용자에게만 있지도 않은 폼이 열렸다고 알리는 셈이 된다.
+   */
+  it.each([
+    ['평소', {}, 'false'],
+    ['플래그+슬롯이 갖춰져 실제로 교체됐을 때', { isEditing: true, editSlot: <div /> }, 'true'],
+    ['플래그만 와서 교체를 건너뛴 때', { isEditing: true }, 'false'],
+  ] as [string, Overrides, string][])(
+    '연필의 aria-expanded: %s → %s',
+    (_label, props, expected) => {
+      silenceWarn();
+      renderCard({ isAdmin: true, ...props });
+
+      expect(editButton()).toHaveAttribute('aria-expanded', expected);
+    },
+  );
+
+  it('휴지통에는 aria-expanded 를 달지 않는다 — 오버레이는 카드 밖 상태다', () => {
+    // 삭제 확인은 카드가 여는 것이 아니라 화면이 얹는 오버레이(deleteSlot)라, 이 버튼이
+    // 무엇을 펼쳤다고 말할 근거가 없다. J3 이 필요를 느끼면 그때 오버레이와 함께 배선한다.
+    renderCard({ isAdmin: true });
+
+    expect(deleteButton()).not.toHaveAttribute('aria-expanded');
+  });
+
   it('연필·휴지통을 눌러도 링크를 열지 않는다 (열기 영역은 파비콘·본문뿐)', () => {
     const onOpen = vi.fn();
     renderCard({ isAdmin: true, onOpen });
@@ -448,9 +488,6 @@ describe('LinkCard 관리자 — 연필·휴지통 (J1)', () => {
  * `editSlot` 은 본문+하단 줄을 **교체**하고, `deleteSlot` 은 마지막 자식으로 **덧댄다**.
  */
 describe('LinkCard 상태 슬롯 (J2·J3 인계)', () => {
-  const PENCIL_PATH = 'M4 20.5h4L20 8.5l-4-4L4 16.5v4z';
-  const TRASH_PATH = 'M6.5 6.5l1 13.5h9l1-13.5';
-
   const editForm = () => <div data-testid="edit-slot">편집 폼</div>;
   const deleteOverlay = () => (
     <div data-testid="delete-slot" className="absolute inset-0 z-[6]">
@@ -492,12 +529,74 @@ describe('LinkCard 상태 슬롯 (J2·J3 인계)', () => {
     });
 
     it('isEditing 만 주고 editSlot 이 없으면 본문을 지우지 않는다 (빈 카드 금지)', () => {
+      silenceWarn();
       renderCard({ isEditing: true });
 
       expect(screen.getByText('ChatGPT')).toBeInTheDocument();
       expect(screen.getByText('AI 대화·문서 초안')).toBeInTheDocument();
       expect(screen.getByText('chat.openai.com')).toBeInTheDocument();
       expect(screen.getByText('3')).toBeInTheDocument();
+    });
+
+    /**
+     * `editSlot={cond && <Form/>}` 은 이 프로젝트에서 가장 쓰기 쉬운 관용구이고, cond 가 거짓이면
+     * 슬롯에 **false** 가 담겨 온다. "undefined·null 이 아니면 노드"로 보면 그 한 줄이 곧바로
+     * 교체를 발동시켜, 폼은 없는데 본문만 사라진 빈 카드가 된다. 기준은 값의 종류가 아니라
+     * **React 가 무언가를 그리는가**여야 한다.
+     */
+    it.each([
+      ['false — `cond && <Form/>` 의 거짓 가지', false],
+      ['빈 문자열', ''],
+    ] as const)('editSlot 이 %s 면 슬롯 없음으로 보고 본문을 남긴다', (_label, slot) => {
+      silenceWarn();
+      renderCard({ isEditing: true, editSlot: slot });
+
+      expect(screen.getByText('ChatGPT')).toBeInTheDocument();
+      expect(screen.getByText('AI 대화·문서 초안')).toBeInTheDocument();
+      expect(screen.getByText('chat.openai.com')).toBeInTheDocument();
+      expect(screen.getByText('3')).toBeInTheDocument();
+    });
+
+    it('0 은 React 가 "0" 으로 그리므로 슬롯이다 — 넓게 잡아 정상 노드를 버리지 않는다', () => {
+      renderCard({ isEditing: true, editSlot: 0 });
+
+      expect(screen.getByText('0')).toBeInTheDocument();
+      expect(screen.queryByText('ChatGPT')).not.toBeInTheDocument();
+    });
+  });
+
+  /**
+   * 개발 중 경고는 **한 방향뿐**이다 — "플래그는 켰는데 슬롯이 비었다"만 알린다.
+   * 그 반대(슬롯만 있고 isEditing=false)는 폼 노드를 미리 만들어 넘기는 정상 사용법이라,
+   * 경고를 걸면 목록을 한 번 그릴 때마다 카드 수만큼 콘솔이 쏟아진다.
+   */
+  describe('무시된 요청의 개발 경고', () => {
+    it('isEditing 만 켜져 있으면 한 번 경고한다', () => {
+      const warn = silenceWarn();
+      renderCard({ isEditing: true });
+
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0]?.[0]).toContain('bm-1');
+    });
+
+    it('editSlot 이 false 여도 같은 경고다 — 그 값도 슬롯 없음이다', () => {
+      const warn = silenceWarn();
+      renderCard({ isEditing: true, editSlot: false });
+
+      expect(warn).toHaveBeenCalledTimes(1);
+    });
+
+    const QUIET_CASES: [string, Overrides][] = [
+      ['슬롯만 주고 플래그가 없을 때', { editSlot: <div /> }],
+      ['둘 다 갖춰졌을 때', { isEditing: true, editSlot: <div /> }],
+      ['둘 다 없을 때', {}],
+    ];
+
+    it.each(QUIET_CASES)('%s 는 경고하지 않는다', (_label, props) => {
+      const warn = silenceWarn();
+      renderCard(props);
+
+      expect(warn).not.toHaveBeenCalled();
     });
   });
 

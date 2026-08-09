@@ -9,7 +9,7 @@
  */
 import type { ReactElement } from 'react';
 import { render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import PublicLayout from '@/app/(public)/layout';
 import { getAdminSession } from '@/lib/supabase/server';
 import type { SiteData } from '@/lib/types';
@@ -83,5 +83,71 @@ describe('공개 셸 — 관리자 편집 모드 칩 (J1)', () => {
     await renderShell();
 
     expect(screen.getByText(CHILD)).toBeInTheDocument();
+  });
+});
+
+/**
+ * 두 왕복(DB · Auth)은 나란히 떠나고, 실패는 서로 다른 결말을 갖는다.
+ *
+ * 셸을 그릴 데이터가 없으면 화면이 아예 서지 않으므로 오류 화면으로 갈아탄다. 반면 인증
+ * 왕복이 실패한 것은 "관리자임을 확인하지 못했다"일 뿐이라 셸은 그대로 서고 비관리자로
+ * 그린다 — 게이트의 fail-closed 와 같은 방향이다(lib/supabase/server.ts).
+ */
+describe('공개 셸 — 두 조회의 실패 경로', () => {
+  /** 원문은 서버 로그로만 나가는 것이 계약이라 삼키고 호출만 본다. */
+  function silenceError() {
+    return vi.spyOn(console, 'error').mockImplementation(() => {});
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('세션 조회가 실패해도 셸은 선다 — 칩만 없다', async () => {
+    const error = silenceError();
+    vi.mocked(getAdminSession).mockRejectedValue(new Error('auth 왕복 실패'));
+
+    const { container } = await renderShell();
+
+    expect(container.querySelector('header')).toBeInTheDocument();
+    expect(screen.getByText(CHILD)).toBeInTheDocument();
+    expect(chip()).not.toBeInTheDocument();
+    expect(error).toHaveBeenCalled();
+  });
+
+  it('데이터 조회가 실패하면 오류 화면으로 갈아탄다', async () => {
+    silenceError();
+    getAllData.mockRejectedValue(new Error('DB 왕복 실패'));
+
+    await renderShell();
+
+    expect(screen.getByRole('heading', { name: '일시적인 오류가 발생했습니다' })).toBeInTheDocument();
+    expect(screen.queryByText(CHILD)).not.toBeInTheDocument();
+  });
+
+  /**
+   * 오류 경로는 이미 떠난 세션 프라미스를 await 하지 않고 반환한다. 거기에 핸들러가 없으면
+   * unhandled rejection 이 되어 런타임에 따라 프로세스가 죽는다 — 그래서 `.catch` 는 프라미스를
+   * **만드는 즉시** 붙어 있어야 한다. 이 테스트는 그 catch 가 떨어져 나가는 회귀를 잡는다.
+   */
+  it('둘 다 실패해도 터지지 않는다 — 버려지는 세션 왕복에도 핸들러가 붙어 있다', async () => {
+    silenceError();
+    getAllData.mockRejectedValue(new Error('DB 왕복 실패'));
+    vi.mocked(getAdminSession).mockRejectedValue(new Error('auth 왕복 실패'));
+
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+
+    try {
+      await renderShell();
+      // 마이크로태스크가 다 돌 때까지 기다린다 — 핸들러 없는 거부는 이 시점에 보고된다.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+
+    expect(unhandled).toEqual([]);
+    expect(screen.getByRole('heading', { name: '일시적인 오류가 발생했습니다' })).toBeInTheDocument();
   });
 });

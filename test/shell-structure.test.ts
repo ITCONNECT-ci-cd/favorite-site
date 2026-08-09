@@ -139,12 +139,27 @@ describe('루트 레이아웃은 문서 뼈대만 진다 (app/layout.tsx)', () =
  * 않는지만 지킨다.
  */
 describe('셸 데이터 조회 실패 대비 (O1 게이트 F-1)', () => {
-  it('getAllData 를 try/catch 로 감싼다', () => {
-    expect(layoutCode).toMatch(/try\s*\{[\s\S]*?getAllData\(\)[\s\S]*?\}\s*catch/);
+  it('데이터 조회의 await 를 try/catch 로 감싼다', () => {
+    // 감싸는 대상은 **await** 다. 두 왕복을 나란히 띄우게 되면서 `getAllData()` 호출 자체는
+    // try 밖으로 나갔고(폭포 제거), 거부가 실제로 터지는 자리는 await 쪽이다.
+    expect(layoutCode).toMatch(/try\s*\{[\s\S]*?await\s+dataPromise[\s\S]*?\}\s*catch/);
+  });
+
+  it('세션 프라미스는 만드는 즉시 catch 를 단다', () => {
+    // 위 오류 경로는 이 프라미스를 await 하지 않고 반환한다 — 핸들러가 없으면 그때
+    // unhandled rejection 이 된다. 그래서 `.catch` 가 호출에 바로 붙어 있어야 한다
+    // (동작 검증은 app/(public)/layout.test.tsx 의 '둘 다 실패해도 터지지 않는다').
+    expect(layoutCode).toMatch(/getAdminSession\(\)\s*\.catch\(/);
   });
 
   it('실패해도 안내 문구를 내보낸다 (global-error 와 같은 문구)', () => {
     expect(layoutCode).toContain('일시적인 오류가 발생했습니다');
+  });
+
+  it('오류 화면이 뷰포트 높이를 혼자 채운다 — 100vh 이지 100% 가 아니다', () => {
+    // `100%` 는 조상이 높이를 줘야 성립하는데, 루트의 `h-full` 은 전역 CSS 가 실려야 붙는
+    // 클래스다. 그게 없을 때를 대비하는 화면이 그것에 기대면 안 된다(H2 픽스업에서 되돌린 값).
+    expect(layoutCode).toMatch(/minHeight:\s*["']100vh["']/);
   });
 
   it('되돌리기는 reset() 이 아니라 문서 요청 링크다', () => {

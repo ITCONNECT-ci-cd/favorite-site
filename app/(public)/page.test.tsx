@@ -13,6 +13,7 @@ import { getAdminSession } from '@/lib/supabase/server';
 import type { SiteData } from '@/lib/types';
 import { adminSession } from '@/test/admin-session';
 import { siteData } from '@/test/fixtures/seed';
+import { PENCIL_PATH, TRASH_PATH } from '@/test/icon-paths';
 
 const getAllData = vi.hoisted(() => vi.fn());
 
@@ -62,10 +63,6 @@ describe('홈 — 데이터 배선', () => {
  * 비로그인 응답에는 마크업 자체가 없어야 한다(README 주의사항 7).
  */
 describe('홈 — 관리자 편집 노출 (J1)', () => {
-  /** DESIGN_SPEC 2-1 아이콘 표의 path. 렌더됐다면 이 문자열이 DOM 에 남는다. */
-  const PENCIL_PATH = 'M4 20.5h4L20 8.5l-4-4L4 16.5v4z';
-  const TRASH_PATH = 'M6.5 6.5l1 13.5h9l1-13.5';
-
   it('비로그인 렌더에는 연필·휴지통이 없다 — 아이콘 마크업도 남지 않는다', async () => {
     const { container } = await renderPage();
 
