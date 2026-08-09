@@ -78,8 +78,8 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
           </div>
         </div>
 
-        {/* 토스트는 앱에 한 번만 마운트한다. 셸과 형제로 두는 것은 셸의 overflow-hidden 이
-            fixed 말풍선의 위치 기준이 되지 않게 하기 위해서다. */}
+        {/* 토스트는 앱에 한 번만 마운트한다. 화면 하단 중앙에 고정되는 오버레이라
+            셸의 레이아웃 흐름에 속하지 않으므로 셸의 형제로 둔다. */}
         <Toaster />
       </body>
     </html>
