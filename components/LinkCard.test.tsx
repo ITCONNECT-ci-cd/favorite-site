@@ -374,6 +374,7 @@ describe('LinkCard 수치 (DESIGN_SPEC 2-1)', () => {
 
     expect(body).toHaveClass('mt-auto', 'w-full', 'text-left', 'cursor-pointer');
     expect(screen.getByText('ChatGPT')).toHaveClass(
+      'block',
       'text-[13px]',
       'min-[820px]:text-[13.5px]',
       'font-semibold',
@@ -383,6 +384,7 @@ describe('LinkCard 수치 (DESIGN_SPEC 2-1)', () => {
       'overflow-hidden',
     );
     expect(screen.getByText('AI 대화·문서 초안')).toHaveClass(
+      'block',
       'text-[12px]',
       'text-desc',
       'leading-[1.4]',
@@ -390,6 +392,12 @@ describe('LinkCard 수치 (DESIGN_SPEC 2-1)', () => {
       'overflow-hidden',
       'mt-[4px]',
     );
+  });
+
+  it('본문 버튼 안에는 div를 넣지 않는다 (button 콘텐츠 모델 = phrasing content)', () => {
+    renderCard();
+
+    expect(bodyButton().querySelector('div')).toBeNull();
   });
 
   it('하단 줄: margin-top 5px, gap 8px / 주소 10.5px 1줄 말줄임 / 클릭 수 11px/600', () => {

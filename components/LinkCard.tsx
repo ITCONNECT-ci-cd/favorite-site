@@ -121,13 +121,15 @@ export function LinkCard({
       </div>
 
       <button type="button" onClick={open} className="mt-auto w-full cursor-pointer text-left">
-        <div className="max-h-[2.6em] overflow-hidden text-[13px] leading-[1.3] font-semibold tracking-[-0.01em] min-[820px]:text-[13.5px]">
+        {/* button의 콘텐츠 모델은 phrasing content라 div를 넣을 수 없다. 스펙의 블록 레이아웃
+            (2줄 말줄임 = max-height + overflow)은 span에 block을 얹어 그대로 살린다. */}
+        <span className="block max-h-[2.6em] overflow-hidden text-[13px] leading-[1.3] font-semibold tracking-[-0.01em] min-[820px]:text-[13.5px]">
           {title}
-        </div>
+        </span>
         {description !== null && description !== '' && (
-          <div className="mt-[4px] max-h-[2.8em] overflow-hidden text-[12px] leading-[1.4] text-desc">
+          <span className="mt-[4px] block max-h-[2.8em] overflow-hidden text-[12px] leading-[1.4] text-desc">
             {description}
-          </div>
+          </span>
         )}
       </button>
 
