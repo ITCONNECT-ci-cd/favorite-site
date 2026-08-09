@@ -1,18 +1,15 @@
 /**
  * D3. 카테고리 페이지 라우팅 계약 — `/category/<id>`.
  *
- * fixture 는 실제 `docs/data/links.json` 을 B3 의 `buildSeed` 로 돌려 만든다(D1 테스트와 같은 방식).
- * 손으로 적은 숫자가 아니라 시드가 DB 에 넣을 바로 그 형태라, 개수 기대값이 시드와 어긋나면
- * 여기서 먼저 깨진다.
+ * fixture 는 실시드 그대로다 (`test/fixtures/seed.ts`) — 손으로 적은 숫자가 아니라 시드가 DB 에
+ * 넣을 바로 그 형태라, 개수 기대값이 시드와 어긋나면 여기서 먼저 깨진다.
  */
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import CategoryPage from '@/app/category/[id]/page';
+import CategoryPage, { generateMetadata } from '@/app/category/[id]/page';
 import { OPERATING_CATEGORY_NAME } from '@/lib/constants';
-import type { BookmarkWithCount, Category, SiteData } from '@/lib/types';
-import { buildSeed, toBookmarkRow, type RawLink } from '@/scripts/seed-mapper';
+import type { BookmarkWithCount, SiteData } from '@/lib/types';
+import { BOOKMARKS, CATEGORIES, subId, topId } from '@/test/fixtures/seed';
 
 const getAllData = vi.hoisted(() => vi.fn());
 
@@ -22,30 +19,6 @@ vi.mock('@/lib/queries', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/queries')>()),
   getAllData,
 }));
-
-// jsdom 에서는 import.meta.url 이 파일 URL 이 아니므로 프로젝트 루트(vitest cwd) 기준으로 읽는다.
-const RAW: RawLink[] = JSON.parse(
-  readFileSync(join(process.cwd(), 'docs/data/links.json'), 'utf8'),
-) as RawLink[];
-const SEED = buildSeed(RAW, new Set<number>());
-const CATEGORIES: Category[] = SEED.categories;
-const BOOKMARKS: BookmarkWithCount[] = SEED.bookmarks.map(toBookmarkRow).map((bookmark) => ({
-  ...bookmark,
-  click_count: 0,
-}));
-
-function topId(name: string): string {
-  const found = CATEGORIES.find((c) => c.parent_id === null && c.name === name);
-  if (found === undefined) throw new Error(`상위 카테고리 없음: ${name}`);
-  return found.id;
-}
-
-function subId(parentName: string, name: string): string {
-  const parent = topId(parentName);
-  const found = CATEGORIES.find((c) => c.parent_id === parent && c.name === name);
-  if (found === undefined) throw new Error(`하위 카테고리 없음: ${parentName} > ${name}`);
-  return found.id;
-}
 
 /** 서버 컴포넌트를 그대로 await 해 결과 트리를 그린다 (params 는 Next 16 에서 Promise 다). */
 async function renderPage(id: string) {
@@ -223,6 +196,26 @@ describe('그 밖의 계약', () => {
     expect(screen.queryByText('남의것')).toBeNull();
     expect(chip('전체 2')).toBeInTheDocument();
     expect(chip('하위 1')).toBeInTheDocument();
+  });
+
+  it('브라우저 탭 제목이 분류 이름이다 (D5 — 라우트별 metadata)', async () => {
+    const meta = await generateMetadata({ params: Promise.resolve({ id: topId('마케팅') }) });
+
+    expect(meta.title).toBe('마케팅 — 내 링크');
+  });
+
+  it('하위 id 로 들어와도 탭 제목은 화면 제목(상위 이름)과 같다', async () => {
+    const meta = await generateMetadata({
+      params: Promise.resolve({ id: subId('AI 도구 모음', '대화·검색') }),
+    });
+
+    expect(meta.title).toBe('AI 도구 모음 — 내 링크');
+  });
+
+  it('없는 id 의 제목은 셸의 기본값으로 돌아간다 — 본문이 404 를 그린다', async () => {
+    const meta = await generateMetadata({ params: Promise.resolve({ id: '없는-id' }) });
+
+    expect(meta.title).toBe('내 링크');
   });
 
   it('revalidate 를 내보내지 않는다 — 이 페이지는 매 요청 렌더가 의도다 (lib/queries.ts)', async () => {

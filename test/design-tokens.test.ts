@@ -85,6 +85,18 @@ describe('디자인 토큰 (app/globals.css)', () => {
     expect(globalsCss).not.toContain('prefers-color-scheme');
     expect(globalsCss).toMatch(/color-scheme:\s*light;/);
   });
+
+  /**
+   * D5 이월 — C4 품질 리뷰. 키보드 포커스 링을 브라우저 기본값(대개 파랑)에 맡기면
+   * "색은 파비콘에서만 나온다"(DESIGN_SPEC 1장)는 무채색 제약이 깨진다.
+   */
+  it('키보드 포커스 링을 무채색 토큰으로 못박는다 (:focus-visible 1규칙)', () => {
+    expect(globalsCss).toMatch(/:focus-visible\s*\{/);
+    expect(globalsCss).toMatch(/outline:\s*2px solid var\(--color-ink\);/);
+    expect(globalsCss).toMatch(/outline-offset:\s*2px;/);
+    // :focus 가 아니라 :focus-visible 이어야 마우스 클릭에는 링이 뜨지 않는다.
+    expect(globalsCss).not.toMatch(/(^|[^-\w:]):focus\s*\{/m);
+  });
 });
 
 describe('루트 레이아웃 (app/layout.tsx)', () => {

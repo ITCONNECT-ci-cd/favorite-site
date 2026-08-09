@@ -2,9 +2,9 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { renderToString } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SidebarContainer, type SidebarContainerProps } from '@/components/SidebarContainer';
-import { FAVS_KEY } from '@/lib/constants';
 import { useFavorites } from '@/lib/favorites';
 import type { Category } from '@/lib/types';
+import { setFavs } from '@/test/favs';
 
 /** Sidebar 가 usePathname 을 쓰므로 라우터 컨텍스트 없이 렌더하려면 모킹해야 한다. */
 vi.mock('next/navigation', () => ({ usePathname: () => '/' }));
@@ -53,7 +53,7 @@ beforeEach(() => {
 
 describe('SidebarContainer', () => {
   it('저장된 즐겨찾기 수를 favCount 로 넘긴다', () => {
-    localStorage.setItem(FAVS_KEY, JSON.stringify(['a', 'b', 'c']));
+    setFavs(['a', 'b', 'c']);
 
     render(<SidebarContainer {...PROPS} />);
 
@@ -67,7 +67,7 @@ describe('SidebarContainer', () => {
   });
 
   it('서버에서 받은 나머지 개수는 손대지 않고 통과시킨다', () => {
-    localStorage.setItem(FAVS_KEY, JSON.stringify(['a']));
+    setFavs(['a']);
 
     render(<SidebarContainer {...PROPS} />);
 
@@ -95,7 +95,7 @@ describe('SidebarContainer', () => {
   });
 
   it('서버 렌더에서는 저장된 값이 있어도 0 이다 (하이드레이션 불일치 방지)', () => {
-    localStorage.setItem(FAVS_KEY, JSON.stringify(['a', 'b', 'c']));
+    setFavs(['a', 'b', 'c']);
 
     // useFavorites 의 서버 스냅샷은 항상 빈 Set 이다. 서버가 3을 그리고 클라이언트가
     // 0으로 시작하면 React 가 하이드레이션 불일치를 낸다.

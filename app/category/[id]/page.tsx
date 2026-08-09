@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { ListView } from '@/components/ListView';
 import { findOperatingCategoryId, getAllData, rollupCounts } from '@/lib/queries';
@@ -14,6 +15,26 @@ type CategoryPageProps = {
 
 /** DESIGN_SPEC 4장 빈 상태 문구. 즐겨찾기(D4)는 다른 문구를 쓴다. */
 const EMPTY_MESSAGE = '이 분류에 링크가 없습니다.';
+
+/**
+ * 탭 제목 — 셸(app/layout.tsx)의 '내 링크' 를 분류 이름으로 덮는다 (D5).
+ *
+ * 화면 제목과 같은 규칙을 쓴다: 하위 id 로 들어와도 **상위 이름**이다(`rootOf`).
+ * 없는 id 면 제목을 덮지 않고 셸의 기본값에 맡긴다 — 여기서 notFound() 를 부르면
+ * 본문의 404 판정과 두 곳에서 같은 결정을 하게 된다.
+ *
+ * `getAllData` 는 React `cache()` 로 감싸여 있어(lib/queries.ts) 페이지 본문과 같은 요청에서는
+ * 조회가 한 번만 나간다 — 이 함수가 데이터를 다시 읽어도 쿼리가 늘지 않는다.
+ */
+export async function generateMetadata({ params }: CategoryPageProps): Promise<Metadata> {
+  const { id } = await params;
+  const { categories } = await getAllData();
+
+  const target = categories.find((category) => category.id === id);
+  if (target === undefined) return { title: '내 링크' };
+
+  return { title: `${rootOf(target, categories).name} — 내 링크` };
+}
 
 /**
  * 분류 목록 화면 — `/category/<id>`.

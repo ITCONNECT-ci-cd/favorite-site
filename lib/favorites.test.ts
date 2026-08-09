@@ -7,12 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FAVS_KEY } from '@/lib/constants';
 import { favToastText, type Favorites, pickFavorites, useFavorites } from '@/lib/favorites';
 import type { BookmarkWithCount } from '@/lib/types';
-
-/** localStorage에 실제로 저장된 값을 파싱해 돌려준다. */
-function storedFavs(): unknown {
-  const raw = localStorage.getItem(FAVS_KEY);
-  return raw === null ? null : JSON.parse(raw);
-}
+import { storedFavs } from '@/test/favs';
 
 /** 서버 렌더/하이드레이션 관찰용 최소 컴포넌트 — 담긴 개수를 그대로 뱉는다. */
 function Probe() {

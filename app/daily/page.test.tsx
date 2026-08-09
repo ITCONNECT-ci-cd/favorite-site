@@ -4,17 +4,15 @@
  * 홈의 '매일' 섹션과 **같은 링크(is_pinned)** 를 보여 주지만 핀 노출 규칙이 다르다.
  * 홈은 관리자 영역이라 핀을 감추고(D2), 이 목록 화면은 핀을 노출한다(PRD P10 "홈 외 모든 화면").
  *
- * fixture 는 실제 `docs/data/links.json` 을 B3 의 `buildSeed` 로 돌려 만든다(D1·D2·D3 관례) —
+ * fixture 는 실시드 그대로다 (`test/fixtures/seed.ts`) —
  * 고정 12개라는 숫자가 시드와 어긋나면 여기서 먼저 깨진다.
  */
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import DailyPage from '@/app/daily/page';
-import { FAVS_KEY } from '@/lib/constants';
-import type { BookmarkWithCount, Category, SiteData } from '@/lib/types';
-import { buildSeed, toBookmarkRow, type RawLink } from '@/scripts/seed-mapper';
+import DailyPage, { metadata } from '@/app/daily/page';
+import type { BookmarkWithCount, SiteData } from '@/lib/types';
+import { setFavs } from '@/test/favs';
+import { BOOKMARKS, CATEGORIES } from '@/test/fixtures/seed';
 
 const getAllData = vi.hoisted(() => vi.fn());
 
@@ -23,15 +21,6 @@ vi.mock('@/lib/queries', async (importOriginal) => ({
   getAllData,
 }));
 
-const RAW: RawLink[] = JSON.parse(
-  readFileSync(resolve(process.cwd(), 'docs/data/links.json'), 'utf8'),
-) as RawLink[];
-const SEED = buildSeed(RAW, new Set<number>());
-const CATEGORIES: Category[] = SEED.categories;
-const BOOKMARKS: BookmarkWithCount[] = SEED.bookmarks.map((bookmark, index) => ({
-  ...toBookmarkRow(bookmark),
-  click_count: index,
-}));
 /** getAllData 는 sort_order 순으로 준다(D1) — 걸러 내도 그 순서가 그대로 남아야 한다. */
 const PINNED = BOOKMARKS.filter((bookmark) => bookmark.is_pinned);
 
@@ -77,6 +66,12 @@ beforeEach(() => {
   localStorage.clear();
   getAllData.mockReset();
   getAllData.mockResolvedValue({ categories: CATEGORIES, bookmarks: BOOKMARKS } satisfies SiteData);
+});
+
+describe('매일 사용하는 사이트 — 라우트 metadata (D5)', () => {
+  it('브라우저 탭 제목이 화면 이름이다 — 셸의 "내 링크" 를 덮는다', () => {
+    expect(metadata.title).toBe('매일 사용하는 사이트 — 내 링크');
+  });
 });
 
 describe('매일 사용하는 사이트 — 머리말 (DESIGN_SPEC 4장)', () => {
@@ -134,7 +129,7 @@ describe('매일 사용하는 사이트 — 핀 노출 (홈 섹션과 다름)', 
   });
 
   it('즐겨찾기에 담긴 고정 링크는 핀이 켜져 있다', async () => {
-    localStorage.setItem(FAVS_KEY, JSON.stringify([PINNED[1].id]));
+    setFavs([PINNED[1].id]);
     await renderPage();
 
     expect(screen.getByLabelText(`${PINNED[1].title} 즐겨찾기`)).toHaveAttribute(

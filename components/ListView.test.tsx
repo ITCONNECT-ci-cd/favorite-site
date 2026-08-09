@@ -5,13 +5,15 @@
  * 카드 내부 DOM(열기 영역이 버튼인지 앵커인지 등)에는 기대지 않는다 — 카드는 C2 의 계약대로
  * 제목을 그리고, 여기서는 '어떤 카드가 몇 장 보이는가'만 본다.
  */
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ListView, type ListViewProps } from '@/components/ListView';
-import { TOAST_DURATION_MS, Toaster } from '@/components/Toast';
+import { Toaster } from '@/components/Toast';
 import { recordClick } from '@/lib/clicks';
-import { FAVS_KEY } from '@/lib/constants';
 import type { BookmarkWithCount } from '@/lib/types';
+import { middleClick } from '@/test/events';
+import { setFavs, storedFavs } from '@/test/favs';
+import { useToastTimers } from '@/test/toast';
 
 /**
  * 클릭 기록은 네트워크를 타므로 여기서는 부르는지만 본다 — 요청의 모양(keepalive·visitorId·
@@ -92,10 +94,6 @@ function shownTitles(container: HTMLElement): string[] {
  * aria-hidden 이라 접근성 트리에 없다(C2).
  */
 const openLink = (title: string) => screen.getByRole('link', { name: title });
-
-/** fireEvent 에 auxClick 헬퍼가 없어 직접 만들어 쏜다 (가운데 클릭 = button 1). */
-const middleClick = (element: Element) =>
-  fireEvent(element, new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 }));
 
 const chip = (name: string) => screen.getByRole('button', { name });
 const chips = () => screen.getAllByRole('button', { name: /^(전체|대화·검색|영상) \d+$/ });
@@ -251,7 +249,7 @@ describe('ListView — 본문 (홈과 같은 카드 그리드)', () => {
   });
 
   it('즐겨찾기에 담긴 카드에 isFaved 를 내려준다', () => {
-    localStorage.setItem(FAVS_KEY, JSON.stringify(['대화B']));
+    setFavs(['대화B']);
     renderList();
 
     expect(screen.getByLabelText('대화B 즐겨찾기')).toHaveAttribute('aria-pressed', 'true');
@@ -269,25 +267,9 @@ describe('ListView — 본문 (홈과 같은 카드 그리드)', () => {
 });
 
 describe('ListView — 핀 토글 (D6)', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-
-  afterEach(() => {
-    // 모듈 레벨 토스트 스토어가 다음 테스트로 새지 않게 자동 소멸까지 흘려보낸다(Toast.tsx 규약).
-    act(() => {
-      vi.advanceTimersByTime(TOAST_DURATION_MS);
-    });
-    vi.useRealTimers();
-  });
+  useToastTimers();
 
   const pin = (title: string) => screen.getByLabelText(`${title} 즐겨찾기`);
-
-  /** localStorage 에 실제로 저장된 순서. */
-  function storedFavs(): unknown {
-    const raw = localStorage.getItem(FAVS_KEY);
-    return raw === null ? null : JSON.parse(raw);
-  }
 
   it('핀을 누르면 담기고 프로토타입 문구로 알린다', () => {
     renderList();
@@ -301,7 +283,7 @@ describe('ListView — 핀 토글 (D6)', () => {
   });
 
   it('담긴 카드의 핀을 다시 누르면 빠지고 해제 문구로 알린다', () => {
-    localStorage.setItem(FAVS_KEY, JSON.stringify(['대화A']));
+    setFavs(['대화A']);
     renderList();
     render(<Toaster />);
 
@@ -341,17 +323,10 @@ describe('ListView — 핀 토글 (D6)', () => {
 });
 
 describe('ListView — 카드 클릭 기록 (F3)', () => {
+  useToastTimers();
+
   beforeEach(() => {
     vi.mocked(recordClick).mockClear();
-    vi.useFakeTimers();
-  });
-
-  afterEach(() => {
-    // 모듈 레벨 토스트 스토어가 다음 테스트로 새지 않게 자동 소멸까지 흘려보낸다(Toast.tsx 규약).
-    act(() => {
-      vi.advanceTimersByTime(TOAST_DURATION_MS);
-    });
-    vi.useRealTimers();
   });
 
   it('카드를 열면 그 링크의 클릭을 기록하고 프로토타입 문구로 알린다', () => {

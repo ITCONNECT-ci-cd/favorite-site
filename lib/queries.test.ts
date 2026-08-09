@@ -1,8 +1,5 @@
 // @vitest-environment node
-// 순수 함수 + fs fixture 만 쓰므로 DOM 이 필요 없다. node 환경이라야 import.meta.url 이
-// 실제 파일 URL 로 남아(jsdom 은 페이지 URL 로 치환한다) cwd 에 기대지 않고 경로를 잡을 수 있다.
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+// 순수 함수와 조회부만 다루므로 DOM 이 필요 없다 — jsdom 을 띄우지 않는다.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OPERATING_CATEGORY_NAME } from '@/lib/constants';
@@ -16,39 +13,12 @@ import {
 } from '@/lib/queries';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import type { Bookmark, Category } from '@/lib/types';
-import { buildSeed, toBookmarkRow, type RawLink } from '@/scripts/seed-mapper';
+// 이 파일은 DB 행 그대로(클릭 수 없는 형태)를 본다 — 화면 테스트가 쓰는 BOOKMARKS 와는 다른 배열이다.
+import { BOOKMARK_ROWS as BOOKMARKS, CATEGORIES, subId, topId } from '@/test/fixtures/seed';
 
 // getAllData 는 순수 함수가 아니라 얇은 조회부다 — Supabase 클라이언트만 갈아 끼우고
 // "무엇을 물어보고 어떻게 합치는지"를 확인한다. 실제 DB 대조는 B5 시드 이후 몫.
 vi.mock('@/lib/supabase/server', () => ({ createServerSupabaseClient: vi.fn() }));
-
-/**
- * fixture 는 실제 `docs/data/links.json` 을 B3 의 `buildSeed` 로 돌려 만든다.
- * 손으로 적은 숫자가 아니라 시드가 DB 에 넣을 바로 그 형태라, 롤업 기대값(118 등)이
- * 시드와 어긋나면 여기서 먼저 깨진다.
- */
-const LINKS_PATH = fileURLToPath(new URL('../docs/data/links.json', import.meta.url));
-const RAW: RawLink[] = JSON.parse(readFileSync(LINKS_PATH, 'utf8')) as RawLink[];
-const NO_ICONS: ReadonlySet<number> = new Set<number>();
-
-const SEED = buildSeed(RAW, NO_ICONS);
-const CATEGORIES: Category[] = SEED.categories;
-const BOOKMARKS: Bookmark[] = SEED.bookmarks.map(toBookmarkRow);
-
-/** 상위(부모 없음) 카테고리 id — 이름은 상위끼리 유일하다(DB 의 unique nulls not distinct). */
-function topId(name: string): string {
-  const found = CATEGORIES.find((c) => c.parent_id === null && c.name === name);
-  if (found === undefined) throw new Error(`상위 카테고리 없음: ${name}`);
-  return found.id;
-}
-
-/** 하위 카테고리 id — 같은 이름이 다른 그룹에도 있을 수 있어 부모까지 지정한다. */
-function subId(parentName: string, name: string): string {
-  const parent = topId(parentName);
-  const found = CATEGORIES.find((c) => c.parent_id === parent && c.name === name);
-  if (found === undefined) throw new Error(`하위 카테고리 없음: ${parentName} > ${name}`);
-  return found.id;
-}
 
 function makeCategory(over: Partial<Category> & Pick<Category, 'id'>): Category {
   return { name: over.id, parent_id: null, sort_order: 0, ...over };

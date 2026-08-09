@@ -1,5 +1,14 @@
+import type { Metadata } from 'next';
 import { FavoritesView } from '@/components/FavoritesView';
 import { getAllData } from '@/lib/queries';
+
+/**
+ * 탭 제목 — 셸(app/layout.tsx)의 '내 링크' 를 화면 이름으로 덮는다.
+ * 담긴 개수는 브라우저에만 있어(localStorage) 서버가 모르므로 제목에 넣지 않는다.
+ */
+export const metadata: Metadata = {
+  title: '내 즐겨찾기 — 내 링크',
+};
 
 /**
  * 내 즐겨찾기 목록 화면 — `/favorites` (DESIGN_SPEC 4장).

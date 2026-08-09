@@ -5,18 +5,17 @@
  * 넘기기만 하고 거르는 일은 클라이언트가 한다 — 그래서 이 테스트는 localStorage 를 먼저 심고
  * 서버 컴포넌트를 그대로 그려, 심은 것만 · 심은 순서대로 나오는지 본다.
  *
- * fixture 는 실제 `docs/data/links.json` 을 B3 의 `buildSeed` 로 돌려 만든다(D1·D2·D3 관례).
+ * fixture 는 실시드 그대로다 (`test/fixtures/seed.ts`).
  * 카드 내부 DOM(열기 영역이 앵커인지 등)에는 기대지 않는다 — 제목과 접근성 이름만 본다.
  */
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { act, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import FavoritesPage from '@/app/favorites/page';
-import { TOAST_DURATION_MS, Toaster } from '@/components/Toast';
-import { FAVS_KEY } from '@/lib/constants';
-import type { BookmarkWithCount, Category, SiteData } from '@/lib/types';
-import { buildSeed, toBookmarkRow, type RawLink } from '@/scripts/seed-mapper';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import FavoritesPage, { metadata } from '@/app/favorites/page';
+import { Toaster } from '@/components/Toast';
+import type { BookmarkWithCount, SiteData } from '@/lib/types';
+import { setFavs } from '@/test/favs';
+import { BOOKMARKS, CATEGORIES } from '@/test/fixtures/seed';
+import { useToastTimers } from '@/test/toast';
 
 const getAllData = vi.hoisted(() => vi.fn());
 
@@ -26,23 +25,8 @@ vi.mock('@/lib/queries', async (importOriginal) => ({
   getAllData,
 }));
 
-// jsdom 에서는 import.meta.url 이 파일 URL 이 아니므로 프로젝트 루트(vitest cwd) 기준으로 읽는다.
-const RAW: RawLink[] = JSON.parse(
-  readFileSync(resolve(process.cwd(), 'docs/data/links.json'), 'utf8'),
-) as RawLink[];
-const SEED = buildSeed(RAW, new Set<number>());
-const CATEGORIES: Category[] = SEED.categories;
-const BOOKMARKS: BookmarkWithCount[] = SEED.bookmarks.map((bookmark, index) => ({
-  ...toBookmarkRow(bookmark),
-  click_count: index,
-}));
-
 /** 담은 순서 검증용 — sort_order 순서(5 → 40 → 200)와 일부러 다르게 담는다(D2 와 같은 방식). */
 const FAV_IDS = [BOOKMARKS[200].id, BOOKMARKS[5].id, BOOKMARKS[40].id];
-
-function setFavs(ids: readonly string[]): void {
-  localStorage.setItem(FAVS_KEY, JSON.stringify(ids));
-}
 
 /** 서버 컴포넌트를 그대로 await 해 결과 트리를 그린다. */
 async function renderPage() {
@@ -72,6 +56,12 @@ beforeEach(() => {
   localStorage.clear();
   getAllData.mockReset();
   getAllData.mockResolvedValue({ categories: CATEGORIES, bookmarks: BOOKMARKS } satisfies SiteData);
+});
+
+describe('내 즐겨찾기 — 라우트 metadata (D5)', () => {
+  it('브라우저 탭 제목이 화면 이름이다 — 셸의 "내 링크" 를 덮는다', () => {
+    expect(metadata.title).toBe('내 즐겨찾기 — 내 링크');
+  });
 });
 
 describe('내 즐겨찾기 — 머리말 (DESIGN_SPEC 4장)', () => {
@@ -146,17 +136,7 @@ describe('내 즐겨찾기 — 빈 상태 (DESIGN_SPEC 4장)', () => {
 });
 
 describe('내 즐겨찾기 — 핀 해제 (D6)', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-
-  afterEach(() => {
-    // 모듈 레벨 토스트 스토어가 다음 테스트로 새지 않게 자동 소멸까지 흘려보낸다(Toast.tsx 규약).
-    act(() => {
-      vi.advanceTimersByTime(TOAST_DURATION_MS);
-    });
-    vi.useRealTimers();
-  });
+  useToastTimers();
 
   it('핀을 다시 누르면 그 카드가 곧바로 사라진다 — 이 화면은 담긴 것만 그리기 때문이다', async () => {
     setFavs(FAV_IDS);
