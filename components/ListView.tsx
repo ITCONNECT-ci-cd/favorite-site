@@ -71,23 +71,20 @@ export function ListView({
   const { favs, toggle } = useFavorites();
 
   /**
-   * 핀 토글 — 담고/빼고 토스트로 알린다(DESIGN_SPEC 7장). 카테고리·매일·즐겨찾기 화면이 모두
-   * 이 배선을 쓴다. `/favorites` 에서는 뺀 카드가 곧바로 목록에서 사라진다 — 그 화면이 넘기는
-   * `bookmarks` 자체가 담긴 것만 골라낸 배열이기 때문이다(FavoritesView).
-   *
-   * 카드마다 새 함수가 생기지 않도록 useCallback 으로 묶는다. `favs` 가 deps 에 있는 것은 토스트
-   * 문구가 방향(담김/해제)을 알아야 하기 때문이고, 그 값이 바뀌는 렌더는 어차피 카드가 다시
-   * 그려지는 렌더다.
+   * 핀 토글 — 담고/빼고 토스트로 알린다(DESIGN_SPEC 7장). 방향은 `toggle` 이 돌려준다.
+   * 카테고리·매일·즐겨찾기 화면이 모두 이 배선을 쓴다. `/favorites` 에서는 뺀 카드가 곧바로
+   * 목록에서 사라진다 — 그 화면이 넘기는 `bookmarks` 자체가 담긴 것만 골라낸 배열이기
+   * 때문이다(FavoritesView).
    */
   const handleToggleFav = useCallback(
     (id: string) => {
       // 카드가 돌려준 id 라 이 배열에 반드시 있다. 없더라도 토글은 하고 토스트만 건너뛴다.
       const bookmark = bookmarks.find((item) => item.id === id);
+      const faved = toggle(id);
 
-      toggle(id);
-      if (bookmark !== undefined) toast(favToastText(bookmark.title, !favs.has(id)));
+      if (bookmark !== undefined) toast(favToastText(bookmark.title, faved));
     },
-    [bookmarks, favs, toggle],
+    [bookmarks, toggle],
   );
 
   const tabs = subTabs ?? [];

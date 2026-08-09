@@ -10,8 +10,13 @@ export type Favorites = {
    * ReadonlySet이다 — 직접 변형하면 서버에서는 요청 간 오염으로 번진다.
    */
   favs: ReadonlySet<string>;
-  /** 담겨 있으면 빼고, 없으면 담는다 */
-  toggle: (id: string) => void;
+  /**
+   * 담겨 있으면 빼고, 없으면 담는다. **토글이 끝난 뒤**의 상태를 돌려준다 — 담겼으면 true.
+   *
+   * 판정은 호출 시점의 라이브 스토어 기준이라, 부르는 쪽이 렌더 때 읽은 `favs` 스냅샷에 기대지
+   * 않아도 방향(담김/해제)을 알 수 있다. 덕분에 핀 배선의 콜백이 `favs` 에 묶이지 않는다.
+   */
+  toggle: (id: string) => boolean;
   isFaved: (id: string) => boolean;
 };
 
@@ -128,11 +133,17 @@ export function useFavorites(): Favorites {
   const favs = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
   const toggle = useCallback((id: string) => {
+    // 렌더 때의 favs 가 아니라 스토어의 지금 값에서 출발한다 — 같은 틱에 여러 번 불려도 각각
+    // 맞는 결과를 내고, 돌려주는 값도 그 판정과 언제나 같다.
     const next = new Set(getSnapshot());
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
+    const faved = !next.has(id);
+
+    if (faved) next.add(id);
+    else next.delete(id);
 
     commit(next);
+
+    return faved;
   }, []);
 
   const isFaved = useCallback((id: string) => favs.has(id), [favs]);

@@ -62,22 +62,16 @@ export function HomeView({ data }: HomeViewProps) {
   // 담은 순서 유지 · 죽은 id 제외는 `/favorites` 와 같은 규칙이라 lib/favorites 의 순수 함수를 쓴다.
   const favItems = pickFavorites(bookmarks, favs);
 
-  /**
-   * 핀 토글 — 담고/빼고 토스트로 알린다(DESIGN_SPEC 7장).
-   *
-   * 카드마다 새 함수가 생기지 않도록 useCallback 으로 묶는다. `favs` 가 deps 에 있는 것은 토스트
-   * 문구가 방향(담김/해제)을 알아야 하기 때문이고, 그 값이 바뀌는 렌더는 어차피 카드가 다시 그려지는
-   * 렌더다. `bookmarks` 는 서버가 넘긴 배열이라 렌더마다 새로 만들어지지 않는다.
-   */
+  /** 핀 토글 — 담고/빼고 토스트로 알린다(DESIGN_SPEC 7장). 방향은 `toggle` 이 돌려준다. */
   const handleToggleFav = useCallback(
     (id: string) => {
       // 카드가 돌려준 id 라 이 배열에 반드시 있다. 없더라도 토글은 하고 토스트만 건너뛴다.
       const bookmark = bookmarks.find((item) => item.id === id);
+      const faved = toggle(id);
 
-      toggle(id);
-      if (bookmark !== undefined) toast(favToastText(bookmark.title, !favs.has(id)));
+      if (bookmark !== undefined) toast(favToastText(bookmark.title, faved));
     },
-    [bookmarks, favs, toggle],
+    [bookmarks, toggle],
   );
 
   const daily = bookmarks.filter((bookmark) => bookmark.is_pinned);

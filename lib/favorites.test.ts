@@ -107,6 +107,38 @@ describe('useFavorites', () => {
     expect(storedFavs()).toEqual([]);
   });
 
+  it('toggle은 토글이 끝난 뒤의 상태를 돌려준다 (담기 true · 빼기 false)', () => {
+    // 부르는 쪽(D6 핀 배선)이 방향에 맞는 토스트를 띄우려면 이 값이 필요하다.
+    // 판정은 라이브 스토어 기준이라, 렌더 때 읽은 favs 스냅샷에 기대지 않는다.
+    const { result } = renderHook(() => useFavorites());
+
+    let added: boolean | undefined;
+    act(() => {
+      added = result.current.toggle('a');
+    });
+    expect(added).toBe(true);
+
+    let removed: boolean | undefined;
+    act(() => {
+      removed = result.current.toggle('a');
+    });
+    expect(removed).toBe(false);
+  });
+
+  it('toggle의 반환값은 한 틱에 여러 번 불러도 각각 맞는다 (스냅샷이 아니라 라이브 기준)', () => {
+    const { result } = renderHook(() => useFavorites());
+
+    // 같은 틱 안에서는 favs 스냅샷이 갱신되지 않는다 — 스냅샷으로 판정하면 둘 다 true 가 된다.
+    const returned: boolean[] = [];
+    act(() => {
+      returned.push(result.current.toggle('a'));
+      returned.push(result.current.toggle('a'));
+    });
+
+    expect(returned).toEqual([true, false]);
+    expect(result.current.favs).toEqual(new Set());
+  });
+
   it('한 틱에 여러 id를 담아도 모두 반영된다', () => {
     const { result } = renderHook(() => useFavorites());
 
