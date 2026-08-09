@@ -598,7 +598,11 @@ describe('LinkTable — 하위 카테고리 지정', () => {
     });
 
     expect(subSelect('Perplexity')).toHaveValue('sub-img');
+
+    // 요청이 끝나면 낙관값은 걷힌다 — 제품에서는 이때 서버가 옮겨진 행을 함께 실어 보낸다(정렬 쪽
+    // '저장이 끝나기 전에도 새 순서를 보여 준다' 와 같은 계약이다).
     await move.finish();
+    expect(subSelect('Perplexity')).toHaveValue('');
   });
 
   /** select 는 **잠그지 않는다**(잠기면 키보드로 고른 사람이 튕겨 나간다) — 대신 상태만 알린다. */
@@ -858,7 +862,9 @@ describe('LinkTable — 드래그 정렬', () => {
 
     await drag('Claude', 'Perplexity');
 
-    // 화면에서 사라져 있던 ChatGPT(bm-2)도 제자리 그대로 함께 간다.
+    // 화면에서 사라져 있던 ChatGPT(bm-2)도 목록에 함께 실린다. 자리값은 그대로가 아니다 —
+    // `sort_order` 는 1 에서 2 가 된다. 지켜지는 것은 **상대 위치**다: 보이는 두 행은 사람이 놓은
+    // 대로 bm-3 → bm-1 이 되고, 숨은 행은 여전히 옮기지 않은 이웃(bm-1) 바로 뒤다.
     expect(reorderBookmarks).toHaveBeenCalledWith(['bm-3', 'bm-1', 'bm-2']);
   });
 

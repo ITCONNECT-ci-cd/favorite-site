@@ -34,6 +34,15 @@ const SUBS: SubCategoryMap = {
   ],
 };
 
+/**
+ * '이미지 생성' 을 지운 **직후 한 프레임** — 서버는 그 안의 링크를 상위로 올리지만
+ * (`deleteSubCategory`), 새 하위 목록이 새 링크 행보다 먼저 도착할 수 있다. 그래서 이 목록에는
+ * 없는 `sub-img` 를 여전히 가리키는 링크(bm-4)가 남아 있다.
+ */
+const SUBS_MINUS_IMG: SubCategoryMap = {
+  'cat-ai': [{ id: 'sub-chat', name: '대화형', linkCount: 2 }],
+};
+
 function link(overrides: Partial<AdminLink> & Pick<AdminLink, 'id' | 'title'>): AdminLink {
   return {
     url: `https://example.test/${overrides.id}`,
@@ -81,8 +90,11 @@ function Shown({ links, subs }: { links: LinkRowMap; subs: SubCategoryMap }) {
 
   return (
     <ul aria-label="보이는 링크">
+      {/* 이름이 같은 링크끼리의 차례(동점 정렬)는 글자만으로는 볼 수 없어 id 도 함께 단다. */}
       {visibleLinks(links[selected.id] ?? [], subs[selected.id] ?? [], filter).map((item) => (
-        <li key={item.id}>{item.title}</li>
+        <li key={item.id} data-id={item.id}>
+          {item.title}
+        </li>
       ))}
     </ul>
   );
@@ -99,16 +111,21 @@ function SelectOther() {
   );
 }
 
-function renderRow(links: LinkRowMap = LINKS, subs: SubCategoryMap = SUBS) {
-  return render(
+/** 같은 나무를 다시 그릴 수 있게 따로 뺀다 — 위에서 내려온 목록만 바뀌는 상황을 `rerender` 로 만든다. */
+function tree(links: LinkRowMap, subs: SubCategoryMap) {
+  return (
     <SelectedCategoryProvider categories={CATEGORIES}>
       <LinkFilterProvider>
         <SelectOther />
         <FilterRow linksByCategory={links} subsByCategory={subs} />
         <Shown links={links} subs={subs} />
       </LinkFilterProvider>
-    </SelectedCategoryProvider>,
+    </SelectedCategoryProvider>
   );
+}
+
+function renderRow(links: LinkRowMap = LINKS, subs: SubCategoryMap = SUBS) {
+  return render(tree(links, subs));
 }
 
 const filterRow = () => screen.getByTestId('filter-row');
@@ -123,6 +140,13 @@ function shownTitles(): Array<string | null> {
   return within(screen.getByRole('list', { name: '보이는 링크' }))
     .queryAllByRole('listitem')
     .map((item) => item.textContent);
+}
+
+/** 이름이 겹치는 목록에서 쓰는 같은 것 — 동점끼리의 차례는 글자로는 구별되지 않는다. */
+function shownIds(): Array<string | null> {
+  return within(screen.getByRole('list', { name: '보이는 링크' }))
+    .queryAllByRole('listitem')
+    .map((item) => item.getAttribute('data-id'));
 }
 
 function type(value: string): void {
@@ -300,10 +324,31 @@ describe('FilterRow — 하위 칩 (프로토타입 1095–1099행)', () => {
    * (LinkTable `subValue`) 칩도 같은 곳에 세어야 한다.
    */
   it('없어진 하위를 가리키는 링크는 하위 미지정으로 센다', () => {
-    renderRow(LINKS, { 'cat-ai': [{ id: 'sub-chat', name: '대화형', linkCount: 2 }] });
+    renderRow(LINKS, SUBS_MINUS_IMG);
 
     // '이미지 생성' 이 사라졌으므로 거기 있던 미드저니가 미지정 쪽(2 → 3)으로 온다.
     expect(chips().map((item) => item.textContent)).toEqual(['전체 5', '대화형 2', '하위 미지정 3']);
+  });
+
+  /**
+   * 같은 프레임에서 **눌린 표시도** 함께 접혀야 한다. 고른 하위가 사라지면 거르기는 이미 그 링크들을
+   * '하위 미지정' 으로 넘기는데(`inSubFilter`), 눌린 표시만 옛 id 를 그대로 비교하면 **아무 칩도 안
+   * 눌린 채 걸러진 표만** 남는다 — 표는 줄어 있는데 무엇이 줄였는지가 화면 어디에도 없는 상태다.
+   *
+   * 칩을 다시 누르는 것이 아니라 **위에서 내려온 목록만** 바뀌는 상황이라 `rerender` 로 만든다.
+   */
+  it('고른 하위가 사라지면 눌린 표시도 하위 미지정으로 접힌다', () => {
+    const { rerender } = renderRow();
+
+    fireEvent.click(chip('이미지 생성 1'));
+    expect(chip('이미지 생성 1')).toHaveAttribute('aria-pressed', 'true');
+
+    rerender(tree(LINKS, SUBS_MINUS_IMG));
+
+    expect(chip('하위 미지정 3')).toHaveAttribute('aria-pressed', 'true');
+    expect(chip('전체 5')).toHaveAttribute('aria-pressed', 'false');
+    // 거르기와 같은 규칙이라는 뜻 — 눌린 칩과 남은 목록이 서로를 설명한다.
+    expect(shownTitles()).toEqual(['Perplexity', 'Claude', '미드저니']);
   });
 });
 
@@ -386,7 +431,7 @@ describe('FilterRow — 거르기', () => {
   });
 
   it('없어진 하위를 가리키는 링크는 하위 미지정에 함께 남는다', () => {
-    renderRow(LINKS, { 'cat-ai': [{ id: 'sub-chat', name: '대화형', linkCount: 2 }] });
+    renderRow(LINKS, SUBS_MINUS_IMG);
 
     fireEvent.click(chip('하위 미지정 3'));
 
@@ -412,6 +457,24 @@ describe('FilterRow — 거르기', () => {
     expect(shownTitles()).toEqual([]);
   });
 });
+
+/**
+ * '하위 없음 맨 뒤' 만 보는 목록 — 하위 이름을 일부러 **`헬` 보다 뒤에 서는 'ㅎ' 계열**로 골랐다
+ * (ㅎ+ㅔ < ㅎ+ㅕ). 프로토타입은 하위 없음을 `'헬'` 이라는 글자로 바꿔 넣어 뒤로 미뤘는데(1111행),
+ * 그 수법으로 되돌리면 '협업 도구' 소속이 하위 없음보다 **뒤로** 밀린다. 위 `SUBS` 의 두 이름
+ * ('대화형'·'이미지 생성')으로는 그 차이가 드러나지 않는다 — 둘 다 `헬` 보다 앞이라 센티널이 있으나
+ * 없으나 결과가 같다.
+ */
+const H_SUBS: SubCategoryMap = {
+  'cat-ai': [{ id: 'sub-collab', name: '협업 도구', linkCount: 1 }],
+};
+/** 하위 없음이 **먼저** 적혀 있다 — 안정 정렬만으로는 기대한 차례가 나오지 않게 두었다. */
+const H_LINKS: LinkRowMap = {
+  'cat-ai': [
+    link({ id: 'h-1', title: '직속 링크' }),
+    link({ id: 'h-2', title: '협업 링크', categoryId: 'sub-collab' }),
+  ],
+};
 
 describe('FilterRow — 정렬 (프로토타입 1109–1112행)', () => {
   it('직접 지정한 순서는 서버가 준 차례 그대로다', () => {
@@ -451,6 +514,19 @@ describe('FilterRow — 정렬 (프로토타입 1109–1112행)', () => {
     expect(shownTitles()).toEqual(['ChatGPT', 'Gemini', '미드저니', 'Perplexity', 'Claude']);
   });
 
+  /**
+   * 하위 없음은 **이름 겨루기에 끼지 않는다**. 프로토타입처럼 `'헬'` 을 대신 넣어 뒤로 미루면 그
+   * 글자보다 뒤에 서는 하위(여기서는 '협업 도구')가 나타나는 순간 순서가 뒤집힌다 — 있고 없음을
+   * 먼저 가르는 지금 구현만 이 목록을 옳게 늘어놓는다.
+   */
+  it('하위 없음은 ㅎ 계열 하위보다도 뒤다 (`헬` 센티널이 아니다)', () => {
+    renderRow(H_LINKS, H_SUBS);
+
+    sortBy('sub');
+
+    expect(shownTitles()).toEqual(['협업 링크', '직속 링크']);
+  });
+
   it('정렬과 거르기는 함께 걸린다', () => {
     renderRow();
 
@@ -464,8 +540,76 @@ describe('FilterRow — 정렬 (프로토타입 1109–1112행)', () => {
   });
 });
 
+/**
+ * 동점만 보는 목록 — 위 `LINKS` 로는 볼 수 없다(거기 값을 동점으로 만들면 다른 단언이 함께 흔들린다).
+ *
+ * | 자리 | id        | 이름      | 클릭 |
+ * | ---- | --------- | --------- | ---- |
+ * | 0    | tie-b     | Bravo     | 7    |
+ * | 1    | tie-a     | Alfa      | 7    |
+ * | 2    | tie-c     | Charlie   | 7    |
+ * | 3    | same-mid  | 같은 이름 | 5    |
+ * | 4    | same-low  | 같은 이름 | 1    |
+ * | 5    | same-high | 같은 이름 | 9    |
+ *
+ * 클릭이 같은 셋의 이름도, 이름이 같은 셋의 클릭도 **적힌 차례가 오름차순도 내림차순도 아니다** —
+ * 2차 키(`|| a.title.localeCompare(b.title)` 같은 것)를 어느 방향으로 덧붙여도 차례가 달라진다.
+ * 하위는 아무도 없어(전부 상위 직속) 하위순에서는 여섯이 다 동점이다.
+ */
+const TIES: LinkRowMap = {
+  'cat-ai': [
+    link({ id: 'tie-b', title: 'Bravo', clickCount: 7 }),
+    link({ id: 'tie-a', title: 'Alfa', clickCount: 7 }),
+    link({ id: 'tie-c', title: 'Charlie', clickCount: 7 }),
+    link({ id: 'same-mid', title: '같은 이름', clickCount: 5 }),
+    link({ id: 'same-low', title: '같은 이름', clickCount: 1 }),
+    link({ id: 'same-high', title: '같은 이름', clickCount: 9 }),
+  ],
+};
+
+/**
+ * 순서를 바꾸는 셋은 **동점일 때 직접 지정한 순서를 지킨다** — `Array.prototype.sort` 가 안정
+ * 정렬이라(ES2019) 따로 손댈 것이 없다는 것이 `visibleLinks` 의 근거다. 그 근거가 정말 지켜지는지는
+ * 동점이 있어야만 보인다: 동점이 없는 목록에서는 2차 키를 아무렇게나 덧붙여도 아무 단언도 깨지지
+ * 않는다.
+ *
+ * 이름이 겹치므로 글자가 아니라 id 로 본다(`shownIds`).
+ */
+describe('FilterRow — 동점은 직접 지정한 순서를 지킨다', () => {
+  it('클릭이 같으면 적힌 차례 그대로다', () => {
+    renderRow(TIES, {});
+
+    sortBy('clicks');
+
+    // 9 → [7 · 7 · 7 은 적힌 차례] → 5 → 1.
+    expect(shownIds()).toEqual(['same-high', 'tie-b', 'tie-a', 'tie-c', 'same-mid', 'same-low']);
+  });
+
+  it('이름이 같으면 적힌 차례 그대로다', () => {
+    renderRow(TIES, {});
+
+    sortBy('name');
+
+    // ko 정렬은 한글을 앞에 세운다 — 같은 이름 셋이 적힌 차례로 먼저, 그 뒤에 Alfa·Bravo·Charlie.
+    expect(shownIds()).toEqual(['same-mid', 'same-low', 'same-high', 'tie-a', 'tie-b', 'tie-c']);
+  });
+
+  it('하위가 다 같으면(여기서는 다 없음) 목록이 그대로 남는다', () => {
+    renderRow(TIES, {});
+
+    sortBy('sub');
+
+    expect(shownIds()).toEqual(['tie-b', 'tie-a', 'tie-c', 'same-mid', 'same-low', 'same-high']);
+  });
+});
+
 describe('FilterRow — 문맥', () => {
-  it('다른 카테고리를 고르면 검색·칩·정렬이 처음으로 돌아간다', () => {
+  /**
+   * 되돌리는 것은 **목록을 줄이던 두 값**뿐이다. 남은 검색어·칩은 새 카테고리에서 아무것도 맞히지
+   * 못해 이유가 화면 밖에 있는 빈 표를 만들지만, 정렬은 무엇도 감추지 않는 보기 취향이라 카테고리를
+   * 넘어 그대로 간다(프로토타입 1101행도 하위 칩만 되돌린다).
+   */
+  it('다른 카테고리를 고르면 검색·칩은 처음으로 돌아가고 정렬은 따라간다', () => {
     renderRow();
 
     type('글쓰기');
@@ -475,8 +619,8 @@ describe('FilterRow — 문맥', () => {
     fireEvent.click(screen.getByRole('button', { name: '마케팅 고르기' }));
 
     expect(search()).toHaveValue('');
-    expect(sortSelect()).toHaveValue('order');
     expect(chip('전체 1')).toHaveAttribute('aria-pressed', 'true');
+    expect(sortSelect()).toHaveValue('clicks');
     expect(shownTitles()).toEqual(['GA4']);
   });
 

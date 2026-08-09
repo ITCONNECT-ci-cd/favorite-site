@@ -250,11 +250,6 @@ function Table({
   );
 
   /**
-   * 끌고 있는 행. `dataTransfer` 가 아니라 ref 인 이유는 프로토타입(`_drag`)과 같다 — 이 화면
-   * 안에서만 오가는 정보이고, dragover 중에는 `dataTransfer.getData()` 가 보안상 빈 문자열을
-   * 돌려주는 브라우저가 있어 판정에 쓸 수 없다.
-   */
-  /**
    * 필터 줄(I5)이 정한 것 — 검색어 · 하위 칩 · 정렬. **prop 이 아니라 문맥에서** 온다: 줄과 표는
    * 형제라 값이 화면(page)을 거쳐 내려오면 "필터가 무엇인가"의 소유자가 화면으로 올라간다
    * (`components/admin/FilterRow.tsx` `LinkFilterProvider`).
@@ -277,6 +272,11 @@ function Table({
    */
   const sortable = filter.sort === 'order';
 
+  /**
+   * 끌고 있는 행. `dataTransfer` 가 아니라 ref 인 이유는 프로토타입(`_drag`)과 같다 — 이 화면
+   * 안에서만 오가는 정보이고, dragover 중에는 `dataTransfer.getData()` 가 보안상 빈 문자열을
+   * 돌려주는 브라우저가 있어 판정에 쓸 수 없다.
+   */
   const draggingId = useRef<string | null>(null);
   /**
    * 정렬 요청이 나가 있는 동안 — 두 번째 드롭을 **버리는** 빗장이다. 겹쳐 놓으면 두 요청이 각각

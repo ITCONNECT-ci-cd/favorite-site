@@ -66,17 +66,20 @@ const LinkFilterContext = createContext<LinkFilterValue | null>(null);
  * 줄과 표는 형제라 prop 으로는 닿지 않고, 화면(page)이 두 값을 들면 "필터가 무엇인가"의 소유자가
  * 화면으로 올라가 버린다.
  *
- * ## 카테고리를 바꾸면 처음으로 돌아간다
+ * ## 카테고리를 바꾸면 **줄이던 두 값만** 처음으로 돌아간다
  *
  * 리셋은 `key` 하나가 한다(링크 표·하위 줄이 쓰는 것과 같은 장치). 'AI 도구 모음'에서 적던
  * 검색어와 거기서 고른 하위 칩이 '마케팅'으로 따라가면, 고른 칩은 그 상위에 있지도 않은 하위를
  * 가리키고 표는 이유 없이 비어 보인다.
  *
- * **셋 다 되돌린다 — 프로토타입은 하위 칩만 되돌렸다**(1101행 `{ catSel: g, subFilter: null }`).
- * 그쪽에서는 검색어와 정렬이 카테고리를 넘어 그대로 남는데, 남은 검색어는 새 카테고리에서 아무
- * 것도 맞히지 못해 **빈 표만 보이는 채로 이유가 화면 밖에 있는** 상태를 만든다. 정렬만 남길 수도
- * 있지만(보기 방식이라는 점에서 결이 다르다) 그러면 한 줄 안의 세 값이 서로 다른 수명을 갖게 되어
- * "필터 줄은 카테고리마다 처음부터"라는 한 문장이 세 문장으로 갈라진다.
+ * **정렬은 따라간다 — 프로토타입도 하위 칩만 되돌렸다**(1101행 `{ catSel: g, subFilter: null }`).
+ * 검색어와 칩은 목록을 **줄이는** 값이라 남으면 빈 표를 만들지만, 정렬은 아무것도 줄이지 않는
+ * 보기 취향이다: 카테고리와 결합이 없고 어디서 골라도 뜻이 같아, 되돌리면 오히려 "클릭 많은순으로
+ * 훑는 중"이라는 사람의 작업이 카테고리마다 끊긴다. 그래서 `sort` 만 `key` 바깥에 산다.
+ *
+ * 줄이는 두 값이 남았을 때의 혼란은 표가 대신 덮는다 — 걸러 낸 결과가 0건이면 "조건에 맞는 링크가
+ * 없습니다. 검색어나 하위 필터를 지워 보세요."가 뜬다(LinkTable). 그 문장이 정렬을 말하지 않는 것도
+ * 같은 이유다: 정렬로는 표가 비지 않는다.
  *
  * `key` 가 바뀌면 children 까지 새로 서는데, 그 안의 표는 어차피 자기 `key` 로 같은 일을 이미
  * 한다(LinkTable) — 새로 서는 범위가 넓어질 뿐 없던 초기화가 생기지는 않는다.
@@ -88,18 +91,32 @@ const LinkFilterContext = createContext<LinkFilterValue | null>(null);
  */
 export function LinkFilterProvider({ children }: { children: ReactNode }) {
   const { selected } = useSelectedCategory();
+  // 정렬은 `key` 바깥이라 카테고리를 넘어 그대로 간다(위 JSDoc). 안쪽 두 값만 새 카테고리에서
+  // 처음부터 선다.
+  const [sort, setSort] = useState<SortMode>('order');
 
-  return <FilterState key={selected?.id ?? ''}>{children}</FilterState>;
+  return (
+    <FilterState key={selected?.id ?? ''} sort={sort} setSort={setSort}>
+      {children}
+    </FilterState>
+  );
 }
 
-function FilterState({ children }: { children: ReactNode }) {
+function FilterState({
+  children,
+  sort,
+  setSort,
+}: {
+  children: ReactNode;
+  sort: SortMode;
+  setSort: (next: SortMode) => void;
+}) {
   const [query, setQuery] = useState('');
   const [subFilter, setSubFilter] = useState<string | null>(null);
-  const [sort, setSort] = useState<SortMode>('order');
 
   const value = useMemo<LinkFilterValue>(
     () => ({ query, setQuery, subFilter, setSubFilter, sort, setSort }),
-    [query, subFilter, sort],
+    [query, subFilter, sort, setSort],
   );
 
   return <LinkFilterContext.Provider value={value}>{children}</LinkFilterContext.Provider>;
@@ -172,8 +189,10 @@ function inSubFilter(
  * 가 안정 정렬이라 따로 손댈 것이 없다(ES2019 부터 규격이다). 프로토타입이 하위순에만 적어 둔
  * `|| a.order - b.order`(1111행)가 그 뜻이고, 나머지 둘도 같은 성질에 기대고 있었다.
  *
- * 인자로 받은 배열은 건드리지 않는다(`[...]`) — 서버가 준 목록이 그대로 낙관적 순서의 밑이라
- * 제자리 정렬로 흔들면 저장되지 않은 순서가 조용히 바뀐다.
+ * 인자로 받은 배열은 건드리지 않는다 — 서버가 준 목록이 그대로 낙관적 순서의 밑이라 제자리 정렬로
+ * 흔들면 저장되지 않은 순서가 조용히 바뀐다. 지금 그것을 지키는 것은 아래 `links.filter(...)` 다 —
+ * 이미 새 배열을 준다. `[...shown]` 은 그 위에 한 벌을 더 뜨는 사본이라 오늘은 남는 일이지만, 걸러
+ * 낼 것이 없는 갈래가 생겨 `shown` 이 인자를 그대로 가리키게 되는 날에도 이 줄이 그 앞을 막는다.
  */
 export function visibleLinks(
   links: readonly AdminLink[],
@@ -250,6 +269,15 @@ const SORT_FIELD =
   'w-[120px] flex-none h-[30px] rounded-[6px] border border-border-strong bg-card px-[6px] text-[11.5px] text-ink';
 
 /**
+ * 링크·하위가 없는 카테고리에서 매 렌더 새 배열을 만들지 않기 위한 자리.
+ *
+ * 같은 상수가 LinkTable·SubCategoryRow 에도 따로 있다 — 빈 배열 하나를 나누자고 모듈을 엮기보다
+ * 쓰는 자리 옆에 두는 쪽을 골랐다(공유해서 아낄 것이 `[]` 하나뿐이다).
+ */
+const NO_LINKS: readonly AdminLink[] = [];
+const NO_SUBS: readonly AdminSubCategory[] = [];
+
+/**
  * 필터 줄 — DESIGN_SPEC 6장 "필터 줄", 프로토타입 367–381행.
  *
  * 목록 안에서 찾고(검색), 하위별로 좁히고(칩), 늘어놓는 차례를 고른다(정렬 4종). 셋 다 **화면
@@ -298,11 +326,6 @@ export function FilterRow({
   );
 }
 
-/** 링크가 없는 카테고리에서 매 렌더 새 배열을 만들지 않기 위한 자리. */
-const NO_LINKS: readonly AdminLink[] = [];
-/** 하위가 없는 상위에서도 같은 이유로 하나를 돌려쓴다. */
-const NO_SUBS: readonly AdminSubCategory[] = [];
-
 /** 칩 하나가 아는 것 — 이름 · 개수 · 그 칩이 세우는 필터 값(`null` = 전체). */
 type Chip = { key: string; name: string; count: number; value: string | null };
 
@@ -341,6 +364,12 @@ function Row({
     { key: 'none', name: '하위 미지정', count: countOf.get(parent.id) ?? 0, value: parent.id },
   ];
 
+  /* 지금 눌린 것으로 **보여야 할** 값 — 거를 때와 같은 규칙이다(`inSubFilter`). 고른 하위가 사라진
+     한 프레임 동안(하위 삭제 후 새 목록이 먼저 도착한다) `subFilter` 는 목록에 없는 id 를 가리키는데,
+     거르기는 그것을 이미 '하위 미지정' 으로 접는다. 여기서 `subFilter` 를 그대로 비교하면 아무 칩도
+     안 눌린 채 걸러진 표만 남아, 무엇이 이 표를 줄였는지가 화면에서 사라진다. */
+  const active = subFilter === null || subIds.has(subFilter) ? subFilter : parent.id;
+
   return (
     <div data-testid="filter-row" className={ROW}>
       {/* placeholder 는 값이 들어가면 사라져 이름 역할을 못 한다 — 같은 문장을 접근성 이름으로도
@@ -357,7 +386,7 @@ function Row({
           줄이고 이쪽은 목록을 좁히는 줄이라, 이름이 같으면 보조기기에서 둘을 구별할 수 없다. */}
       <span role="group" aria-label="하위 카테고리 필터" className={CHIPS}>
         {chips.map((chip) => {
-          const on = subFilter === chip.value;
+          const on = active === chip.value;
 
           /* 라디오가 아니라 눌린 버튼으로 낸다 — 값이 하나만 켜지는 것은 라디오와 같지만, 칩은
              화살표 키로 옮겨 다니는 묶음이 아니라 각자 눌리는 버튼이다(하위 줄의 칩과 같은 결).
