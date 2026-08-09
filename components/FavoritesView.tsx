@@ -26,6 +26,9 @@ const EMPTY_MESSAGE = '아직 담은 즐겨찾기가 없습니다. 목록에서 
  * ListView 도 자기 몫으로 한 번 부르는데(카드에 내려줄 켜짐 상태), 여기서 고른 카드는 전부 favs 에
  * 있으므로 결과는 '핀이 모두 켜짐'으로 맞아떨어진다. 같은 스냅샷을 읽는 호출이라 값이 어긋날 일도
  * 없다(E1 은 원본 문자열이 그대로면 같은 Set 객체를 돌려준다).
+ *
+ * 코로케이트 테스트가 없는 것은 의도다 — `app/favorites/page.test.tsx` 가 이 컴포넌트를 통과해
+ * 검증하므로 같은 계약을 두 번 적지 마라.
  */
 export function FavoritesView({ bookmarks }: FavoritesViewProps) {
   const { favs } = useFavorites();

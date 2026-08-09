@@ -117,7 +117,7 @@ describe('매일 사용하는 사이트 — 목록', () => {
 
     const { container } = await renderPage();
 
-    expect(cards(container).map((card) => card.textContent)).toHaveLength(2);
+    expect(cards(container)).toHaveLength(2);
     expect(screen.getByText('고정B')).toBeInTheDocument();
     expect(screen.getByText('고정A')).toBeInTheDocument();
     expect(screen.queryByText('보통')).toBeNull();
