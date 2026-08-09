@@ -5,6 +5,7 @@ import {
   type AdminCategory,
 } from '@/components/admin/CategoryPanel';
 import { LinkAddRow } from '@/components/admin/LinkAddRow';
+import { LinkTable, type AdminLink, type LinkRowMap } from '@/components/admin/LinkTable';
 import {
   SubCategoryRow,
   type AdminSubCategory,
@@ -44,6 +45,10 @@ export default async function AdminPage() {
   if ((await getAdminSession()) === null) return null;
 
   const { categories, bookmarks } = await getAllData();
+  /* 하위 목록은 두 곳이 쓴다 — 하위 칩 줄(I2)과 링크 표의 하위 select(I4). 같은 값이므로 한 번만
+     접는다. 두 벌을 따로 만들어도 화면은 같지만, 그러면 "칩과 select 가 같은 목록"이라는 사실이
+     우연이 된다(둘 중 하나만 다른 함수로 갈아 끼워도 아무도 눈치채지 못한다). */
+  const subs = subRows(categories, bookmarks);
 
   return (
     /* 프로토타입 원문 `display:flex; gap:20px; align-items:flex-start` + `adminDir`(narrow 면 column).
@@ -58,21 +63,29 @@ export default async function AdminPage() {
           {/* 하위 칩 줄(I2)은 이 패널 **안**이다 — 프로토타입에서 흰 상자 하나가 헤더 줄과 하위
               줄을 함께 담는다(그쪽 JSDoc "I2 와의 계약").
 
-              **조건부로 넘기지 마라.** 헤더는 children 이 있을 때만 구분선을 그리는데, 그 판정이
-              `!== undefined` 라 `{조건 && <줄/>}` 로 넘기면 거짓일 때 `false` 가 들어가 아무것도
-              없는 아래에 선만 남는다. 여기서는 **언제나** 넘기고 빈 상태는 줄이 스스로 접는다
-              (하위가 0개여도 '하위' 라벨과 추가 입력은 프로토타입에 그대로 있고, 상위가 하나도
-              없을 때만 줄 전체가 사라진다 — 그때는 헤더도 안내 문구라 구분선을 그리지 않는다). */}
+              **조건부로 넘기지 마라.** 헤더는 children 이 있을 때만 구분선을 그린다. 그 판정은
+              이제 falsy 를 전부 '없음'으로 치므로(`false`·`null`·`''` — 그쪽 JSDoc) `{조건 && <줄/>}`
+              을 넘겨도 선만 남지는 않지만, 그렇다고 여기서 조건을 세우지는 않는다. **줄이 스스로
+              접는 것이 이 트랙의 계약**이고 화면은 언제나 넘긴다 — 조건을 화면이 들면 "무엇이 빈
+              상태인가"의 판단이 줄과 화면 둘로 갈라져, 줄만 고친 사람이 화면을 함께 고쳐야 하는
+              것을 모른다(하위가 0개여도 '하위' 라벨과 추가 입력은 프로토타입에 그대로 있고, 상위가
+              하나도 없을 때만 줄 전체가 사라진다 — 그때는 헤더도 안내 문구라 구분선을 그리지 않는다). */}
           <CategoryHeader>
-            <SubCategoryRow subsByCategory={subRows(categories, bookmarks)} />
+            <SubCategoryRow subsByCategory={subs} />
           </CategoryHeader>
 
           {/* 헤더 패널 **다음 상자**다(프로토타입 359행부터). 상자는 `LinkAddRow` 가 갖고,
               필터 줄(I5)·링크 표(I4)는 그 `children` 으로 들어와 추가 줄 아래에 붙는다
-              (그쪽 JSDoc "I4·I5 와의 계약" — 위 `CategoryHeader` 와 같은 모양이다).
-              여기서도 조건부로 넘기지 마라: 구분선 판정이 `!== undefined` 라 `false` 가
-              들어가면 아무것도 없는 아래에 선만 남는다. */}
-          <LinkAddRow />
+              (그쪽 JSDoc "I4·I5 와의 계약" — 위 `CategoryHeader` 와 같은 모양이고, 구분선 판정도
+              같은 falsy-safe 규칙이다). 여기서도 조건부로 넘기지 마라 — 위와 같은 이유다: 빈 상태를
+              아는 것은 표이고(카테고리는 있는데 링크가 0개면 표가 한 줄로 알린다), 화면은 그
+              판단을 나눠 갖지 않는다.
+
+              I5 의 필터 줄은 표 **앞**에 형제로 들어온다 — 프로토타입의 상자 안 차례가
+              추가 줄(360행) → 필터 줄(367행) → 표(382행)다. */}
+          <LinkAddRow>
+            <LinkTable linksByCategory={linkRows(categories, bookmarks)} subsByCategory={subs} />
+          </LinkAddRow>
         </div>
       </SelectedCategoryProvider>
     </main>
@@ -134,6 +147,92 @@ function subRows(
   }
 
   return rows;
+}
+
+/**
+ * 링크 표(I4)가 그릴 목록 — 상위 카테고리 id → 그 **트리 전체**(직속 + 모든 하위)의 링크 행들.
+ *
+ * ## 왜 여기서 접는가
+ *
+ * 표가 그리는 것은 "선택한 상위와 그 하위에 속한 링크"인데 **선택은 클라이언트 상태라 서버가
+ * 모른다**(`SelectedCategoryProvider` JSDoc). 그래서 서버가 골라 줄 수 없고, 상위별로 미리 갈라
+ * 놓아 클라이언트가 자기 선택으로 하나만 꺼내 쓰게 한다(`subRows` 와 같은 모양·같은 이유).
+ *
+ * ## 무엇이 내려가고 무엇이 안 내려가는가
+ *
+ * `BookmarkWithCount` 를 통째로 넘기지 않는다 — 표에 그려지는 여섯 칸과 그것을 서버로 되돌려
+ * 보낼 `id` 뿐이다(`AdminLink` JSDoc). 좌측 패널·하위 줄이 개수만 내리는 것과 같은 원칙이되,
+ * 표는 링크 하나하나를 그리는 화면이라 행 자체는 내려갈 수밖에 없다. 공개 화면도 카드에 필요한
+ * 만큼을 클라이언트에 내리므로(components/CardGrid.tsx) 새로 여는 길은 아니다.
+ *
+ * `tags`·`created_at`·`sort_order` 는 표가 쓰지 않아 빠진다. 특히 `sort_order` 는 **배열의 자리가
+ * 이미 같은 사실을 들고 있어서** 뺐다(`AdminLink` JSDoc) — `getAllData` 가 `sort_order` 순으로
+ * 주므로 여기서 다시 정렬하지 않는다.
+ *
+ * ## 어디에도 못 놓는 링크
+ *
+ * `category_id` 가 null 이거나 없는 카테고리를 가리키는 링크는 **어느 목록에도 들어가지 않는다**
+ * (`rollupCounts` 가 그런 링크를 세지 않는 것과 같은 판단 — 그릴 자리가 없다). 지금 그런 링크가
+ * 생길 길은 없다: `deleteCategory` 는 직속 링크가 남아 있으면 거부하고, `deleteSubCategory` 는
+ * 지우기 전에 링크를 상위로 올린다(lib/mutations.ts).
+ */
+function linkRows(
+  categories: readonly Category[],
+  bookmarks: readonly BookmarkWithCount[],
+): LinkRowMap {
+  const topOf = topLevelIds(categories);
+
+  const rows: Record<string, AdminLink[]> = {};
+  for (const bookmark of bookmarks) {
+    const top = bookmark.category_id === null ? undefined : topOf.get(bookmark.category_id);
+    if (top === undefined || bookmark.category_id === null) continue;
+
+    (rows[top] ??= []).push({
+      id: bookmark.id,
+      title: bookmark.title,
+      url: bookmark.url,
+      description: bookmark.description,
+      categoryId: bookmark.category_id,
+      faviconUrl: bookmark.favicon_url,
+      clickCount: bookmark.click_count,
+      isPinned: bookmark.is_pinned,
+    });
+  }
+
+  return rows;
+}
+
+/**
+ * 카테고리 id → 그 카테고리가 매달린 **상위** id. 상위 자신은 자기 id 를 가리킨다.
+ *
+ * 부모를 따라 올라가다 `parent_id` 가 null 인 곳에서 멈춘다. 지금 구조는 2단계뿐이지만
+ * (`createSubCategory` 의 깊이 검사) 걸음 자체는 `rollupCounts` 와 같게 두어 깊이가 늘어도
+ * 같은 답이 나오게 했다. 부모가 목록에 없거나 관계가 순환하면 **키를 만들지 않는다** — 그
+ * 카테고리에 달린 링크는 어느 목록에도 들어가지 않고 조용히 빠진다(위 `linkRows` 참조).
+ */
+function topLevelIds(categories: readonly Category[]): Map<string, string> {
+  const parentOf = new Map<string, string | null>(
+    categories.map((category) => [category.id, category.parent_id]),
+  );
+
+  const tops = new Map<string, string>();
+  for (const category of categories) {
+    const seen = new Set<string>();
+    let current: string | null = category.id;
+
+    while (current !== null && parentOf.has(current) && !seen.has(current)) {
+      seen.add(current);
+
+      const parent: string | null = parentOf.get(current) ?? null;
+      if (parent === null) {
+        tops.set(category.id, current);
+        break;
+      }
+      current = parent;
+    }
+  }
+
+  return tops;
 }
 
 /**

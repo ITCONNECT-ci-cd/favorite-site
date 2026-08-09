@@ -54,6 +54,8 @@ const BOOKMARKS: BookmarkWithCount[] = [
   bookmark('bm-4', 'cat-mkt', 0),
 ];
 
+const linkList = () => screen.getByRole('list', { name: '링크 목록' });
+
 const categoryPanel = () => screen.getByRole('region', { name: '상위 카테고리' });
 const categoryRows = () => within(within(categoryPanel()).getByRole('list')).getAllByRole('button');
 const headerPanel = () => screen.getByRole('region', { name: '선택한 카테고리' });
@@ -139,6 +141,81 @@ describe('AdminPage — 카테고리 · 링크 (I1 2단)', () => {
 
     expect(headerPanel().compareDocumentPosition(linkBox)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(within(linkBox).getByRole('button', { name: '‘AI 도구 모음’에 추가' })).toBeInTheDocument();
+  });
+
+  /**
+   * I4 — 링크 표는 추가 줄과 **같은 상자** 안, 추가 줄 아래다. 표가 무엇을 할 수 있는지는
+   * `components/admin/LinkTable.test.tsx` 가 본다. 여기서 보는 것은 **화면이 무엇을 접어
+   * 내리는가**다: 선택한 상위의 트리 전체(직속 + 하위)이고, 다른 상위의 링크는 섞이지 않는다.
+   */
+  it('링크 추가 줄과 같은 상자 안, 그 아래로 링크 표가 붙는다', async () => {
+    render((await AdminPage()) as ReactElement);
+
+    const linkBox = screen.getByRole('region', { name: '링크' });
+    const addRow = within(linkBox).getByRole('form', { name: '링크 추가' });
+
+    expect(linkBox).toContainElement(linkList());
+    expect(addRow.compareDocumentPosition(linkList())).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it('표에는 선택한 상위의 트리 전체가 오른다 — 하위 소속 링크도 함께다', async () => {
+    render((await AdminPage()) as ReactElement);
+
+    const rows = within(linkList()).getAllByRole('listitem');
+
+    // AI 도구 모음: 직속 bm-1 + 하위(대화형) bm-2·bm-3. 마케팅의 bm-4 는 들어오지 않는다.
+    expect(rows).toHaveLength(3);
+    expect(rows.map((row) => row.textContent)).toEqual([
+      expect.stringContaining('bm-1'),
+      expect.stringContaining('bm-2'),
+      expect.stringContaining('bm-3'),
+    ]);
+    expect(within(linkList()).queryByText('bm-4')).not.toBeInTheDocument();
+  });
+
+  it('행이 든 값은 표가 그리는 여섯 칸뿐이다 (클릭 수·고정·하위 배정)', async () => {
+    render((await AdminPage()) as ReactElement);
+
+    const row = within(linkList()).getAllByRole('listitem')[1];
+
+    expect(row).toHaveTextContent('7'); // bm-2 의 클릭 수 (뷰에서 붙어 온 값)
+    expect(within(row).getByRole('combobox', { name: 'bm-2 하위 카테고리' })).toHaveValue('sub-chat');
+    expect(within(row).getByRole('button', { name: 'bm-2 매일 고정' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+  });
+
+  it('하위 select 의 옵션은 하위 칩 줄과 같은 목록이다 (한 번 접어 둘이 나눠 쓴다)', async () => {
+    render((await AdminPage()) as ReactElement);
+
+    const select = within(linkList()).getByRole('combobox', { name: 'bm-1 하위 카테고리' });
+
+    expect(within(select).getAllByRole('option').map((option) => option.textContent)).toEqual([
+      '—',
+      '대화형',
+    ]);
+  });
+
+  it('카테고리는 있고 링크가 없으면 표 대신 한 줄로 알린다', async () => {
+    vi.mocked(getAllData).mockResolvedValue({ categories: CATEGORIES, bookmarks: [] });
+    render((await AdminPage()) as ReactElement);
+
+    expect(screen.queryByRole('list', { name: '링크 목록' })).not.toBeInTheDocument();
+    expect(
+      screen.getByText('아직 링크가 없습니다. 위 줄에서 첫 링크를 추가하세요.'),
+    ).toBeInTheDocument();
+  });
+
+  it('갈 곳 없는 링크(카테고리 없음·끊긴 카테고리)는 어느 표에도 오르지 않는다', async () => {
+    vi.mocked(getAllData).mockResolvedValue({
+      categories: CATEGORIES,
+      bookmarks: [...BOOKMARKS, bookmark('bm-orphan', null, 3), bookmark('bm-gone', 'cat-gone', 4)],
+    });
+    render((await AdminPage()) as ReactElement);
+
+    expect(within(linkList()).getAllByRole('listitem')).toHaveLength(3);
+    expect(screen.queryByText(/bm-orphan|bm-gone/)).not.toBeInTheDocument();
   });
 });
 
