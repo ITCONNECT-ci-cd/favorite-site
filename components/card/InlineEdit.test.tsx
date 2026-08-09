@@ -7,8 +7,9 @@
  * 서버 액션은 갈아 끼운다 — 액션이 실제로 무엇을 검사하고 어떤 문구를 돌려주는지는
  * `lib/mutations.test.ts` 가 고정한다. 여기서는 **무엇을 넘기고 결과를 어떻게 쓰는지**만 본다.
  */
+import { startTransition } from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { InlineEdit } from '@/components/card/InlineEdit';
 import { Toaster } from '@/components/Toast';
@@ -17,6 +18,20 @@ import type { BookmarkWithCount } from '@/lib/types';
 import { setupToastTimers } from '@/test/toast';
 
 vi.mock('@/lib/mutations', () => ({ updateBookmark: vi.fn() }));
+
+/**
+ * `startTransition` **한 함수만** 진짜 구현을 감싼 스파이로 바꾼다(나머지 react 는 그대로).
+ *
+ * 저장 성공 시의 닫힘이 트랜지션 안에서 일어나는지는 결과만 봐서는 알 수 없다 — 콜백은 어차피
+ * 그 자리에서 실행되고, `act()` 는 트랜지션이든 아니든 다 흘려보낸다. 트랜지션에 묶였는지 여부가
+ * 드러나는 곳(옛 값이 한 프레임 스치는가)은 revalidate 된 새 prop 이 실제로 내려오는 브라우저이고,
+ * 여기서 붙잡을 수 있는 것은 **배선**뿐이라 호출 자체를 본다.
+ */
+vi.mock('react', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react')>();
+
+  return { ...actual, startTransition: vi.fn(actual.startTransition) };
+});
 
 const BOOKMARK: BookmarkWithCount = {
   id: 'bm-1',
@@ -70,8 +85,19 @@ async function pressEnter(field: HTMLElement) {
   });
 }
 
+/**
+ * 토스트 타이머는 **파일 전체**에 깐다 (Toast.tsx 규약: 스토어가 모듈 레벨이라 상태가 테스트
+ * 사이에 남는다). 실패 묶음만 감싸 두었더니 `저장` 묶음의 "이름을 비워도 그대로 보낸다"(액션이
+ * 실패를 돌려주므로 토스트가 뜬다)가 **실타이머로** 2초짜리 setTimeout 을 남기고 끝났다.
+ *
+ * 여기 한 번만 부른다 — 안쪽 `describe` 에서 또 부르면 afterEach 가 안에서 밖으로 도는 사이
+ * 이미 실타이머로 돌아온 뒤에 `advanceTimersByTime` 이 불려 터진다.
+ */
+setupToastTimers();
+
 beforeEach(() => {
   onDone.mockClear();
+  vi.mocked(startTransition).mockClear();
   vi.mocked(updateBookmark).mockReset();
   vi.mocked(updateBookmark).mockResolvedValue({ ok: true });
 });
@@ -118,6 +144,9 @@ describe('InlineEdit — 폼 구성 (DESIGN_SPEC 2-1 · 프로토타입 실측)'
   it('본문 자리를 그대로 차지한다 — margin-top:auto, 세로 5px 간격 (프로토타입)', () => {
     renderForm();
 
+    // LinkCard 의 `editSlot` JSDoc(J1b)이 정한 계약은 "폼이 `mt-auto` 나 `flex-1` 중 하나를
+    // 갖는다"이고, 이 단언은 그중 지금 구현이 고른 쪽을 못박는다 — `flex-1` 로 가는 대안 구현이
+    // 오면 계약은 그대로이므로 이 한 줄만 갱신하면 된다.
     expect(screen.getByRole('form', { name: 'ChatGPT 편집' })).toHaveClass(
       'mt-auto',
       'flex',
@@ -199,6 +228,28 @@ describe('InlineEdit — 저장', () => {
     expect(onDone).toHaveBeenCalledOnce();
   });
 
+  it('성공하면 닫힘을 트랜지션에 묶는다 — 새 데이터와 같은 커밋에서 사라지게', async () => {
+    renderForm();
+
+    fireEvent.change(titleField(), { target: { value: '챗지피티' } });
+    await save();
+
+    // 닫힘은 `await` 뒤에 일어나는 상태 갱신이라 저절로 트랜지션이 되지 않는다(React 의 알려진
+    // 한계 — Next `interactive-apps.md` Step 6). 감싸지 않으면 폼이 revalidate 보다 먼저 닫혀
+    // 카드에 옛 이름이 한 프레임 스친다.
+    expect(startTransition).toHaveBeenCalledOnce();
+    expect(onDone).toHaveBeenCalledOnce();
+
+    // 트랜지션이 받은 콜백이 곧 '닫기'여야 한다 — 엉뚱한 것을 감싸 놓고 닫기는 밖에서 부르는
+    // 배선이어도 위 두 단언만으로는 걸리지 않는다.
+    const [close] = vi.mocked(startTransition).mock.calls[0];
+
+    onDone.mockClear();
+    close();
+
+    expect(onDone).toHaveBeenCalledOnce();
+  });
+
   it('바꾼 필드만 보낸다 — 건드리지 않은 키는 patch 에 넣지 않는다', async () => {
     renderForm();
 
@@ -206,6 +257,25 @@ describe('InlineEdit — 저장', () => {
     await save();
 
     expect(updateBookmark).toHaveBeenCalledWith('bm-1', { description: '설명만 고침' });
+  });
+
+  it('비교 기준선은 폼을 연 순간이다 — 그 사이 내려온 남의 수정을 되돌리지 않는다', async () => {
+    const { rerender } = render(<InlineEdit bookmark={BOOKMARK} onDone={onDone} />);
+
+    fireEvent.change(titleField(), { target: { value: '챗지피티' } });
+
+    // 다른 창이 설명만 고쳤고, 그 액션의 revalidate 로 새 prop 이 열려 있는 폼에 내려왔다.
+    rerender(
+      <InlineEdit
+        bookmark={{ ...BOOKMARK, description: '남이 방금 고친 설명' }}
+        onDone={onDone}
+      />,
+    );
+    await save();
+
+    // 사용자가 손댄 것은 이름뿐이다. 비교를 지금 prop 과 했다면 건드리지도 않은 설명이 patch 에
+    // 실려(입력에는 열 때의 옛 값이 그대로 있다) 남의 수정을 옛 값으로 되돌린다.
+    expect(updateBookmark).toHaveBeenCalledWith('bm-1', { title: '챗지피티' });
   });
 
   it('앞뒤 공백을 다듬어 보낸다', async () => {
@@ -288,8 +358,7 @@ describe('InlineEdit — 저장', () => {
 });
 
 describe('InlineEdit — 저장 실패', () => {
-  setupToastTimers();
-
+  // 토스트 타이머는 파일 상단에서 한 번에 깔았다 (setupToastTimers 주석).
   beforeEach(() => {
     vi.mocked(updateBookmark).mockResolvedValue({
       ok: false,
@@ -332,6 +401,67 @@ describe('InlineEdit — 저장 실패', () => {
   });
 });
 
+/**
+ * 액션이 **거부로 끝나는** 길 — `{ ok:false }` 를 돌려주는 것과 다르다. 네트워크가 끊기면 fetch
+ * 자체가 실패하고, 배포로 액션 id 가 바뀌면 요청이 아예 닿지 않는다. 잡지 않으면 `saving` 이 참인
+ * 채로 남아 버튼도 Esc 도 잠긴, 새로고침 말고는 나갈 길이 없는 폼이 된다.
+ */
+describe('InlineEdit — 요청이 거부됐을 때', () => {
+  beforeEach(() => {
+    // 원인 진단은 서버 로그의 몫이라 테스트 출력에는 싣지 않는다.
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(updateBookmark).mockRejectedValue(new Error('Failed to fetch'));
+  });
+
+  afterEach(() => {
+    vi.mocked(console.error).mockRestore();
+  });
+
+  it('사용자에게는 액션의 실패 문구와 같은 한 문장을 띄운다', async () => {
+    renderForm();
+
+    fireEvent.change(titleField(), { target: { value: '끊긴 저장' } });
+    await save();
+
+    expect(
+      screen.getByText('저장하지 못했습니다. 잠시 후 다시 시도해 주세요.'),
+    ).toBeInTheDocument();
+    // 진짜 원인(스택·요청)은 로그로만 간다.
+    expect(console.error).toHaveBeenCalled();
+  });
+
+  it('빗장을 풀어 다시 시도할 길을 남긴다 — 버튼·입력·Esc 가 살아난다', async () => {
+    renderForm();
+
+    fireEvent.change(titleField(), { target: { value: '끊긴 저장' } });
+    await save();
+
+    expect(saveButton()).toBeEnabled();
+    expect(cancelButton()).toBeEnabled();
+    expect(titleField()).not.toHaveAttribute('readonly');
+    expect(onDone).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(titleField(), { key: 'Escape' });
+
+    expect(onDone).toHaveBeenCalledOnce();
+  });
+
+  it('고치던 값을 그대로 두고, 다시 누르면 그때는 보낸다', async () => {
+    renderForm();
+
+    fireEvent.change(titleField(), { target: { value: '끊긴 저장' } });
+    await save();
+
+    expect(titleField()).toHaveValue('끊긴 저장');
+
+    vi.mocked(updateBookmark).mockResolvedValue({ ok: true });
+    await save();
+
+    expect(updateBookmark).toHaveBeenCalledTimes(2);
+    expect(onDone).toHaveBeenCalledOnce();
+  });
+});
+
 describe('InlineEdit — 저장 중 (이중 제출 방지)', () => {
   /** 응답을 붙잡아 두고 '저장 중' 상태를 관찰한다. */
   function pending() {
@@ -348,6 +478,23 @@ describe('InlineEdit — 저장 중 (이중 제출 방지)', () => {
       });
     };
   }
+
+  it('같은 틱에 두 번 눌러도 한 번만 보낸다 — 화면이 다시 그려지기 전의 두 번째 클릭', async () => {
+    renderForm();
+    fireEvent.change(titleField(), { target: { value: '한 번만' } });
+
+    const finish = pending();
+    // 한 act 안에서 연달아 쏜다 = 첫 클릭의 상태 갱신이 화면에 반영되기 전이다. 그 구간에서는
+    // 버튼이 아직 잠기지 않았고 클로저의 `saving` 도 false 라, 상태만으로는 두 번째가 새어 나간다
+    // (J3 DeleteConfirm 이 같은 자리에서 실측으로 확인한 구멍이다 — 빗장은 ref 여야 한다).
+    await act(async () => {
+      fireEvent.click(saveButton());
+      fireEvent.click(saveButton());
+    });
+
+    expect(updateBookmark).toHaveBeenCalledOnce();
+    await finish();
+  });
 
   it('저장 중에는 다시 눌러도 한 번만 보낸다', async () => {
     renderForm();
@@ -370,6 +517,35 @@ describe('InlineEdit — 저장 중 (이중 제출 방지)', () => {
     await pressEnter(titleField());
 
     expect(updateBookmark).toHaveBeenCalledOnce();
+    await finish();
+  });
+
+  it('입력은 잠기되 `readOnly` 다 — disabled 였다면 그 순간 포커스가 body 로 떨어진다', async () => {
+    renderForm();
+    fireEvent.change(titleField(), { target: { value: '한 번만' } });
+
+    const finish = pending();
+    await pressEnter(titleField()); // Enter 저장 — 이 순간 포커스는 이름 입력에 있다.
+
+    expect(titleField()).toHaveAttribute('readonly');
+    expect(descField()).toHaveAttribute('readonly');
+    expect(titleField()).not.toBeDisabled();
+    // 포커스가 남아 있어야 실패했을 때 이어서 고칠 수 있고, 그때까지 Esc 도 폼이 받는다.
+    expect(titleField()).toHaveFocus();
+
+    await finish();
+  });
+
+  it('저장 버튼은 처리 중임을 aria-busy 로도 알린다 (LoginForm 과 같은 짝)', async () => {
+    renderForm();
+    fireEvent.change(titleField(), { target: { value: '한 번만' } });
+
+    const finish = pending();
+    await save();
+
+    // 흐려지는 모습만으로는 화면을 볼 수 없는 사용자에게 아무 일도 없는 것과 같다.
+    expect(saveButton()).toHaveAttribute('aria-busy', 'true');
+
     await finish();
   });
 
@@ -417,5 +593,33 @@ describe('InlineEdit — 취소', () => {
 
     // type="submit" 이면 클릭이 저장까지 흘러간다 — 취소는 제출 경로 밖에 있어야 한다.
     expect(cancelButton()).toHaveAttribute('type', 'button');
+  });
+});
+
+describe('InlineEdit — 포커스', () => {
+  it('뜨는 순간 이름 입력이 받는다 — 연필에 남아 있으면 Esc 가 듣지 않는다', () => {
+    renderForm();
+
+    // Esc·Enter 는 폼 안에서 올라오는 이벤트다. 포커스가 폼 밖(연필)에 있으면 키보드로는
+    // 고칠 수도, 나갈 수도 없는 폼이 된다.
+    expect(titleField()).toHaveFocus();
+  });
+
+  it('닫힐 때 폼을 열어 준 자리로 돌려준다', () => {
+    // 폼은 연필의 ref 를 모르므로(그 버튼은 LinkCard 의 것이다) 마운트 순간의 activeElement 를
+    // 붙드는 것이 최선이다. jsdom 의 클릭은 포커스를 옮기지 않아 여기서는 손으로 맞춰 둔다 —
+    // 클릭이 버튼에 포커스를 주지 않는 환경(macOS Safari 기본값)에서도 같은 그림이 된다.
+    const trigger = document.createElement('button');
+    document.body.append(trigger);
+    trigger.focus();
+
+    const view = render(<InlineEdit bookmark={BOOKMARK} onDone={onDone} />);
+
+    expect(titleField()).toHaveFocus();
+
+    view.unmount();
+
+    expect(trigger).toHaveFocus();
+    trigger.remove();
   });
 });
