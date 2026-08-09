@@ -1,0 +1,407 @@
+/**
+ * C2. 링크 카드 — 홈·카테고리·즐겨찾기·매일이 공유하는 단 하나의 카드.
+ * 수치의 원본은 docs/DESIGN_SPEC.md 2-1장이며, 이 테스트가 그 값을 고정한다.
+ */
+import { fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { LinkCard, type LinkCardProps } from '@/components/LinkCard';
+import type { BookmarkWithCount } from '@/lib/types';
+
+const BOOKMARK: BookmarkWithCount = {
+  id: 'bm-1',
+  category_id: 'cat-ai',
+  title: 'ChatGPT',
+  url: 'https://chat.openai.com/',
+  description: 'AI 대화·문서 초안',
+  tags: [],
+  favicon_url: 'https://cdn.example.com/openai.png',
+  is_pinned: true,
+  sort_order: 0,
+  created_at: '2024-10-18T00:00:00.000Z',
+  click_count: 3,
+};
+
+type Overrides = Omit<Partial<LinkCardProps>, 'bookmark'> & {
+  bookmark?: Partial<BookmarkWithCount>;
+};
+
+function renderCard({ bookmark, ...props }: Overrides = {}) {
+  const { container } = render(<LinkCard bookmark={{ ...BOOKMARK, ...bookmark }} {...props} />);
+
+  return container.firstElementChild as HTMLElement;
+}
+
+/** 파비콘 타일 — 본문과 함께 단 둘뿐인 '열기' 영역이다. */
+const faviconButton = () => screen.getByRole('button', { name: 'ChatGPT 열기' });
+/** 본문 블록 — 접근성 이름은 이름 + 설명이다. */
+const bodyButton = () => screen.getByRole('button', { name: /AI 대화·문서 초안/ });
+const pinButton = () => screen.getByRole('button', { name: 'ChatGPT 즐겨찾기' });
+const checkButton = () => screen.getByRole('button', { name: 'ChatGPT 선택' });
+
+/** jsdom의 window.open은 "not implemented"를 던지므로 매 테스트에서 갈아 끼운다. */
+function spyOnOpen() {
+  return vi.spyOn(window, 'open').mockReturnValue(null);
+}
+
+let open: ReturnType<typeof spyOnOpen>;
+
+beforeEach(() => {
+  open = spyOnOpen();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe('LinkCard 렌더', () => {
+  it('이름·설명·주소·클릭 수를 보여준다', () => {
+    renderCard();
+
+    expect(screen.getByText('ChatGPT')).toBeInTheDocument();
+    expect(screen.getByText('AI 대화·문서 초안')).toBeInTheDocument();
+    expect(screen.getByText('chat.openai.com')).toBeInTheDocument();
+    expect(screen.getByText('3')).toBeInTheDocument();
+  });
+
+  it('주소는 host만 보여준다 (www. 제거, 경로 제거)', () => {
+    renderCard({ bookmark: { url: 'https://www.perplexity.ai/search?q=1' } });
+
+    expect(screen.getByText('perplexity.ai')).toBeInTheDocument();
+  });
+
+  it('클릭 수가 0이어도 0으로 적는다', () => {
+    renderCard({ bookmark: { click_count: 0 } });
+
+    expect(screen.getByText('0')).toBeInTheDocument();
+  });
+
+  it('설명이 없으면 설명 줄을 그리지 않는다', () => {
+    renderCard({ bookmark: { description: null } });
+
+    expect(screen.getByText('ChatGPT')).toBeInTheDocument();
+    expect(screen.queryByText('AI 대화·문서 초안')).not.toBeInTheDocument();
+  });
+
+  it('파비콘을 19px 배경 이미지로 타일 가운데에 그린다', () => {
+    renderCard();
+
+    expect(faviconButton()).toHaveStyle({
+      backgroundImage: 'url("https://cdn.example.com/openai.png")',
+    });
+    expect(faviconButton()).toHaveClass('bg-[length:19px_19px]', 'bg-center', 'bg-no-repeat');
+  });
+
+  it('파비콘이 없으면 이미지 없이 회색 타일만 그린다', () => {
+    renderCard({ bookmark: { favicon_url: null } });
+
+    expect(faviconButton()).not.toHaveStyle({ backgroundImage: 'url("null")' });
+    expect(faviconButton().style.backgroundImage).toBe('');
+    expect(faviconButton()).toHaveClass('bg-side');
+  });
+});
+
+describe('LinkCard 열기', () => {
+  it('본문을 누르면 새 탭으로 열고 onOpen을 부른다', () => {
+    const onOpen = vi.fn();
+    renderCard({ onOpen });
+
+    fireEvent.click(bodyButton());
+
+    expect(open).toHaveBeenCalledWith('https://chat.openai.com/', '_blank');
+    expect(onOpen).toHaveBeenCalledWith('bm-1');
+  });
+
+  it('파비콘을 눌러도 똑같이 열린다', () => {
+    const onOpen = vi.fn();
+    renderCard({ onOpen });
+
+    fireEvent.click(faviconButton());
+
+    expect(open).toHaveBeenCalledWith('https://chat.openai.com/', '_blank');
+    expect(onOpen).toHaveBeenCalledWith('bm-1');
+  });
+
+  it('onOpen은 새 탭을 열기 직전에 부른다 (F3이 클릭 기록에 배선)', () => {
+    const onOpen = vi.fn();
+    renderCard({ onOpen });
+
+    fireEvent.click(bodyButton());
+
+    expect(onOpen.mock.invocationCallOrder[0]).toBeLessThan(open.mock.invocationCallOrder[0]);
+  });
+
+  it('onOpen을 주지 않아도 새 탭은 열린다', () => {
+    renderCard();
+
+    fireEvent.click(bodyButton());
+
+    expect(open).toHaveBeenCalledWith('https://chat.openai.com/', '_blank');
+  });
+
+  it('카드 바탕을 눌러도 열리지 않는다 (열기 영역은 파비콘과 본문뿐)', () => {
+    const onOpen = vi.fn();
+    const card = renderCard({ onOpen });
+
+    fireEvent.click(card);
+
+    expect(open).not.toHaveBeenCalled();
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+});
+
+describe('LinkCard 핀', () => {
+  it('기본으로 핀을 보여준다', () => {
+    renderCard();
+
+    expect(pinButton()).toBeInTheDocument();
+  });
+
+  it('핀을 누르면 onToggleFav만 부르고 새 탭은 열지 않는다', () => {
+    const onToggleFav = vi.fn();
+    const onOpen = vi.fn();
+    renderCard({ onToggleFav, onOpen });
+
+    fireEvent.click(pinButton());
+
+    expect(onToggleFav).toHaveBeenCalledWith('bm-1');
+    expect(open).not.toHaveBeenCalled();
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it('showPin=false면 핀을 그리지 않는다 (홈의 매일·운영 중 섹션)', () => {
+    renderCard({ showPin: false });
+
+    expect(screen.queryByRole('button', { name: 'ChatGPT 즐겨찾기' })).not.toBeInTheDocument();
+  });
+
+  it('꺼짐 상태는 흐린 회색이고 속이 비어 있다', () => {
+    renderCard();
+
+    expect(pinButton()).toHaveClass('text-ghost');
+    expect(pinButton()).toHaveAttribute('aria-pressed', 'false');
+    expect(pinButton().querySelector('svg')).toHaveAttribute('fill', 'none');
+  });
+
+  it('켜짐 상태는 진한 글자 + 선택 배경 + 채운 핀이다', () => {
+    renderCard({ isFaved: true });
+
+    expect(pinButton()).toHaveClass('text-ink', 'bg-select');
+    expect(pinButton()).toHaveAttribute('aria-pressed', 'true');
+    expect(pinButton().querySelector('svg')).toHaveAttribute('fill', 'currentColor');
+  });
+});
+
+describe('LinkCard 체크', () => {
+  it('기본으로는 체크를 그리지 않는다', () => {
+    renderCard();
+
+    expect(screen.queryByRole('button', { name: 'ChatGPT 선택' })).not.toBeInTheDocument();
+  });
+
+  it('showCheck=true면 체크를 그린다 (카테고리·매일·즐겨찾기 목록)', () => {
+    renderCard({ showCheck: true });
+
+    expect(checkButton()).toBeInTheDocument();
+  });
+
+  it('체크를 누르면 onToggleCheck만 부르고 새 탭은 열지 않는다', () => {
+    const onToggleCheck = vi.fn();
+    renderCard({ showCheck: true, onToggleCheck });
+
+    fireEvent.click(checkButton());
+
+    expect(onToggleCheck).toHaveBeenCalledWith('bm-1');
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it('꺼짐 상태는 흐린 회색이다', () => {
+    renderCard({ showCheck: true });
+
+    expect(checkButton()).toHaveClass('text-check-off');
+    expect(checkButton()).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('켜짐 상태는 검은 배경 + 흰 체크다', () => {
+    renderCard({ showCheck: true, checked: true });
+
+    expect(checkButton()).toHaveClass('bg-ink', 'text-white');
+    expect(checkButton()).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('상단 액션 순서는 체크 → 핀이다', () => {
+    const card = renderCard({ showCheck: true });
+    const labels = [...card.querySelectorAll('button[aria-pressed]')].map((button) =>
+      button.getAttribute('aria-label'),
+    );
+
+    expect(labels).toEqual(['ChatGPT 선택', 'ChatGPT 즐겨찾기']);
+  });
+});
+
+describe('LinkCard 테두리 3상태', () => {
+  it('기본은 카드 테두리(--color-card-border)다', () => {
+    expect(renderCard()).toHaveClass('border-card-border');
+  });
+
+  it('즐겨찾기에 담긴 카드는 --color-fav-border다', () => {
+    const card = renderCard({ isFaved: true });
+
+    expect(card).toHaveClass('border-fav-border');
+    expect(card).not.toHaveClass('border-card-border');
+  });
+
+  it('체크된 카드는 --color-ink다', () => {
+    const card = renderCard({ showCheck: true, checked: true });
+
+    expect(card).toHaveClass('border-ink');
+    expect(card).not.toHaveClass('border-card-border');
+  });
+
+  it('체크가 즐겨찾기보다 우선한다', () => {
+    const card = renderCard({ showCheck: true, checked: true, isFaved: true });
+
+    expect(card).toHaveClass('border-ink');
+    expect(card).not.toHaveClass('border-fav-border');
+  });
+});
+
+describe('LinkCard 관리자', () => {
+  it('isAdmin=true여도 연필·휴지통은 아직 그리지 않는다 (3단계 J1·J2 몫)', () => {
+    const card = renderCard({ isAdmin: true, showCheck: true });
+
+    expect(card.querySelectorAll('button')).toHaveLength(4); // 파비콘 · 체크 · 핀 · 본문
+  });
+});
+
+describe('LinkCard 수치 (DESIGN_SPEC 2-1)', () => {
+  it('컨테이너: relative·overflow hidden·radius 10px·min-h 126px(모바일 104px)·패딩 12px(모바일 10px)', () => {
+    const card = renderCard();
+
+    expect(card).toHaveClass(
+      'relative',
+      'overflow-hidden',
+      'bg-card',
+      'border',
+      'rounded-[10px]',
+      'flex',
+      'flex-col',
+      'gap-[6px]',
+      'p-[10px]',
+      'min-[820px]:p-[12px]',
+      'min-h-[104px]',
+      'min-[820px]:min-h-[126px]',
+      'shadow-[0_1px_2px_rgba(20,21,22,.04)]',
+    );
+  });
+
+  it('컨테이너 호버: 테두리 ink + scale(1.05) + 그림자 + z-index 5, transition 0.22s', () => {
+    const card = renderCard();
+
+    expect(card).toHaveClass(
+      'hover:border-ink',
+      'hover:[transform:scale(1.05)]',
+      'hover:shadow-[0_10px_26px_rgba(20,21,22,.14)]',
+      'hover:z-[5]',
+      '[transition:transform_.22s_cubic-bezier(.22,.9,.28,1),box-shadow_.22s_ease,border-color_.22s_ease]',
+    );
+  });
+
+  it('상단 줄: min-h 32px, align-items flex-start, gap 4px', () => {
+    const topRow = renderCard().firstElementChild;
+
+    expect(topRow).toHaveClass('flex', 'items-start', 'gap-[4px]', 'min-h-[32px]');
+  });
+
+  it('파비콘 타일: 32px, 흰 배경 + 1px 기본 테두리 + radius 9px', () => {
+    renderCard();
+
+    expect(faviconButton()).toHaveClass(
+      'size-[32px]',
+      'shrink-0',
+      'rounded-[9px]',
+      'bg-card',
+      'border',
+      'border-border',
+    );
+  });
+
+  it('액션 줄: margin-left auto, gap 1px, 우측 정렬, 줄바꿈 허용', () => {
+    renderCard();
+    const actions = faviconButton().nextElementSibling;
+
+    expect(actions).toHaveClass(
+      'ml-auto',
+      'flex',
+      'items-center',
+      'justify-end',
+      'flex-wrap',
+      'gap-px',
+      'min-w-0',
+    );
+  });
+
+  it('액션 버튼: 21×21px, radius 6px, 호버 배경 #efede8', () => {
+    renderCard({ showCheck: true });
+
+    for (const button of [checkButton(), pinButton()]) {
+      expect(button).toHaveClass(
+        'size-[21px]',
+        'shrink-0',
+        'rounded-[6px]',
+        'hover:bg-[#efede8]',
+        'cursor-pointer',
+      );
+    }
+  });
+
+  it('본문 블록: margin-top auto, 이름 13.5px/600 2줄, 설명 12px 2줄', () => {
+    renderCard();
+    const body = bodyButton();
+
+    expect(body).toHaveClass('mt-auto', 'w-full', 'text-left', 'cursor-pointer');
+    expect(screen.getByText('ChatGPT')).toHaveClass(
+      'text-[13px]',
+      'min-[820px]:text-[13.5px]',
+      'font-semibold',
+      'leading-[1.3]',
+      'tracking-[-0.01em]',
+      'max-h-[2.6em]',
+      'overflow-hidden',
+    );
+    expect(screen.getByText('AI 대화·문서 초안')).toHaveClass(
+      'text-[12px]',
+      'text-desc',
+      'leading-[1.4]',
+      'max-h-[2.8em]',
+      'overflow-hidden',
+      'mt-[4px]',
+    );
+  });
+
+  it('하단 줄: margin-top 5px, gap 8px / 주소 10.5px 1줄 말줄임 / 클릭 수 11px/600', () => {
+    const card = renderCard();
+    const host = screen.getByText('chat.openai.com');
+    const bottomRow = host.parentElement;
+
+    expect(bottomRow).toBe(card.lastElementChild);
+    expect(bottomRow).toHaveClass('flex', 'items-center', 'gap-[8px]', 'mt-[5px]');
+    expect(host).toHaveClass('flex-1', 'min-w-0', 'truncate', 'text-[10.5px]', 'text-muted');
+    expect(screen.getByText('3')).toHaveClass(
+      'flex',
+      'shrink-0',
+      'items-center',
+      'gap-[4px]',
+      'text-[11px]',
+      'font-semibold',
+      'text-faint',
+    );
+  });
+
+  it('클릭 수 앞에는 12px 눈 아이콘이 붙는다', () => {
+    renderCard();
+    const eye = screen.getByText('3').querySelector('svg');
+
+    expect(eye).toHaveAttribute('width', '12');
+    expect(eye).toHaveAttribute('stroke-width', '2');
+  });
+});
