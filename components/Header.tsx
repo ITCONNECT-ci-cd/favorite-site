@@ -35,7 +35,11 @@ export function Header({
       <button
         type="button"
         onClick={onSearchClick}
-        className="flex h-[38px] min-w-0 max-w-[620px] flex-1 cursor-text items-center gap-[10px] rounded-[7px] border border-border-strong bg-side px-[13px]"
+        // 호버 두 색은 프로토타입 값 그대로다. #efede8은 DESIGN_SPEC 2-1장(카드 액션 버튼
+        // 호버 배경)에도 나오는 정식 스펙 값이고, #b8b2a8은 1장 색상표에 없어 토큰이 없다.
+        // 둘 다 arbitrary value로 적는다 — 팔레트 제거는 "토큰 클래스만 존재"라는 뜻이지
+        // 스펙 고유 색을 값으로 쓰지 말라는 뜻이 아니다.
+        className="flex h-[38px] min-w-0 max-w-[620px] flex-1 cursor-text items-center gap-[10px] rounded-[7px] border border-border-strong bg-side px-[13px] hover:border-[#b8b2a8] hover:bg-[#efede8]"
       >
         {/* 원형 아웃라인 아이콘 — 아이콘 라이브러리를 들이지 않고 circle 하나로 그린다.
             r은 (12 - strokeWidth) / 2 로, 1.5px 선이 12px 상자 안에 정확히 들어간다. */}

@@ -29,6 +29,12 @@ describe('Header', () => {
     );
   });
 
+  it('검색 트리거는 호버에서 테두리·배경이 바뀐다 (프로토타입 값)', () => {
+    render(<Header totalCount={290} faviconCount={262} />);
+
+    expect(searchTrigger()).toHaveClass('hover:border-[#b8b2a8]', 'hover:bg-[#efede8]');
+  });
+
   it('검색 트리거 좌측에 12px 원형 아웃라인 아이콘을 그린다 (SVG circle)', () => {
     render(<Header totalCount={290} faviconCount={262} />);
 
