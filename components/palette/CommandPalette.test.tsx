@@ -3,8 +3,9 @@
  * 마크업과 키 동작의 원본은 프로토타입(`docs/prototype/링크 대시보드 v2.dc.html`
  * 175~257행 · 640~653행 · 837~840행)이다. 이 테스트가 그 두 문서의 값을 고정한다.
  *
- * 여기서 보지 않는 것(후속 스토리 몫): 헤더 연결과 열림 상태의 소유(G5) ·
- * AI 영역의 실동작(N3). 아래 "후속 자리" describe 가 그 이음매만 확인한다.
+ * 여기서 보지 않는 것: 헤더 연결과 열림 상태의 소유는 `components/PaletteHost.test.tsx` 가
+ * 본다(이 파일은 팔레트를 홀로 세워 두고 본다) · AI 영역의 실동작은 N3 몫이라 아래
+ * "후속 자리" describe 가 그 이음매만 확인한다.
  */
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { useState } from 'react';
@@ -613,7 +614,7 @@ describe('수치 (DESIGN_SPEC 5장)', () => {
   });
 });
 
-describe('후속 자리 — G5 · N3', () => {
+describe('후속 자리 — N3', () => {
   it('N3 가 끼울 AI 슬롯은 결과 아래·하단 바 위에 놓인다', () => {
     renderPalette({ aiSlot: <div data-testid="ai-slot" /> });
     type('문서');
@@ -711,7 +712,7 @@ describe('전역 ⌘K · Ctrl+K', () => {
     expect(onOpenRequest).toHaveBeenCalledTimes(1);
   });
 
-  it('콜백이 없어도 터지지 않는다 (G5 배선 전 상태)', () => {
+  it('콜백이 없어도 터지지 않는다 (팔레트를 홀로 세워 둔 화면)', () => {
     renderGate();
 
     expect(() => press('k', { metaKey: true }, window)).not.toThrow();

@@ -126,7 +126,7 @@ export type CommandPaletteProps = {
   /**
    * 전역 `⌘K`·`Ctrl+K` 를 눌렀다는 알림. **열림 상태는 이 컴포넌트가 아니라 상위가 소유한다** —
    * 게이트는 open 을 prop 으로 받는 표시 컴포넌트이고, 리스너만 여기(닫혀도 마운트되는 자리)에 산다.
-   * 배선은 G5(헤더·레이아웃) 몫이다.
+   * 그 상위는 `components/PaletteHost.tsx` 다(헤더와 팔레트를 형제로 두는 클라이언트 경계).
    *
    * **이미 열려 있을 때도 그대로 나간다**(프로토타입 641행은 상태를 보지 않는다). 다만 프로토타입
    * `openPalette`(838행)가 함께 하던 `sel: 0` 리셋과 입력 포커스 복귀는 일어나지 않는다 —
@@ -183,14 +183,12 @@ export type CommandPaletteProps = {
  *
  * **키 동작**(DESIGN_SPEC 7장 · 프로토타입 640~653행)은 두 군데로 나뉜다.
  * - 전역 `⌘K`·`Ctrl+K` 는 **이 게이트**가 듣는다 — 닫혀 있는 동안에도 들어야 하기 때문이다.
- *   여는 것은 `onOpenRequest` 를 받은 상위다(열림 상태의 소유자는 G5).
+ *   여는 것은 `onOpenRequest` 를 받은 상위, 즉 `components/PaletteHost.tsx` 다.
  * - `↑↓`·`↵`·`esc`·`Tab` 은 열린 동안만 뜻이 있으므로 아래 `PalettePanel` 이 듣는다.
  *   패널은 열릴 때만 마운트되므로 "팔레트가 열려 있으면"(프로토타입 642행) 조건이 곧 마운트다.
  *
- * **아직 없는 것과 그 자리**
- * - G5(헤더): 이 컴포넌트를 마운트하고 `open`/`onClose`/`onOpenRequest` 를 헤더의 검색창에 잇는다.
- *   그때 헤더의 `aria-expanded` 도 함께 스레딩한다(components/Header.tsx JSDoc).
- * - N3(AI): `aiSlot`(내용) · `aiBusy`(0건 안내 감추기) · `onAiSearch`(질의를 인자로 받는다).
+ * **아직 없는 것과 그 자리** — N3(AI): `aiSlot`(내용) · `aiBusy`(0건 안내 감추기) ·
+ * `onAiSearch`(질의를 인자로 받는다).
  */
 export function CommandPalette({
   open,
