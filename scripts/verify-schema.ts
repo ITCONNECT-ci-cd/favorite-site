@@ -2,10 +2,11 @@ import { randomUUID } from 'node:crypto';
 
 import { createClient, type PostgrestError, type SupabaseClient } from '@supabase/supabase-js';
 
+import { ADMIN_EMAIL } from '@/lib/admin-config';
 import { createServiceRoleClient } from '@/scripts/lib/service-client';
 
 /**
- * 실제 Supabase 프로젝트에 대고 자동 검증한다 — B2 완료 기준 6종 + Auth 설정 1종.
+ * 실제 Supabase 프로젝트에 대고 자동 검증한다 — B2 완료 기준 6종 + 배포 요건 2종.
  *
  * 실행: `npx tsx scripts/verify-schema.ts` (PowerShell, 저장소 루트에서)
  * 선행: `supabase/migrations/0001_init.sql` 적용 + `.env.local` 에 URL·anon·service role 키.
@@ -16,8 +17,14 @@ import { createServiceRoleClient } from '@/scripts/lib/service-client';
  * ①~⑥ 은 **임시 행을 넣었다 지우는** 방식이라 시드 전후 아무 때나 돌릴 수 있다.
  * 임시 행은 전부 `__verify_schema__` 마커를 달고, 각 검사가 finally 에서 스스로 지운다.
  *
- * ⑦ 은 DB 가 아니라 **프로젝트 설정**을 본다. 스키마가 아무리 맞아도 public signup 이
- * 열려 있으면 누구나 인증 사용자가 되어 쓰기 정책 안으로 들어오기 때문이다(C-1).
+ * ⑦·⑧ 은 스키마가 아니라 **"사람이 손으로 해야 하는 두 가지"**를 본다. 둘 다 저장소만 봐서는
+ * 절대 드러나지 않고, 안 했을 때의 증상이 "아무 일도 안 일어남"이라 잊기 쉽다:
+ *
+ *   ⑦ 대시보드에서 public signup 을 껐는가 — 열려 있으면 누구나 인증 사용자가 되어
+ *     쓰기 정책 안으로 들어온다(C-1). 스키마가 아무리 맞아도 소용없다.
+ *   ⑧ `0002_admin_write_policy.sql` 을 SQL Editor 에서 실행했는가 — 안 했으면 쓰기 정책이
+ *     `using (true)` 인 채로 남는데, ①~⑥ 은 그래도 전부 통과한다(anon·service role 만 쓰므로).
+ *
  * 한 검사의 실패가 나머지를 가리지 않도록 전부 돌리고 마지막에 합산한다.
  */
 
@@ -26,6 +33,9 @@ const MARKER = '__verify_schema__';
 
 /** PRD 하드 제약 — enforce_pin_limit 트리거가 강제하는 상한. */
 const PIN_LIMIT = 12;
+
+/** ⑦ 의 raw fetch 상한. supabase-js 를 거치지 않는 유일한 호출이라 직접 건다. */
+const SETTINGS_FETCH_TIMEOUT_MS = 10_000;
 
 const REQUIRED_ENV = [
   'NEXT_PUBLIC_SUPABASE_URL',
@@ -279,7 +289,25 @@ async function checkCategoryUnique(service: SupabaseClient): Promise<Outcome> {
 async function checkSignupDisabled(url: string, anonKey: string): Promise<Outcome> {
   const endpoint = `${url.replace(/\/+$/, '')}/auth/v1/settings`;
 
-  const response = await fetch(endpoint, { headers: { apikey: anonKey } });
+  // 이 한 곳만 supabase-js 를 거치지 않는 raw fetch 라 기본 타임아웃이 없다. 엔드포인트가
+  // 응답하지 않으면(프로젝트 일시정지·네트워크 블랙홀) 스크립트가 출력 없이 매달린다 —
+  // 실패보다 나쁘다. 어느 쪽이든 결론이 나게 상한을 건다.
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      headers: { apikey: anonKey },
+      signal: AbortSignal.timeout(SETTINGS_FETCH_TIMEOUT_MS),
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    return fail(
+      `Auth 설정을 읽지 못했다 (${endpoint}): ${reason}` +
+        (error instanceof Error && error.name === 'TimeoutError'
+          ? `\n        → ${SETTINGS_FETCH_TIMEOUT_MS / 1000}초 안에 응답이 없었다. 프로젝트가 일시정지 상태인지, URL 이 맞는지 확인하세요.`
+          : ''),
+    );
+  }
+
   if (!response.ok) {
     return fail(`Auth 설정을 읽지 못했다: HTTP ${response.status} ${response.statusText} (${endpoint})`);
   }
@@ -308,8 +336,133 @@ async function checkSignupDisabled(url: string, anonKey: string): Promise<Outcom
       '        → 누구나 anon 키로 계정을 만들어 "인증 사용자"가 될 수 있다. 쓰기 RLS 가 그 문 뒤에 있다.',
       '        해결: Supabase 대시보드 → Authentication → Sign In / Up →',
       '              "Allow new users to sign up" 끄기 (익명 로그인도 같은 화면에서 끈다).',
-      '        그리고 supabase/migrations/0002_admin_write_policy.sql 을 SQL Editor 에서 실행하세요.',
+      '        (0002 마이그레이션은 별개다 — 그쪽은 아래 검사 ⑧ 이 따로 본다.)',
     ].join('\n'),
+  );
+}
+
+/**
+ * 0002 가 관리자 신원으로 좁힌 정책 셋.
+ *
+ * `clk_read` 는 select 정책이라 `with check` 가 아예 없다(select 에는 새로 들어올 행이 없다).
+ * 나머지 둘은 `for all` 이라 읽는 쪽(`using`)과 쓰는 쪽(`with check`)을 **둘 다** 봐야 한다 —
+ * `with check` 만 느슨하면 남의 행으로 위장한 insert·update 가 통과한다.
+ */
+const ADMIN_POLICIES = [
+  { name: 'bm_write', needsWithCheck: true },
+  { name: 'cat_write', needsWithCheck: true },
+  { name: 'clk_read', needsWithCheck: false },
+] as const;
+
+type PolicySummaryRow = { policyname: string; qual: string | null; with_check: string | null };
+
+/**
+ * 술어를 한 줄로 — `pg_get_expr` 출력에는 줄바꿈이 섞여 있어 그대로 찍으면 표가 무너진다.
+ *
+ * 인자는 rpc 응답에서 온 값이라 타입 선언은 약속일 뿐이다. `typeof` 로 보는 이유가 그것이다
+ * (문자열이 아닌 게 오면 여기서 조용히 `(없음)` 이 되지, `.replace` 로 죽지 않는다).
+ */
+function flatten(predicate: string | null): string {
+  return typeof predicate === 'string' ? predicate.replace(/\s+/g, ' ').trim() : '(없음)';
+}
+
+/**
+ * 술어가 "그 관리자임"을 실제로 요구하는지.
+ *
+ * 존재 여부만 보면 0001 의 `true` 도 정책이므로 통과해 버린다 — 이 검사의 목적이 정확히
+ * 그 상태를 잡는 것이다. 그래서 JWT 참조와 관리자 이메일 리터럴이 **둘 다** 있어야 한다.
+ * 문자열 일치로 보는 이유: `pg_get_expr` 이 돌려주는 것은 정규화된 텍스트라 우리가 적은
+ * 형태(`lower((select auth.jwt() ->> 'email')) = '…'`)와 자구가 다를 수 있고, 앞으로 술어를
+ * 다듬어도(예: 조건 추가) 이 두 조각만 남아 있으면 의도는 지켜진 것이기 때문이다.
+ */
+function isAdminPredicate(predicate: string | null): boolean {
+  if (typeof predicate !== 'string') return false;
+
+  const flat = predicate.toLowerCase();
+  return flat.includes('auth.jwt()') && flat.includes(`'${ADMIN_EMAIL.toLowerCase()}'`);
+}
+
+/** 함수 자체가 없다 = 0002 를 실행하지 않았다. PostgREST 는 스키마 캐시 조회 실패로 알린다. */
+function isMissingFunction(error: PostgrestError): boolean {
+  return error.code === 'PGRST202' || error.code === '42883' || /could not find the function/i.test(error.message);
+}
+
+/**
+ * ⑧ 0002_admin_write_policy.sql 이 실제로 적용됐는지.
+ *
+ * ## 왜 별도 검사가 필요한가
+ *
+ * ①~⑥ 은 anon 과 service role 만 쓴다. anon 은 쓰기 정책 밖이고 service role 은 RLS 를
+ * 통째로 우회하므로, 쓰기 정책의 술어가 `using (true)`(0001)든 관리자 이메일(0002)이든
+ * **여섯 검사의 결과는 완전히 같다.** 즉 0002 를 잊고 배포해도 여기서는 아무 신호가 없었다.
+ *
+ * 술어를 흉내로 확인할 수도 없다 — 관리자로 로그인해 쓰기를 시도하면 성공하는데, 그건
+ * 0001 상태에서도 성공한다. 정말 좁혀졌는지 보려면 **정책 정의 자체**를 읽어야 한다.
+ *
+ * ## 어떻게 읽는가
+ *
+ * `pg_policies` 는 pg_catalog 에 있어 PostgREST 로는 닿지 않는다. 0002 가 함께 만드는
+ * security definer 함수 `admin_policy_summary()` 가 그 셋만 골라 돌려주고, 실행 권한은
+ * service role 에게만 있다(술어에 관리자 이메일이 들어 있다).
+ *
+ * 그래서 **함수가 없다는 것 자체가 "0002 미적용"의 증거**다 — 같은 파일에 들어 있으므로.
+ */
+async function checkAdminPolicies(service: SupabaseClient): Promise<Outcome> {
+  const { data, error } = await service.rpc('admin_policy_summary');
+
+  if (error) {
+    if (isMissingFunction(error)) {
+      return fail(
+        [
+          `0002 미적용 — admin_policy_summary() 가 없습니다 ${describe(error)}`,
+          '        → 쓰기 정책이 0001 의 `using (true)` 인 채로 남아 있을 수 있습니다. 그 상태면',
+          '          아무 인증 사용자나 REST 로 전체 데이터를 지울 수 있습니다(①~⑥ 은 그래도 통과합니다).',
+          '        해결: Supabase 대시보드 → SQL Editor 에서',
+          '              supabase/migrations/0002_admin_write_policy.sql 을 **파일 전체** 실행하세요',
+          '              (정책 셋과 이 함수가 한 파일에 들어 있습니다).',
+          "        방금 실행했는데도 이 메시지가 나온다면 스키마 캐시 문제입니다: notify pgrst, 'reload schema';",
+        ].join('\n'),
+      );
+    }
+
+    return fail(`정책 술어를 읽지 못했다: ${describe(error)}`);
+  }
+
+  const rows: unknown = data;
+  if (!Array.isArray(rows)) return fail(`admin_policy_summary() 가 행 집합이 아닌 값을 돌려줬다: ${typeof data}`);
+
+  const summary = rows as PolicySummaryRow[];
+  const problems: string[] = [];
+
+  for (const policy of ADMIN_POLICIES) {
+    const row = summary.find((candidate) => candidate.policyname === policy.name);
+
+    if (row === undefined) {
+      problems.push(`${policy.name} 정책이 없다 — 0002 를 일부만 실행했거나 정책이 지워졌다`);
+      continue;
+    }
+
+    if (!isAdminPredicate(row.qual)) {
+      problems.push(`${policy.name} using 이 관리자 이메일을 요구하지 않는다: ${flatten(row.qual)}`);
+    }
+    if (policy.needsWithCheck && !isAdminPredicate(row.with_check)) {
+      problems.push(`${policy.name} with check 가 관리자 이메일을 요구하지 않는다: ${flatten(row.with_check)}`);
+    }
+  }
+
+  if (problems.length > 0) {
+    return fail(
+      [
+        problems.join('\n        '),
+        '        → 쓰기 권한이 관리자 한 명으로 좁혀지지 않았습니다.',
+        '        해결: supabase/migrations/0002_admin_write_policy.sql 을 다시 파일 전체 실행하세요',
+        '              (재실행해도 안전합니다).',
+      ].join('\n'),
+    );
+  }
+
+  return pass(
+    `${ADMIN_POLICIES.map((policy) => policy.name).join('·')} 모두 관리자 이메일을 요구한다 — 0002 적용됨`,
   );
 }
 
@@ -330,9 +483,10 @@ async function main(): Promise<void> {
     { id: '⑤', label: 'anon: bookmark_click_counts select 성공', run: () => checkAnonViewRead(anon) },
     { id: '⑥', label: 'service: 동명 상위 카테고리 중복 거부', run: () => checkCategoryUnique(service) },
     { id: '⑦', label: 'auth: public signup·익명 로그인 비활성', run: () => checkSignupDisabled(url, anonKey) },
+    { id: '⑧', label: 'rls: 쓰기 정책이 관리자 이메일로 좁혀짐 (0002 적용)', run: () => checkAdminPolicies(service) },
   ];
 
-  console.log('스키마·설정 검증 — 0001_init.sql 적용 결과(①~⑥)와 Auth 설정(⑦)을 확인합니다.');
+  console.log('스키마·설정 검증 — 0001 적용 결과(①~⑥), Auth 설정(⑦), 0002 적용 여부(⑧)를 확인합니다.');
   console.log(`대상: ${url}`);
   console.log('');
 
@@ -343,7 +497,7 @@ async function main(): Promise<void> {
     try {
       outcome = await check.run();
     } catch (error) {
-      // 한 검사의 예외가 나머지를 건너뛰게 두지 않는다 — 6종 전부의 상태를 봐야 원인이 좁혀진다.
+      // 한 검사의 예외가 나머지를 건너뛰게 두지 않는다 — 전부의 상태를 봐야 원인이 좁혀진다.
       outcome = fail(`예외로 중단됨: ${error instanceof Error ? error.message : String(error)}`);
     }
 
@@ -357,11 +511,13 @@ async function main(): Promise<void> {
     console.error(`${checks.length}종 중 ${failed}종 실패.`);
     console.error('  ①~⑥ 이 실패했다면: 0001_init.sql 이 그대로 적용됐는지 확인하세요.');
     console.error('  ⑦ 이 실패했다면: 위 안내대로 대시보드에서 signup 을 끄세요 (코드로는 못 고칩니다).');
+    console.error('  ⑧ 이 실패했다면: 0002_admin_write_policy.sql 을 SQL Editor 에서 파일 전체 실행하세요.');
+    console.error('  ⑦·⑧ 은 저장소에서 고칠 수 없는 항목입니다 — 둘 다 사람이 대시보드에서 한 번 해야 합니다.');
     console.error(`임시 행이 남았을 수 있습니다. 남았다면 title/name 이 '${MARKER}' 로 시작하는 행을 지우세요.`);
     process.exit(1);
   }
 
-  console.log(`${checks.length}종 전부 통과 — B2 완료 기준과 Auth 설정 요건을 만족합니다.`);
+  console.log(`${checks.length}종 전부 통과 — B2 완료 기준과 배포 전 설정 요건(signup·0002)을 만족합니다.`);
 }
 
 main().catch((error: unknown) => {

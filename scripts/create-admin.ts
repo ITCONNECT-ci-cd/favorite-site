@@ -295,4 +295,11 @@ if (isDirectRun()) {
     console.error('(파일이 없다면 계정도 만들어지지 않은 것입니다 — 그대로 다시 실행하세요.)');
     process.exit(1);
   });
+} else if (process.env.VITEST === undefined) {
+  // 가드가 어긋나면 증상은 "출력도 오류도 없이 즉시 끝남"이다. 그 침묵이야말로 이 스크립트의
+  // 가장 나쁜 실패 모드라, 성공한 척(exit 0) 하지 않고 왜 아무 일도 안 했는지 말하고 실패한다.
+  // 테스트는 `generatePassword` 만 import 하려고 일부러 이 분기로 들어오므로 제외한다
+  // (vitest 가 넣어 주는 VITEST 환경변수로 구분한다 — 그때는 침묵이 정상이다).
+  console.error('직접 실행으로 인식되지 않았습니다 — 계정 생성이 실행되지 않았습니다. isDirectRun() 판정을 확인하세요.');
+  process.exitCode = 1;
 }

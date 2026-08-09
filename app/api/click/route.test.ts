@@ -8,8 +8,11 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// `@/lib/supabase/admin` 은 첫 줄이 `import 'server-only'` 라 RSC 밖(=vitest)에서 로드되는
-// 순간 던진다. 팩토리로 통째 대체해 원본을 아예 읽지 않게 한다.
+// `@/lib/supabase/admin` 은 팩토리로 통째 대체해 원본을 아예 읽지 않게 한다. 그 모듈의
+// `createAdminSupabaseClient()` 는 `requireEnv` 로 실제 URL·service role 키를 요구하고,
+// 있으면 있는 대로 진짜 프로젝트에 붙는다 — 테스트가 환경변수 유무에 좌우되고, 최악의 경우
+// 실제 DB 에 클릭을 기록한다. (첫 줄의 `import 'server-only'` 는 여기서 문제가 아니다:
+// vitest.config.mts 가 그 패키지를 빈 모듈로 별칭해 둬서 로드 자체는 더 이상 던지지 않는다.)
 const { createAdminSupabaseClient } = vi.hoisted(() => ({ createAdminSupabaseClient: vi.fn() }));
 
 vi.mock('@/lib/supabase/admin', () => ({ createAdminSupabaseClient }));
