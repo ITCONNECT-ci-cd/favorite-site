@@ -25,8 +25,9 @@
  * (익명 사용자를 대신해 서버가 써야 하는 `/api/click` 은 사정이 달라 service role 을 쓴다.)
  *
  * 이 금지는 주석만이 아니라 두 겹으로 잠겨 있다 — `eslint.config.mjs` 의 `no-restricted-imports`
- * 가 이 파일에서 `supabase/admin` import 를 막고, `lib/mutations.test.ts` 가 소스 전체를 훑어
- * 우회 import·service role 키 접근이 없는지 확인한다.
+ * 가 `supabase/admin` import 를 **전역으로** 막고(정당한 자리만 그 config 가 이름으로 되돌리는데
+ * 이 파일은 그 목록에 없다), `lib/mutations.test.ts` 가 소스 전체를 훑어 우회 import·service role
+ * 키 접근이 없는지 확인한다.
  *
  * ## 반환 규약 — `{ ok: true } | { ok: false, error: string }`
  *

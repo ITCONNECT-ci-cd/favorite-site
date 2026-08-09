@@ -31,10 +31,10 @@
  * - `eslint.config.mjs` — 이 파일에 한해 `@/lib/mutations` import 를 error 로 막는다.
  *   ESLint 는 정적 import 만 보므로 동적 `import()`·`require()` 는 위 정규식이 맡는다(H4 교훈).
  *
- * 뒤집어 말하면 **`@/lib/supabase/admin` import 는 이 파일에서만 정당하다** — `lib/mutations.ts`
- * 쪽은 같은 config 가 그것을 금지한다. 여기서 허용되는 근거는 오직 위의 "Storage 정책이 없어
- * 업로드가 service role 을 요구한다" 하나이고, 그래서 그 키가 닿는 곳이 `.storage` 로 끝나는지를
- * 테스트가 매번 다시 센다.
+ * 뒤집어 말하면 **`@/lib/supabase/admin` import 는 기본이 금지다** — 같은 config 가 그것을
+ * 전역으로 막고, 정당한 자리(이 파일 · `app/api/click/route.ts` · 그 모듈 자신)만 이름으로
+ * 되돌린다. 여기서 허용되는 근거는 오직 위의 "Storage 정책이 없어 업로드가 service role 을
+ * 요구한다" 하나이고, 그래서 그 키가 닿는 곳이 `.storage` 로 끝나는지를 테스트가 매번 다시 센다.
  *
  * ## 수집 사슬의 출처
  *
