@@ -42,8 +42,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             {/* 헤더 자리 (60px, 흰 배경, 하단 1px 테두리, 좌우 패딩 28px) — 내용물은 C4 Header. */}
             <header className="flex h-[60px] flex-none items-center border-b border-border bg-card px-[28px]" />
 
-            {/* 콘텐츠 — 셸에서 유일하게 스크롤되는 영역. 본문 여백은 각 화면이 정한다. */}
-            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-surface">
+            {/* 콘텐츠 — 셸에서 유일하게 스크롤되는 영역.
+                본문 패딩(DESIGN_SPEC 1장, 데스크톱 20px 28px 36px)은 화면이 아니라 셸이 갖는다.
+                모바일 축소(12px 12px 26px)를 D5가 이 한 줄에서 처리하기 위해서다. */}
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-surface px-[28px] pt-[20px] pb-[36px]">
               {children}
             </div>
           </div>
