@@ -52,6 +52,14 @@ describe('Toast', () => {
     );
   });
 
+  it('전폭 고정 래퍼가 화면 아래쪽 클릭을 가로채지 않는다', () => {
+    render(<Toaster />);
+
+    // 래퍼는 inset-x-0으로 가로 전체를 덮는다. pointer-events-none이 빠지면
+    // 토스트가 떠 있는 2초 동안 하단 클릭이 통째로 막힌다.
+    expect(screen.getByRole('status')).toHaveClass('pointer-events-none', 'inset-x-0');
+  });
+
   it('rise 애니메이션을 컴포넌트가 직접 싣는다 (globals.css는 A2 소유)', () => {
     const { container } = render(<Toaster />);
 
@@ -70,6 +78,9 @@ describe('Toast', () => {
   });
 
   it('2초가 지나면 스스로 사라진다', () => {
+    // 아래 단언들은 상수 기준이라 상수 자체를 못박아야 "2초"가 잠긴다 (DESIGN_SPEC 7장).
+    expect(TOAST_DURATION_MS).toBe(2000);
+
     render(<Toaster />);
 
     act(() => {

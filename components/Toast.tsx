@@ -65,8 +65,12 @@ export function toast(message: string): void {
  * 전역 스타일(app/globals.css)이 아니라 이 컴포넌트가 직접 싣는다 — 토스트 말고는 쓰는 곳이 없다.
  *
  * 가운데 정렬은 바깥 flex가 맡으므로 키프레임은 세로 이동만 건드린다.
- * (Tailwind v4의 translate 유틸은 `transform`이 아니라 `translate` 속성을 쓰기 때문에
- *  `-translate-x-1/2`로 가운데를 잡았다면 애니메이션의 transform과 합성돼 어긋난다.)
+ * 프로토타입 키프레임은 `translate(-50%, 8px)`로 가로 -50%를 함께 들고 있는데, 거기서는
+ * 가운데 정렬도 `transform: translateX(-50%)`이라 애니메이션이 그 값을 통째로 덮어쓰기 때문이다.
+ * Tailwind v4의 `-translate-x-1/2`는 `transform`이 아니라 개별 `translate` 속성이고,
+ * 개별 변환 속성은 `transform`을 덮어쓰지 않고 그 앞에 합성된다(CSS Transforms L2).
+ * 그래서 저 키프레임을 그대로 가져오면 -50%가 두 번 먹어 -100%가 된다.
+ * flex 정렬은 가로 이동을 아예 쓰지 않으므로 이 함정 자체가 생기지 않는다.
  */
 const RISE_KEYFRAMES = `
 @keyframes toast-rise {
