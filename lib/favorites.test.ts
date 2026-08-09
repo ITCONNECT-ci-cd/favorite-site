@@ -5,7 +5,7 @@ import { hydrateRoot } from 'react-dom/client';
 import { renderToString } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FAVS_KEY } from '@/lib/constants';
-import { useFavorites } from '@/lib/favorites';
+import { type Favorites, useFavorites } from '@/lib/favorites';
 
 /** localStorage에 실제로 저장된 값을 파싱해 돌려준다. */
 function storedFavs(): unknown {
@@ -186,13 +186,55 @@ describe('useFavorites', () => {
     expect(result.current.favs).toEqual(new Set(['a']));
   });
 
-  it('마지막 인스턴스가 언마운트되면 storage 구독을 해제한다', () => {
-    const removeListener = vi.spyOn(window, 'removeEventListener');
+  it('한 인스턴스가 언마운트돼도 남은 인스턴스는 계속 동기화된다', () => {
+    const one = renderHook(() => useFavorites());
+    const two = renderHook(() => useFavorites());
 
-    const { unmount } = renderHook(() => useFavorites());
-    unmount();
+    one.unmount();
 
-    expect(removeListener).toHaveBeenCalledWith('storage', expect.any(Function));
+    localStorage.setItem(FAVS_KEY, JSON.stringify(['z']));
+    dispatchStorage(FAVS_KEY, JSON.stringify(['z']));
+
+    expect(two.result.current.favs).toEqual(new Set(['z']));
+  });
+
+  it('전부 언마운트된 뒤의 storage 이벤트는 아무 데도 반영되지 않는다', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const one = renderHook(() => useFavorites());
+    const two = renderHook(() => useFavorites());
+    one.unmount();
+    two.unmount();
+
+    localStorage.setItem(FAVS_KEY, JSON.stringify(['z']));
+    expect(() => dispatchStorage(FAVS_KEY, JSON.stringify(['z']))).not.toThrow();
+    expect(consoleError).not.toHaveBeenCalled();
+
+    // 스토어가 망가지지 않았으므로 새로 마운트하면 최신 값을 읽는다.
+    const three = renderHook(() => useFavorites());
+    expect(three.result.current.favs).toEqual(new Set(['z']));
+  });
+
+  it('favs는 ReadonlySet이라 소비자가 직접 변형할 수 없다', () => {
+    // 실행하지 않는다 — tsc가 잡아야 할 계약이라 타입 검사만이 목적이다.
+    // (SSR 스냅샷은 모듈 싱글턴이라 한 번의 add가 요청 간 오염으로 번진다.)
+    function probe(favs: Favorites['favs']) {
+      // @ts-expect-error ReadonlySet에는 add가 없다.
+      favs.add('x');
+    }
+
+    expect(typeof probe).toBe('function');
+  });
+
+  it('toggle은 렌더가 바뀌어도 같은 참조를 유지한다', () => {
+    const { result, rerender } = renderHook(() => useFavorites());
+    const before = result.current.toggle;
+
+    act(() => {
+      result.current.toggle('a');
+    });
+    rerender();
+
+    expect(result.current.toggle).toBe(before);
   });
 
   it('저장값이 손상돼 있어도 크래시 없이 빈 값으로 시작한다', () => {

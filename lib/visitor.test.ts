@@ -132,4 +132,15 @@ describe('getVisitorId', () => {
     expect(id).toMatch(UUID_RE);
     expect(localStorage.getItem(VISITOR_KEY)).toBe(id);
   });
+
+  it('저장된 값이 UUID 형식이 아니면 새로 만들어 덮어쓴다', () => {
+    // 손상된 값을 그대로 쓰면 F2의 클릭 집계가 그 브라우저에서 영구히 400으로 죽는다.
+    localStorage.setItem(VISITOR_KEY, 'not-a-uuid');
+
+    const id = getVisitorId();
+
+    expect(id).toMatch(UUID_RE);
+    expect(localStorage.getItem(VISITOR_KEY)).toBe(id);
+    expect(getVisitorId()).toBe(id);
+  });
 });

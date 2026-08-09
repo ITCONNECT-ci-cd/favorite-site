@@ -6,6 +6,8 @@ import { VISITOR_KEY } from '@/lib/constants';
  */
 let memoryId: string | null = null;
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Math.random 기반 UUID v4. 비보안 컨텍스트(사내 http 접속 등)에는
  * crypto.randomUUID가 없어서 필요하다. 익명 식별자일 뿐이라 암호학적 강도는
@@ -68,8 +70,9 @@ export function getVisitorId(): string {
 
   if (memoryId !== null) return memoryId;
 
+  // 형식이 깨진 값을 그대로 쓰면 F2가 그 브라우저에서 영구히 400을 받는 무성 고장이 된다.
   const read = tryRead();
-  if (read.ok && read.value) return read.value;
+  if (read.ok && read.value !== null && UUID_RE.test(read.value)) return read.value;
 
   const id = createId();
   const wrote = safeWrite(id);

@@ -4,8 +4,11 @@ import { useCallback, useSyncExternalStore } from 'react';
 import { FAVS_KEY } from '@/lib/constants';
 
 export type Favorites = {
-  /** 즐겨찾기에 담긴 bookmark id 집합. 읽기 전용으로 다뤄야 한다(직접 변형 금지). */
-  favs: Set<string>;
+  /**
+   * 즐겨찾기에 담긴 bookmark id 집합. 모든 인스턴스가 공유하는 스냅샷이므로
+   * ReadonlySet이다 — 직접 변형하면 서버에서는 요청 간 오염으로 번진다.
+   */
+  favs: ReadonlySet<string>;
   /** 담겨 있으면 빼고, 없으면 담는다 */
   toggle: (id: string) => void;
   isFaved: (id: string) => boolean;
@@ -15,18 +18,21 @@ export type Favorites = {
  * 서버 렌더 스냅샷. 서버에는 즐겨찾기가 없으므로 항상 빈 값이며,
  * React는 하이드레이션 첫 렌더에도 이 값을 쓴다 → 하이드레이션 불일치가 생기지 않는다.
  * (useSyncExternalStore 규약상 매번 같은 객체를 돌려줘야 한다.)
+ *
+ * 모듈 수준 싱글턴이라 변형되면 프로세스 수명 내내 모든 방문자의 SSR 결과가 오염된다.
+ * 이것이 favs를 ReadonlySet으로 내보내는 이유다.
  */
-const SERVER_SNAPSHOT: Set<string> = new Set();
+const SERVER_SNAPSHOT: ReadonlySet<string> = new Set();
 
 /** localStorage에 쓸 수 없는 환경(프라이빗 모드·용량 초과)의 세션 한정 폴백. */
-let memoryFavs: Set<string> | null = null;
+let memoryFavs: ReadonlySet<string> | null = null;
 
 /**
  * getSnapshot 캐시. 저장된 원본 문자열이 그대로면 같은 Set 객체를 돌려준다
  * (useSyncExternalStore는 매번 새 객체를 받으면 무한 렌더로 판단한다).
  */
 let cachedRaw: string | null = null;
-let cachedFavs: Set<string> = new Set();
+let cachedFavs: ReadonlySet<string> = new Set();
 
 const listeners = new Set<() => void>();
 
@@ -52,7 +58,7 @@ function safeRead(): string | null {
 }
 
 /** 저장에 성공하면 true. 실패(프라이빗 모드 등)해도 던지지 않는다. */
-function safeWrite(favs: Set<string>): boolean {
+function safeWrite(favs: ReadonlySet<string>): boolean {
   try {
     window.localStorage.setItem(FAVS_KEY, JSON.stringify([...favs]));
     return true;
@@ -61,7 +67,9 @@ function safeWrite(favs: Set<string>): boolean {
   }
 }
 
-function getSnapshot(): Set<string> {
+function getSnapshot(): ReadonlySet<string> {
+  // 메모리 폴백 중에는 localStorage를 신뢰할 수 없으므로 다른 탭과의 동기화도 멈춘다
+  // (저장이 안 되는 환경이라 애초에 다른 탭에 전달될 변경도 없다).
   if (memoryFavs !== null) return memoryFavs;
 
   const raw = safeRead();
@@ -72,12 +80,13 @@ function getSnapshot(): Set<string> {
   return cachedFavs;
 }
 
-function getServerSnapshot(): Set<string> {
+function getServerSnapshot(): ReadonlySet<string> {
   return SERVER_SNAPSHOT;
 }
 
 function emit(): void {
-  for (const listener of listeners) listener();
+  // 구독 해제가 순회 중에 일어나도 안전하도록 복사본을 돈다.
+  for (const listener of [...listeners]) listener();
 }
 
 function handleStorage(event: StorageEvent): void {
@@ -108,6 +117,11 @@ function commit(next: Set<string>): void {
  *
  * SSR 안전: 서버 렌더와 하이드레이션 첫 렌더는 항상 빈 값이고,
  * 하이드레이션이 끝난 뒤 저장된 값으로 동기화된다.
+ *
+ * 사용 규칙: **뷰 레벨에서 한 번만 호출하고 `isFaved`·`toggle`을 props로 내려라.**
+ * 카드 컴포넌트 안에서 직접 호출하면 렌더마다 카드 수만큼 동기 localStorage 읽기가 발생한다.
+ *
+ * 반환된 `favs`는 모든 인스턴스가 공유하는 스냅샷이다. 변형하지 말고 새 Set을 만들어 써라.
  */
 export function useFavorites(): Favorites {
   const favs = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
