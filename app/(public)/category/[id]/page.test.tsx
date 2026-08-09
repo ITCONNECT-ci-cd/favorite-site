@@ -31,8 +31,16 @@ async function renderPage(id: string) {
   return render(await CategoryPage({ params: Promise.resolve({ id }) }));
 }
 
+/**
+ * 그리드에 놓인 **카드** 수. 관리자에게만 서는 '+ 링크 추가' 타일(K1)은 격자 한 칸을 차지하지만
+ * 카드가 아니므로 뺀다 — 빼지 않으면 관리자 화면에서만 개수가 하나씩 늘어 기대값이 어긋난다.
+ */
 function cardCount(container: HTMLElement): number {
-  return container.querySelector('.grid')?.children.length ?? 0;
+  const grid = container.querySelector('.grid');
+  if (grid === null) return 0;
+
+  return [...grid.children].filter((cell) => cell.getAttribute('data-testid') !== 'quick-add')
+    .length;
 }
 
 /** 규칙만 보는 테스트용 최소 북마크 — 제목이 곧 id다. */
@@ -274,5 +282,42 @@ describe('카테고리 — 관리자 편집 노출 (J1)', () => {
     await renderPage(topId('AI 도구 모음'));
 
     expect(getAdminSession).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * K1. '+ 링크 추가' 타일 — 분류 화면은 **진짜 분류 목록**이라 타일이 선다(파생 목록인
+ * `/favorites`·`/daily` 는 서지 않는다). 여기서 보는 것은 서버가 무엇을 내려보내는가다.
+ */
+describe('카테고리 — 링크 추가 타일 (K1)', () => {
+  const tile = () => screen.queryByRole('button', { name: '링크 추가' });
+
+  it('비로그인 렌더에는 타일 마크업이 없다', async () => {
+    const { container } = await renderPage(topId('AI 도구 모음'));
+
+    expect(tile()).toBeNull();
+    expect(container.querySelector('[data-testid="quick-add"]')).toBeNull();
+  });
+
+  it('관리자 세션이면 타일이 서고 기본 분류가 이 화면의 분류다', async () => {
+    vi.mocked(getAdminSession).mockResolvedValue(adminSession);
+
+    await renderPage(topId('마케팅'));
+
+    fireEvent.click(tile()!);
+
+    expect(screen.getByRole('combobox', { name: '분류' })).toHaveValue(topId('마케팅'));
+  });
+
+  it('하위 id 로 들어오면 그 하위가 기본 분류다 — 지금 보고 있는 목록에 붙인다', async () => {
+    vi.mocked(getAdminSession).mockResolvedValue(adminSession);
+
+    await renderPage(subId('AI 도구 모음', '대화·검색'));
+
+    fireEvent.click(tile()!);
+
+    expect(screen.getByRole('combobox', { name: '분류' })).toHaveValue(
+      subId('AI 도구 모음', '대화·검색'),
+    );
   });
 });

@@ -6,7 +6,7 @@
  *
  * fixture 는 실시드 그대로다 (`test/fixtures/seed.ts`).
  */
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Home from '@/app/(public)/page';
 import { getAdminSession } from '@/lib/supabase/server';
@@ -86,5 +86,34 @@ describe('홈 — 관리자 편집 노출 (J1)', () => {
     await renderPage();
 
     expect(getAdminSession).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * K1. '+ 링크 추가' 타일도 같은 관문을 지난다 — 서버가 관리자로 확인했을 때만 렌더된다.
+ * 어느 섹션에 서는지와 폼이 무엇을 보내는지는 `components/HomeView.test.tsx` ·
+ * `components/card/QuickAddCard.test.tsx` 가 본다.
+ */
+describe('홈 — 링크 추가 타일 (K1)', () => {
+  const tile = () => screen.queryByRole('button', { name: '링크 추가' });
+
+  it('비로그인 렌더에는 타일 마크업이 없다', async () => {
+    const { container } = await renderPage();
+
+    expect(tile()).toBeNull();
+    expect(container.querySelector('[data-testid="quick-add"]')).toBeNull();
+  });
+
+  it('관리자 세션이면 타일이 서고, 분류 상자에 시드의 분류가 모두 온다', async () => {
+    vi.mocked(getAdminSession).mockResolvedValue(adminSession);
+
+    await renderPage();
+
+    expect(tile()).toBeInTheDocument();
+
+    fireEvent.click(tile()!);
+
+    // 서버가 내려보내는 것은 세 필드짜리 목록이다(components/card/quick-add-options.ts).
+    expect(screen.getAllByRole('option')).toHaveLength(siteData().categories.length);
   });
 });

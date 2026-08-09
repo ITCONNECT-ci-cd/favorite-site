@@ -57,8 +57,20 @@ const section = (name: string) => screen.getByRole('region', { name });
 /** 섹션 본문 — 헤더 다음에 오는 카드 그리드(또는 빈 상태 박스). */
 const body = (name: string) => section(name).lastElementChild as HTMLElement;
 
-/** 섹션 안 카드들 — 그리드에 놓인 순서 그대로. */
-const cards = (name: string) => [...body(name).children] as HTMLElement[];
+/**
+ * 섹션 안 **카드들** — 그리드에 놓인 순서 그대로.
+ *
+ * 관리자에게만 서는 '+ 링크 추가' 타일(K1)은 격자 첫 칸을 차지하지만 카드가 아니므로 뺀다.
+ * 빼지 않으면 `cards(...)[n]` 이 관리자 화면에서만 한 칸씩 밀려 엉뚱한 카드를 가리킨다.
+ */
+const cards = (name: string) =>
+  [...body(name).children].filter(
+    (cell) => cell.getAttribute('data-testid') !== 'quick-add',
+  ) as HTMLElement[];
+
+/** 섹션의 '+ 링크 추가' 타일 — 없으면 null (K1). */
+const quickAddTile = (name: string) =>
+  within(section(name)).queryByRole('button', { name: '링크 추가' });
 
 /**
  * 섹션이 어떤 링크를 어떤 순서로 놓았는지 확인한다.
@@ -604,6 +616,78 @@ describe('HomeView — 관리자 편집 노출 (J1)', () => {
     expect(pins('매일 사용하는 사이트')).toHaveLength(0);
     expect(daily.queryAllByRole('button', { name: /.+ 수정$/ })).toHaveLength(DAILY_COUNT);
     expect(daily.queryAllByRole('button', { name: /.+ 삭제$/ })).toHaveLength(DAILY_COUNT);
+  });
+});
+
+/**
+ * K1. '+ 링크 추가' 타일 — 홈에서는 **'현재 운영 중인 사이트' 섹션 하나에만** 선다.
+ *
+ * 폼이 무엇을 보내는지는 `components/card/QuickAddCard.test.tsx` 가 못박는다. 여기서 보는 것은
+ * 화면의 몫 — **어느 목록에 서는가**와 **비관리자에게는 렌더 자체가 없는가**다.
+ */
+describe('HomeView — 링크 추가 타일 (K1)', () => {
+  it('비관리자에게는 마크업 자체가 없다', () => {
+    // 늘 그려 두고 CSS 로 감추는 방식은 금지다(README 주의사항 7) — 응답에 실리지 않아야 한다.
+    setFavs(FAV_IDS);
+    const { container } = render(<HomeView data={DATA} isAdmin={false} />);
+
+    expect(screen.queryByRole('button', { name: '링크 추가' })).toBeNull();
+    expect(container.querySelector('[data-testid="quick-add"]')).toBeNull();
+  });
+
+  it('관리자에게는 운영 중 섹션 그리드의 **맨 앞** 칸에 선다', () => {
+    render(<HomeView data={DATA} isAdmin />);
+
+    const grid = body(OPERATING_CATEGORY_NAME);
+
+    expect(grid.firstElementChild).toBe(quickAddTile(OPERATING_CATEGORY_NAME));
+    // 카드는 한 장도 밀려나지 않는다 — 타일은 한 칸을 더할 뿐이다.
+    expect(cards(OPERATING_CATEGORY_NAME)).toHaveLength(
+      BOOKMARKS.filter((bookmark) => bookmark.category_id === OPERATING_ID).length,
+    );
+  });
+
+  it('파생 목록(즐겨찾기·매일)에는 두지 않는다', () => {
+    // 즐겨찾기는 이 브라우저의 localStorage 에서, '매일'은 is_pinned 에서 나온 목록이다 —
+    // 거기서 만든 링크는 어느 분류에 들어가는지도, 왜 그 자리에 안 보이는지도 설명할 수 없다.
+    setFavs(FAV_IDS);
+    render(<HomeView data={DATA} isAdmin />);
+
+    expect(quickAddTile('내 즐겨찾기')).toBeNull();
+    expect(quickAddTile('매일 사용하는 사이트')).toBeNull();
+    expect(screen.getAllByRole('button', { name: '링크 추가' })).toHaveLength(1);
+  });
+
+  it('기본 분류는 그 섹션의 분류다 — 보고 있는 목록에 한 건 더 붙인다', () => {
+    render(<HomeView data={DATA} isAdmin />);
+
+    fireEvent.click(quickAddTile(OPERATING_CATEGORY_NAME)!);
+
+    expect(screen.getByRole('combobox', { name: '분류' })).toHaveValue(OPERATING_ID);
+  });
+
+  it('분류 상자에는 모든 분류가 온다 — 홈에서 어느 분류로든 넣을 수 있다', () => {
+    render(<HomeView data={DATA} isAdmin />);
+
+    fireEvent.click(quickAddTile(OPERATING_CATEGORY_NAME)!);
+
+    // 상위·하위를 가리지 않는다(둘 다 링크를 담는다). 시드의 분류 수와 같아야 한다.
+    expect(screen.getAllByRole('option')).toHaveLength(CATEGORIES.length);
+  });
+
+  it('운영 중 분류가 없어 섹션이 접히면 타일도 없다', () => {
+    // 홈에 실제 분류 목록이 하나도 없는 데이터다 — 그때는 분류 화면의 타일로 추가한다.
+    render(
+      <HomeView
+        data={{
+          categories: CATEGORIES.filter((category) => category.id !== OPERATING_ID),
+          bookmarks: DATA.bookmarks,
+        }}
+        isAdmin
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: '링크 추가' })).toBeNull();
   });
 });
 

@@ -6,8 +6,30 @@ import { EmptyBox } from '@/components/EmptyBox';
 import { LinkCard } from '@/components/LinkCard';
 import { DeleteConfirm } from '@/components/card/DeleteConfirm';
 import { InlineEdit } from '@/components/card/InlineEdit';
+import { QuickAddCard } from '@/components/card/QuickAddCard';
+import type { QuickAddCategory } from '@/components/card/quick-add-options';
 import { useCardHandlers } from '@/components/useCardHandlers';
 import type { BookmarkWithCount } from '@/lib/types';
+
+/**
+ * '+ 링크 추가' 타일(K1)에 필요한 것 — **이 목록이 진짜 분류 목록일 때만** 준다.
+ *
+ * 이 화면은 카테고리뿐 아니라 즐겨찾기(localStorage 파생)·매일(`is_pinned` 파생)도 그리는데,
+ * 그 둘에 '추가'는 의미가 어긋난다: 담는 일은 카드의 핀이 하고(즐겨찾기), 고정은 관리 화면의
+ * 몫이라(매일) 여기서 만든 링크는 그 목록에 나타나지도 않는다. 그래서 타일의 유무를
+ * `isAdmin` 하나로 정하지 않고 **호출부가 이 값을 주는가**로도 가른다 — 파생 목록을 그리는
+ * 화면(app/(public)/favorites·daily)은 주지 않는다.
+ */
+export type QuickAdd = {
+  /** 분류 선택 상자에 세울 목록 — 서버가 `toQuickAddOptions` 로 추려 내려보낸다. */
+  categories: readonly QuickAddCategory[];
+  /**
+   * '전체' 탭에서 열었을 때 미리 골라 둘 분류 = 이 화면의 상위 분류.
+   * 하위 탭을 고른 상태에서는 **그 하위**가 기본값이 된다(아래 렌더 참조) — 지금 보이는 목록에
+   * 한 건 더 붙이는 것이 가장 흔한 의도다.
+   */
+  defaultCategoryId: string;
+};
 
 /** 칩 하나 = 하위 분류 하나. 개수는 사이드바와 같은 값이어야 하므로 화면(서버)이 계산해 넘긴다. */
 export type SubTab = {
@@ -45,6 +67,13 @@ export type ListViewProps = {
    * 반대로 선택이다 — 거기서는 기본값 자체가 안전한 쪽(fail-closed)이고, 카드를 쓰는 자리가 많다.
    */
   isAdmin: boolean;
+  /**
+   * 관리자가 이 목록에서 곧바로 링크를 추가할 수 있게 한다 (K1). 위 `QuickAdd` 참조.
+   *
+   * **`isAdmin` 과 둘 다 참일 때에만** 타일이 렌더된다 — 이 값만으로 그리면 비로그인 응답에
+   * 관리자 전용 마크업이 실린다.
+   */
+  quickAdd?: QuickAdd;
 };
 
 /** 칩 — 12.5px, 패딩 6px 12px, 라운드 7px (DESIGN_SPEC 1장 "칩 6~7px" · 4장). */
@@ -97,6 +126,7 @@ export function ListView({
   initialSubId = null,
   emptyMessage,
   isAdmin,
+  quickAdd,
 }: ListViewProps) {
   // 핀 토글(D6)·카드 열기(F3)·한 번에 열기(G4)는 홈과 글자 하나까지 같은 배선이라 훅 하나가
   // 들고 있다. `useFavorites` 도 그 안에서 뷰당 한 번만 불린다(lib/favorites.ts 사용 규칙).
@@ -254,10 +284,27 @@ export function ListView({
         </span>
       </div>
 
+      {/* 목록이 비면 안내 박스만 남는다 — 타일도 함께 사라진다. 빈 분류에 링크를 넣는 길이
+          막히지는 않는다: 홈 타일의 분류 상자에서 어느 분류든 고를 수 있다(K1). 그 한 경우를
+          위해 빈 상태 화면(DESIGN_SPEC 4장)에 격자를 하나 더 세우지 않는다. */}
       {shown.length === 0 ? (
         <EmptyBox>{emptyMessage}</EmptyBox>
       ) : (
-        <CardGrid>
+        <CardGrid
+          /* '+ 링크 추가' 타일 (K1) — 카드보다 앞, 그리드 첫 칸이다.
+
+             기본 분류는 **지금 보고 있는 탭**이다: 하위 탭을 골랐으면 그 하위, '전체'면 화면의
+             상위 분류. 탭으로 좁혀 놓고 추가하면 방금 보던 목록에 그대로 한 장이 더 붙는다.
+             (`activeId` 는 탭 목록에 실제로 있는 id 만 통과한 값이라 없는 분류로 새지 않는다.) */
+          lead={
+            isAdmin && quickAdd !== undefined ? (
+              <QuickAddCard
+                categories={quickAdd.categories}
+                defaultCategoryId={activeId ?? quickAdd.defaultCategoryId}
+              />
+            ) : undefined
+          }
+        >
           {shown.map((bookmark) => {
             // 같은 판정을 플래그와 슬롯이 나눠 쓰므로 한 번만 계산한다 — 두 자리에 적어 두면
             // 한쪽만 고쳐져 '폼 없는 빈 카드'(LinkCard 의 isEditing JSDoc)가 만들어질 수 있다.

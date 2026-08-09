@@ -97,13 +97,17 @@ function shownTitles(container: HTMLElement): string[] {
   const grid = container.querySelector('.grid');
   if (grid === null) return [];
 
-  return [...grid.children].map((card) => {
-    const text = card.textContent ?? '';
-    const title = KNOWN_TITLES.find((known) => text.includes(known));
-    if (title === undefined) throw new Error(`알 수 없는 카드가 그려졌다: ${text}`);
+  // 관리자에게만 서는 '+ 링크 추가' 타일(K1)은 카드가 아니므로 뺀다 — 빼지 않으면 그 화면에서만
+  // "알 수 없는 카드" 로 터진다.
+  return [...grid.children]
+    .filter((cell) => cell.getAttribute('data-testid') !== 'quick-add')
+    .map((card) => {
+      const text = card.textContent ?? '';
+      const title = KNOWN_TITLES.find((known) => text.includes(known));
+      if (title === undefined) throw new Error(`알 수 없는 카드가 그려졌다: ${text}`);
 
-    return title;
-  });
+      return title;
+    });
 }
 
 /**
@@ -790,6 +794,83 @@ describe('ListView — 관리자 편집 노출 (J1)', () => {
 
     expect(edits()).toHaveLength(1);
     expect(deletes()).toHaveLength(1);
+  });
+});
+
+/**
+ * K1. '+ 링크 추가' 타일 — 이 화면은 **진짜 분류 목록일 때만** 타일을 세운다.
+ *
+ * 폼이 무엇을 보내는지는 `components/card/QuickAddCard.test.tsx` 가 못박는다. 여기서 보는 것은
+ * 화면의 몫 — **언제 서고 언제 서지 않는가**, 그리고 **기본 분류가 지금 보는 탭인가**다.
+ */
+describe('ListView — 링크 추가 타일 (K1)', () => {
+  const QUICK_ADD = {
+    categories: [
+      { id: 'top', name: 'AI 도구 모음', isSub: false },
+      { id: 'chat', name: '대화·검색', isSub: true },
+      { id: 'video', name: '영상', isSub: true },
+    ],
+    defaultCategoryId: 'top',
+  };
+
+  const tile = () => screen.queryByRole('button', { name: '링크 추가' });
+
+  it('관리자가 분류 목록을 보고 있으면 그리드 맨 앞 칸에 선다', () => {
+    const { container } = renderList({ isAdmin: true, quickAdd: QUICK_ADD });
+
+    expect(container.querySelector('.grid')?.firstElementChild).toBe(tile());
+  });
+
+  it('비관리자에게는 마크업 자체가 없다 — quickAdd 를 줘도 그리지 않는다', () => {
+    // 늘 그려 두고 감추는 방식은 금지다(README 주의사항 7). `isAdmin` 이 최종 관문이다.
+    const { container } = renderList({ isAdmin: false, quickAdd: QUICK_ADD });
+
+    expect(tile()).toBeNull();
+    expect(container.querySelector('[data-testid="quick-add"]')).toBeNull();
+  });
+
+  it('파생 목록(즐겨찾기·매일)에는 서지 않는다 — 화면이 quickAdd 를 주지 않는다', () => {
+    // 담는 일은 카드의 핀이 하고(즐겨찾기) 고정은 관리 화면의 몫이라(매일), 여기서 만든 링크는
+    // 그 목록에 나타나지도 않는다. 그래서 `isAdmin` 만으로는 타일이 서지 않는다.
+    renderList({ isAdmin: true });
+
+    expect(tile()).toBeNull();
+  });
+
+  it('기본 분류는 이 화면의 상위 분류다', () => {
+    renderList({ isAdmin: true, quickAdd: QUICK_ADD });
+
+    fireEvent.click(tile()!);
+
+    expect(screen.getByRole('combobox', { name: '분류' })).toHaveValue('top');
+  });
+
+  it('하위 탭을 고르면 기본 분류가 그 하위로 따라간다', () => {
+    // 좁혀 놓고 추가하면 방금 보던 목록에 그대로 한 장이 더 붙어야 한다.
+    renderList({ isAdmin: true, quickAdd: QUICK_ADD, subTabs: SUB_TABS });
+
+    fireEvent.click(chip('영상 1'));
+    fireEvent.click(tile()!);
+
+    expect(screen.getByRole('combobox', { name: '분류' })).toHaveValue('video');
+  });
+
+  it("'전체'로 되돌리면 기본 분류도 상위로 되돌아온다", () => {
+    renderList({ isAdmin: true, quickAdd: QUICK_ADD, subTabs: SUB_TABS });
+
+    fireEvent.click(chip('영상 1'));
+    fireEvent.click(chip('전체 4'));
+    fireEvent.click(tile()!);
+
+    expect(screen.getByRole('combobox', { name: '분류' })).toHaveValue('top');
+  });
+
+  it('목록이 비면 안내 박스만 남는다 — 타일도 함께 사라진다', () => {
+    // 빈 분류에 넣는 길이 막히지는 않는다: 홈 타일의 분류 상자에서 어느 분류든 고를 수 있다.
+    renderList({ isAdmin: true, quickAdd: QUICK_ADD, bookmarks: [] });
+
+    expect(screen.getByText('이 분류에 링크가 없습니다.')).toBeInTheDocument();
+    expect(tile()).toBeNull();
   });
 });
 

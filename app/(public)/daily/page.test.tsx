@@ -200,4 +200,15 @@ describe('매일 사용하는 사이트 — 관리자 편집 노출 (J1)', () =>
 
     expect(getAdminSession).toHaveBeenCalledTimes(1);
   });
+
+  it('관리자여도 링크 추가 타일은 서지 않는다 — 파생 목록이다 (K1)', async () => {
+    // 이 목록은 `is_pinned` 로 걸러 낸 결과다. 여기서 만든 링크는 고정되지 않아 이 화면에
+    // 나타나지도 않으므로 '추가'가 의미와 어긋난다(ListView 의 QuickAdd 계약).
+    vi.mocked(getAdminSession).mockResolvedValue(adminSession);
+
+    const { container } = await renderPage();
+
+    expect(screen.queryByRole('button', { name: '링크 추가' })).toBeNull();
+    expect(container.querySelector('[data-testid="quick-add"]')).toBeNull();
+  });
 });
