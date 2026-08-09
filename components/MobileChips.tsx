@@ -30,6 +30,13 @@ const ROW =
  *
  * 테두리는 선택 여부와 무관하게 `#ddd8d1` 고정이다(ListView 의 하위 탭 칩은 선택 시 테두리까지
  * 검게 바꾸지만, 그건 프로토타입 `aiTabs` 가 `bd` 를 따로 넘기기 때문이다 — 이 줄은 넘기지 않는다).
+ *
+ * **터치 타깃 30px 판정(O1 F-2)**: 칩 높이 30px 는 프로토타입 원문(65행)이라 그대로 둔다.
+ * 세로 여유는 줄 패딩 10px 가 보완한다 — 위아래로 빗나간 손가락이 닿는 곳은 다른 타깃이 아니라
+ * 빈 줄 여백이므로, 실효 행 높이는 약 50px 이고 오탭이 다른 화면으로 데려가지 않는다.
+ * WCAG 2.5.8(AA, 24×24)은 충족한다(높이 30px, 가장 짧은 '홈' 칩도 좌우 패딩 24px + 글자).
+ * 카드 액션 버튼(LinkCard)과 달리 여기서는 `py` 를 링크 히트 영역에 넣지 않는다 —
+ * 프로토타입 충실도가 먼저고, 위 이유로 실익도 크지 않다.
  */
 const CHIP =
   'flex h-[30px] items-center rounded-[8px] border border-border-strong px-[12px] text-[12.5px] font-semibold whitespace-nowrap';
