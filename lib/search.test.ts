@@ -3,12 +3,12 @@
 /** G1. ⌘K 검색 팔레트(2단계)가 쓰는 키워드 필터. */
 import { describe, expect, it } from 'vitest';
 
-import { SEARCH_RESULT_LIMIT, searchLinks } from '@/lib/search';
+import { MATCH_LABEL, SEARCH_RESULT_LIMIT, searchLinks } from '@/lib/search';
 import type { BookmarkWithCount, Category, SiteData } from '@/lib/types';
-import { BOOKMARKS, CATEGORIES } from '@/test/fixtures/seed';
+import { siteData } from '@/test/fixtures/seed';
 
 /** 실시드 — 프로토타입이 `data/links.json` 을 그대로 훑던 것과 같은 290건. */
-const REAL: SiteData = { categories: CATEGORIES, bookmarks: BOOKMARKS };
+const REAL: SiteData = siteData();
 
 function makeCategory(over: Partial<Category> & Pick<Category, 'id'>): Category {
   return { name: over.id, parent_id: null, sort_order: 0, ...over };
@@ -90,6 +90,14 @@ describe('필드별 매칭 — PRD P4 "이름·설명·태그·분류·주소 �
     expect(searchLinks('claude.ai', data)).toHaveLength(1);
     expect(searchLinks('https', data)).toEqual([]);
     expect(searchLinks('returnTo', data)).toEqual([]);
+  });
+
+  it('주소로 해석되지 않는 값은 hostOf 가 원문을 돌려주므로 경로까지 걸린다', () => {
+    // lib/url 의 계약이다(host 를 못 뽑으면 입력을 그대로 반환). 검색 결과가 링크마다
+    // 들쭉날쭉해지지만, 카드 하단에 적히는 문자열과 검색 대상이 늘 같다는 편이 낫다.
+    const data = site([makeBookmark({ id: 'a', url: 'chat.openai.com/c/abc123' })]);
+
+    expect(ids(searchLinks('abc123', data))).toEqual(['a']);
   });
 
   it('태그로 찾는다', () => {
@@ -272,6 +280,38 @@ describe('matchedIn 우선순위 — 이름 → 설명 → 주소 → 분류 →
     const data = site([makeBookmark({ id: 'a', title: 'Figma', description: '화면 시안' })]);
 
     expect(searchLinks('시안 figma', data)[0].matchedIn).toBe('title');
+  });
+});
+
+describe('MATCH_LABEL — 팔레트가 배지에 적는 말', () => {
+  it('네 가지는 프로토타입 997행 원문 그대로다', () => {
+    expect(MATCH_LABEL.title).toBe('이름');
+    expect(MATCH_LABEL.desc).toBe('설명');
+    expect(MATCH_LABEL.url).toBe('주소');
+    expect(MATCH_LABEL.category).toBe('분류');
+  });
+
+  it('G1 이 새로 뽑은 태그에도 이름표가 있다 — 모든 matchedIn 이 배지를 갖는다', () => {
+    expect(MATCH_LABEL.tag).toBe('태그');
+
+    const data = site(
+      [
+        makeBookmark({ id: 'a', title: 'zeta' }),
+        makeBookmark({ id: 'b', description: 'zeta' }),
+        makeBookmark({ id: 'c', url: 'https://zeta.example.com/' }),
+        makeBookmark({ id: 'd', category_id: 'top' }),
+        makeBookmark({ id: 'e', tags: ['zeta'] }),
+      ],
+      [makeCategory({ id: 'top', name: 'zeta 분류' })],
+    );
+
+    expect(searchLinks('zeta', data).map((m) => MATCH_LABEL[m.matchedIn])).toEqual([
+      '이름',
+      '설명',
+      '주소',
+      '분류',
+      '태그',
+    ]);
   });
 });
 

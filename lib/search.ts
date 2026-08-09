@@ -46,13 +46,24 @@ export type SearchMatch = {
 };
 
 /**
+ * 매칭 위치 배지에 적는 말. 넷(이름·설명·주소·분류)은 프로토타입 997행의 원문 그대로이고
+ * `tag` 만 G1 에서 새로 붙였다(프로토타입은 태그로 걸린 것을 '분류'라고 적었다).
+ *
+ * 팔레트(G2)가 문구를 직접 적지 않고 이걸 쓰게 해서, 배지 이름이 두 군데로 갈라지지 않게 한다.
+ */
+export const MATCH_LABEL: Record<MatchField, string> = {
+  title: '이름',
+  desc: '설명',
+  url: '주소',
+  category: '분류',
+  tag: '태그',
+};
+
+/**
  * 한 번에 돌려주는 최대 건수. 프로토타입 846행의 `.slice(0, 50)` 이다.
  * 팔레트의 "N건" 표시도 이 자른 뒤의 길이를 쓴다(프로토타입 996행 `res.length`).
  */
 export const SEARCH_RESULT_LIMIT = 50;
-
-/** 배지 우선순위. 아래 `fieldsOf` 가 만드는 배열 순서와 반드시 같아야 한다. */
-const FIELD_ORDER: readonly MatchField[] = ['title', 'desc', 'url', 'category', 'tag'];
 
 /**
  * 링크가 속한 분류의 이름들. 하위 카테고리에 속하면 상위 이름까지 함께 담는다
@@ -70,16 +81,29 @@ function categoryNames(categoryId: string | null, byId: Map<string, Category>): 
   return parent === undefined ? category.name : `${parent.name} ${category.name}`;
 }
 
-/** 검색 대상 필드를 `FIELD_ORDER` 순서로, 전부 소문자로. */
+/**
+ * 검색 대상 필드 — **배열 순서가 곧 배지 우선순위다**(이름 → 설명 → 주소 → 분류 → 태그,
+ * 프로토타입 997행). 이름표와 값 뽑는 법을 한 자리에 묶어 둔 이유는 둘을 따로 선언하면
+ * 나중에 필드를 끼워 넣을 때 한쪽만 고쳐도 조용히 어긋나기 때문이다.
+ */
+const FIELDS: readonly {
+  name: MatchField;
+  of: (bookmark: BookmarkWithCount, byId: Map<string, Category>) => string;
+}[] = [
+  { name: 'title', of: (bookmark) => bookmark.title },
+  { name: 'desc', of: (bookmark) => bookmark.description ?? '' },
+  // 주소는 화면에 적히는 것과 같은 host 다 — 전체 URL 을 훑으면 'https'·'com' 이 전건을 끌고 온다.
+  // 다만 `hostOf` 는 주소로 해석되지 않으면 입력을 그대로 돌려주므로, 그런 링크는 경로까지 걸린다.
+  { name: 'url', of: (bookmark) => hostOf(bookmark.url) },
+  { name: 'category', of: (bookmark, byId) => categoryNames(bookmark.category_id, byId) },
+  { name: 'tag', of: (bookmark) => bookmark.tags.join(' ') },
+];
+
+/** 검색 대상 필드를 `FIELDS` 순서로, 전부 소문자로. */
 function fieldsOf(bookmark: BookmarkWithCount, byId: Map<string, Category>): string[] {
-  return [
-    bookmark.title,
-    bookmark.description ?? '',
-    // 주소는 화면에 적히는 것과 같은 host 다 — 전체 URL 을 훑으면 'https'·'com' 이 전건을 끌고 온다.
-    hostOf(bookmark.url),
-    categoryNames(bookmark.category_id, byId),
-    bookmark.tags.join(' '),
-  ].map((text) => text.toLowerCase());
+  // 유니코드 정규화(NFC)는 하지 않는다: 시드도 브라우저 IME 입력도 NFC 라 실측 차이가 없는데,
+  // 넣으면 타자마다 290건 × 5필드를 normalize 하게 된다. NFD 가 실제로 섞여 들어오면 그때 판단한다.
+  return FIELDS.map((field) => field.of(bookmark, byId).toLowerCase());
 }
 
 /**
@@ -108,7 +132,7 @@ export function searchLinks(q: string, data: SiteData): SearchMatch[] {
 
     // 위 every 가 통과했으므로 걸린 필드가 반드시 하나는 있다 — findIndex 는 -1 이 아니다.
     const first = fields.findIndex((field) => tokens.some((token) => field.includes(token)));
-    matches.push({ bookmark, matchedIn: FIELD_ORDER[first] });
+    matches.push({ bookmark, matchedIn: FIELDS[first].name });
 
     if (matches.length === SEARCH_RESULT_LIMIT) break;
   }
