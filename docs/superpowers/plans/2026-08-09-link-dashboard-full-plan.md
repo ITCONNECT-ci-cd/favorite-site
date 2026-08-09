@@ -6,7 +6,7 @@
 
 **Architecture:** Next.js App Router 서버 컴포넌트가 Supabase에서 전체 데이터(290건 규모)를 읽어 클라이언트 뷰에 넘기고, 쓰기는 전부 서버(서버 액션·라우트 핸들러)를 거친다. 카드 컴포넌트는 단 하나이며 모든 공개 화면이 공유한다. 개인 즐겨찾기는 브라우저 localStorage, 나머지 상태는 전부 DB.
 
-**Tech Stack:** Next.js 15(App Router) + TypeScript + Tailwind CSS v4 + Supabase(Postgres/Auth/RLS/Storage) + Pretendard(CDN) + Vercel 배포. 테스트: Vitest + React Testing Library.
+**Tech Stack:** Next.js **16**(App Router, Turbopack — A1에서 실측 16.3.0) + React 19 + TypeScript + Tailwind CSS v4 + Supabase(Postgres/Auth/RLS/Storage) + Pretendard(CDN) + Vercel 배포. 테스트: Vitest + React Testing Library. **Next 16 주의**: 라우트의 `params`/`searchParams`는 Promise(`await` 필요), `LayoutProps`/`PageProps` 전역 생성 타입 사용. 테스트·빌드는 반드시 PowerShell(대문자 드라이브)에서 실행 — Git Bash 소문자 경로는 vitest 오작동.
 
 ---
 
@@ -102,7 +102,7 @@ favorite_site/
 │ ├ 0001_init.sql           # 테이블·인덱스·뷰·RLS·트리거
 │ ├ 0002_stats.sql          # 통계용 SQL 함수 (4단계, K1 소유)
 │ └ 0003_cleanup.sql        # 정리 판정 SQL (4단계, M1 소유 — K1과 파일 분리)
-└ tests/                    # 소스와 나란히 *.test.ts(x)를 두는 것을 기본으로, 통합 테스트만 여기에
+└ test/                     # 소스와 나란히 *.test.ts(x)가 기본, 여기는 인프라·통합 테스트만 (A1에서 확정)
 ```
 
 ---
@@ -380,14 +380,14 @@ graph LR
 
 ### EPIC A: 프로젝트 기반
 
-- [ ] **A1. Next.js 스캐폴드 + 테스트 인프라** `M` — 의존: 없음 · 병렬: 시작점(모든 것의 루트)
+- [x] **A1. Next.js 스캐폴드 + 테스트 인프라** `M` — 의존: 없음 · 병렬: 시작점(모든 것의 루트) ✅ 2026-08-09 완료 (구현 eb5e30d + 스펙·품질 리뷰 통과)
   - 파일: 프로젝트 루트 전체, `vitest.config.ts`, `package.json`, `lib/types.ts`, `lib/constants.ts`
   - 내용: `npx create-next-app@latest . --typescript --tailwind --eslint --app --no-src-dir` (기존 docs/는 유지). Vitest + @testing-library/react + jsdom 설정. `npm test`, `npm run build` 스크립트 확인. **공유 계약 파일 생성**: `lib/types.ts`(§2.2 그대로), `lib/constants.ts`(§2.6 그대로) — 이후 타입·상수를 쓰는 모든 스토리의 선행물.
   - 완료 기준: 샘플 테스트 1개 통과, `npm run dev` 기동, `npm run build` 성공, types·constants 파일 존재.
 
 - [ ] **A2. 디자인 토큰·전역 스타일** `S` — 의존: A1 · 병렬: A3, B1, B3, E1, F1과 동시 가능
-  - 파일: `app/globals.css`, `app/layout.tsx`(폰트 링크)
-  - 내용: §2.5 토큰 전부를 `@theme`으로 정의. Pretendard CDN `<link>`, `tabular-nums`, antialiased, 본문 배경 `--color-surface`.
+  - 파일: `app/globals.css`, `app/layout.tsx`(폰트 링크), `README.md`, `public/*.svg`
+  - 내용: §2.5 토큰 전부를 `@theme`으로 정의. Pretendard CDN `<link>`, `tabular-nums`, antialiased, 본문 배경 `--color-surface`. **스캐폴드 잔재 정리**(A1 품질 리뷰 M-5): Geist 폰트 제거, metadata 제목·설명을 실제 값으로, `lang="ko"`, 보일러플레이트 svg·README 교체, globals.css 다크 모드 블록 제거(스펙은 라이트 전용).
   - 완료 기준: 데모 페이지에서 토큰 색·폰트 적용 확인(스크린샷), 커밋.
 
 - [ ] **A3. Vercel 배포 파이프라인** `S` — 의존: A1 · 병렬: A2, B1과 동시 가능
@@ -488,7 +488,7 @@ graph LR
 
 - [ ] **D3. 공용 목록 화면(ListView) + 카테고리 페이지** `M` — 의존: C2, C5, D1 · 병렬: D2와 동시 가능
   - 파일: `components/ListView.tsx`, `app/category/[id]/page.tsx`
-  - 내용: DESIGN_SPEC 4장 — 제목+개수+설명, 하위 탭 칩(`전체` + 하위별), **홈과 같은 카드 그리드**(행 목록 금지), 핀 노출, 빈 상태. 툴바(전체/선택 열기)와 체크는 **2단계 G4에서 활성** — 자리만 계약에 둔다. 존재하지 않는 id는 404.
+  - 내용: DESIGN_SPEC 4장 — 제목+개수+설명, 하위 탭 칩(`전체` + 하위별), **홈과 같은 카드 그리드**(행 목록 금지), 핀 노출, 빈 상태. 툴바(전체/선택 열기)와 체크는 **2단계 G4에서 활성** — 자리만 계약에 둔다. 존재하지 않는 id는 404. **Next 16: `params`는 Promise — `await` 필요.**
   - 완료 기준: 테스트 — 탭 필터링(하위 선택 시 해당 링크만), 상위 선택 시 하위 포함 전체.
 
 - [ ] **D4. 내 즐겨찾기·매일 페이지** `S` — 의존: D3, E1 · 병렬: D2와 동시 가능
@@ -687,4 +687,5 @@ graph LR
 
 - 2026-08-09: 계획 수립. D1~D4 결정 승인.
 - 2026-08-09: V1~V5 편차 전부 승인. 1단계 실행 시작 — 서브에이전트 방식(오케스트레이터: Fable 5, 스토리 구현 서브에이전트: Opus 5).
+- 2026-08-09: A1 완료(eb5e30d). 실측 스택 Next 16.3/React 19.2로 문서 갱신. 품질 리뷰 후속: `.gitignore`에 `!.env.example`, vitest.config `.mts` 리네임(fixup 커밋), 스캐폴드 잔재 정리는 A2로 흡수, 테스트 디렉터리는 `test/`로 확정.
 - 2026-08-09: 4개 관점 독립 검증(PRD 커버리지·디자인 커버리지·의존성 논리·데이터/보안) finding 30건 전부 반영 — 주요: `nulls not distinct` unique, 뷰 grant 명시, is_bulk 저장, sub 빈 문자열·비연속 그룹 시드 규칙, 0건 ↵→AI 트리거, 관리자 narrow, 공유 계약 파일 소유자 지정(A1), D6 신설, M1 파일 분리, bulk rate-limit 예외(V5). (이후 단계 게이트마다 여기에 기록)
