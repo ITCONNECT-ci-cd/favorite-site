@@ -140,10 +140,29 @@ export type CommandPaletteProps = {
  * 포커스 가둠(focus trap)은 두지 않았다. 열린 동안 포커스를 받는 요소가 입력·행·AI 버튼뿐이고
  * 그 전부가 패널 안에 있어, 가두는 장치보다 `esc`(G3)로 빠져나가는 길이 먼저다.
  */
-export function CommandPalette({ open, ...rest }: CommandPaletteProps) {
+export function CommandPalette({
+  open,
+  onClose,
+  data,
+  onOpenLink,
+  aiSlot,
+  onAiSearch,
+}: CommandPaletteProps) {
   // 닫히면 통째로 언마운트한다. 질의를 비우는 일(프로토타입 839행 closePalette)을 따로 하지
   // 않기 위해서다 — 상태가 패널과 함께 사라지므로 다음에 열릴 때 늘 빈 입력에서 시작한다.
-  return open ? <PalettePanel {...rest} /> : null;
+  if (!open) return null;
+
+  // 스프레드로 넘기지 않는다 — 소비자가 실수로 얹은 속성이 조용히 패널까지 흘러가는 대신
+  // 여기서 타입 오류로 걸리고, G3·N3 이 prop 을 더할 때 이 줄이 반드시 함께 바뀐다.
+  return (
+    <PalettePanel
+      onClose={onClose}
+      data={data}
+      onOpenLink={onOpenLink}
+      aiSlot={aiSlot}
+      onAiSearch={onAiSearch}
+    />
+  );
 }
 
 /** 열려 있는 동안의 팔레트. 마운트 = 열림이라 상태 초기화가 곧 열기 동작이다. */
@@ -188,7 +207,10 @@ function PalettePanel({
 
       <div role="dialog" aria-modal="true" aria-label="검색" className={PANEL}>
         {/* 입력 줄 58px */}
-        <div className="flex h-[58px] flex-none items-center gap-[12px] border-b border-[#e7e3dc] px-[18px]">
+        <div
+          data-testid="palette-input-row"
+          className="flex h-[58px] flex-none items-center gap-[12px] border-b border-[#e7e3dc] px-[18px]"
+        >
           <span
             aria-hidden="true"
             className="size-[14px] flex-none rounded-full border-[1.5px] border-[#5a5651]"
@@ -206,13 +228,20 @@ function PalettePanel({
             // 주지 않는 반면, 스펙 5장·프로토타입 어디에도 없는 테두리를 58px 줄 안에 그린다.
             className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[16.5px] text-ink focus-visible:outline-none"
           />
-          <span className="flex-none text-[11px] text-faint">
+          {/* 결과 수는 타자마다 바뀌는데 화면 반대쪽 끝이라 눈이 따라가지 못한다.
+              Toast 와 같은 처리로 스크린리더에 조용히 읽어 준다(polite — 타자를 끊지 않는다). */}
+          <span
+            role="status"
+            aria-live="polite"
+            data-testid="palette-count"
+            className="flex-none text-[11px] text-faint"
+          >
             {trimmed === '' ? '' : `${results.length}건`}
           </span>
         </div>
 
         {/* 결과 목록 — 패널에서 유일하게 스크롤하는 영역 */}
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div data-testid="palette-scroll" className="min-h-0 flex-1 overflow-y-auto">
           {results.map((match, index) => (
             <ResultRow
               key={match.bookmark.id}
@@ -246,7 +275,10 @@ function PalettePanel({
         </div>
 
         {/* 하단 바 48px */}
-        <div className="flex h-[48px] flex-none items-center gap-[18px] border-t border-[#eeece8] bg-page px-[18px]">
+        <div
+          data-testid="palette-footer"
+          className="flex h-[48px] flex-none items-center gap-[18px] border-t border-[#eeece8] bg-page px-[18px]"
+        >
           <span className="text-[10.5px] text-desc">↑↓ 이동</span>
           <span className="text-[10.5px] text-desc">↵ 열기</span>
           <span className="text-[10.5px] text-desc">esc 닫기</span>
@@ -315,7 +347,13 @@ function ResultRow({
         {clicks > 0 ? `${clicks}회` : '·'}
       </span>
 
-      <span className="w-[44px] flex-none text-right text-[10px] text-fainter">
+      {/* 매칭 위치는 "왜 이게 걸렸나"를 눈으로 훑게 해 주는 표시다. 행의 접근 이름에 섞이면
+          링크마다 "… 3회 설명" 같은 꼬리가 붙어 이름과 주소를 가리므로 트리에서 감춘다.
+          같은 정보가 이미 이름·설명·주소·분류 칸에 글자로 다 들어 있다. */}
+      <span
+        aria-hidden="true"
+        className="w-[44px] flex-none text-right text-[10px] text-fainter"
+      >
         {MATCH_LABEL[matchedIn]}
       </span>
 

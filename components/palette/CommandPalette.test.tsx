@@ -51,11 +51,16 @@ const panel = () => screen.getByRole('dialog');
 const input = () => screen.getByRole('textbox');
 /** 결과 행과 고정 링크 행은 둘 다 앵커다. 둘은 동시에 보이지 않으므로 섞이지 않는다. */
 const rows = () => screen.getAllByRole('link');
-/** 입력 줄 우측 "N건" — 입력 바로 다음 형제다. */
-const countLabel = () => input().nextElementSibling as HTMLElement;
-const inputRow = () => panel().children[0];
-const scrollArea = () => panel().children[1];
-const footer = () => panel().children[2];
+/**
+ * 패널의 세 영역은 testid 로 잡는다 — `panel().children[n]` 은 G3·N3 이 영역을 하나
+ * 끼워 넣는 순간 조용히 다른 것을 가리킨다. 반면 행 안쪽 칸 순서 단언은 그대로 둔다:
+ * 그 순서 자체가 DESIGN_SPEC 5장의 나열 순서를 인코딩한 것이라 바뀌면 깨져야 맞다.
+ */
+const inputRow = () => screen.getByTestId('palette-input-row');
+const scrollArea = () => screen.getByTestId('palette-scroll');
+const footer = () => screen.getByTestId('palette-footer');
+/** 입력 줄 우측 "N건" — 타자마다 바뀌므로 살아 있는 영역(role=status)이다. */
+const countLabel = () => screen.getByRole('status');
 
 function type(text: string) {
   fireEvent.change(input(), { target: { value: text } });
@@ -279,6 +284,18 @@ describe('매칭 위치 배지 5종', () => {
 
     expect(badges).toEqual(['이름', '설명', '주소', '분류', '태그']);
   });
+
+  it('배지 칸은 접근성 트리에서 감춘다 — 행 이름이 "… 3회 설명" 으로 늘어지지 않게', () => {
+    renderPalette({ data: BADGES });
+    type('zed');
+
+    for (const row of rows()) {
+      // 눈으로는 그대로 보이고(글자가 남아 있다) 이름 계산에서만 빠진다.
+      const badge = row.children[row.children.length - 2];
+      expect(badge).not.toBeEmptyDOMElement();
+      expect(badge).toHaveAttribute('aria-hidden', 'true');
+    }
+  });
 });
 
 describe('선택 행 표시 (이동은 G3)', () => {
@@ -432,6 +449,15 @@ describe('수치 (DESIGN_SPEC 5장)', () => {
     expect(input()).toHaveClass('flex-1', 'min-w-0', 'text-[16.5px]', 'text-ink', 'bg-transparent');
     expect(input()).toHaveAttribute('placeholder', '무엇을 찾나요');
     expect(countLabel()).toHaveClass('flex-none', 'text-[11px]', 'text-faint');
+    // 세 칸의 순서는 스펙 문장("원형 아이콘 + 입력 + 우측 결과 수") 그대로다.
+    expect([...inputRow().children]).toEqual([inputRow().firstElementChild, input(), countLabel()]);
+  });
+
+  it('결과 수는 살아 있는 영역이라 스크린리더가 타자 사이에 읽어 준다', () => {
+    renderPalette();
+    type('문서');
+
+    expect(countLabel()).toHaveAttribute('aria-live', 'polite');
   });
 
   it('결과 목록만 스크롤한다 (입력 줄·하단 바는 고정)', () => {
