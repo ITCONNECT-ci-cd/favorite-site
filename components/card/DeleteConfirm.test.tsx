@@ -46,6 +46,8 @@ const BOOKMARK: BookmarkWithCount = {
   tags: [],
   favicon_url: null,
   is_pinned: false,
+  is_favorite: false,
+  fav_order: 0,
   sort_order: 0,
   created_at: '2024-01-01T00:00:00.000Z',
   click_count: 3,

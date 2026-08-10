@@ -30,7 +30,8 @@ const CATEGORY_COLUMNS = 'id, name, parent_id, sort_order';
  * `updated_at` 은 화면이 쓰지 않으므로 일부러 뺐다.
  */
 const BOOKMARK_COLUMNS =
-  'id, category_id, title, url, description, tags, favicon_url, is_pinned, sort_order, created_at';
+  'id, category_id, title, url, description, tags, favicon_url, is_pinned, sort_order, created_at, ' +
+  'is_favorite, fav_order';
 
 /** `bookmark_click_counts` 뷰에서 읽는 컬럼 — `ClickCountRow` 와 1:1 로 맞춘다. */
 const CLICK_COUNT_COLUMNS = 'bookmark_id, click_count';

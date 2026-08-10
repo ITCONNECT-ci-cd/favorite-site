@@ -235,8 +235,8 @@ describe('buildSeed — 북마크 생성', () => {
     const { bookmarks } = buildSeed(RAW, NO_ICONS);
     const keys = Object.keys(bookmarks[0]).sort();
     expect(keys).toEqual([
-      'category_id', 'created_at', 'description', 'favicon_url', 'iconFile', 'id',
-      'is_pinned', 'legacyId', 'sort_order', 'tags', 'title', 'url',
+      'category_id', 'created_at', 'description', 'fav_order', 'favicon_url', 'iconFile', 'id',
+      'is_favorite', 'is_pinned', 'legacyId', 'sort_order', 'tags', 'title', 'url',
     ]);
   });
 });
@@ -276,8 +276,8 @@ describe('toBookmarkRow', () => {
     const row = toBookmarkRow(seed);
 
     expect(Object.keys(row).sort()).toEqual([
-      'category_id', 'created_at', 'description', 'favicon_url', 'id',
-      'is_pinned', 'sort_order', 'tags', 'title', 'url',
+      'category_id', 'created_at', 'description', 'fav_order', 'favicon_url', 'id',
+      'is_favorite', 'is_pinned', 'sort_order', 'tags', 'title', 'url',
     ]);
     expect('iconFile' in row).toBe(false);
     expect('legacyId' in row).toBe(false);
@@ -292,6 +292,8 @@ describe('toBookmarkRow', () => {
       tags: seed.tags,
       favicon_url: seed.favicon_url,
       is_pinned: seed.is_pinned,
+      is_favorite: seed.is_favorite,
+      fav_order: seed.fav_order,
       sort_order: seed.sort_order,
       created_at: seed.created_at,
     };
