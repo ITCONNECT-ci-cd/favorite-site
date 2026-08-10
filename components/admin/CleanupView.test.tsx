@@ -56,6 +56,13 @@ const ABANDONED: AbandonedBookmark[] = [
   ab('s2', 'https://stale.test/two', '방치 둘'),
 ];
 
+/** 방치 N건 — 쪽 넘김이 붙는 길이를 만든다(한 쪽 20개는 CleanupSelection 이 정한다). */
+function manyAbandoned(count: number): AbandonedBookmark[] {
+  return Array.from({ length: count }, (_, index) =>
+    ab(`p${index + 1}`, `https://stale.test/${index + 1}`, `방치 ${index + 1}`),
+  );
+}
+
 function renderView(overrides: Partial<Parameters<typeof CleanupView>[0]> = {}) {
   return render(
     <CleanupView
@@ -186,6 +193,50 @@ describe('CleanupView — ③ 오래 손대지 않은 링크', () => {
 
     expect(within(staleRegion()).queryByRole('listitem')).not.toBeInTheDocument();
     expect(within(staleRegion()).getByText('오래 손대지 않은 링크가 없습니다.')).toBeInTheDocument();
+  });
+
+  /**
+   * 목록은 20개씩 끊어 그리지만(CleanupSelection 의 쪽 넘김) 부제가 세는 것은 **총 건수**다 —
+   * 기본 기준에서 211건이 쌓였다는 사실이 맥락이지, 지금 쪽의 20이 맥락이 아니다.
+   */
+  it('부제는 지금 쪽이 아니라 총 건수를 센다 — 20줄만 그려도 21개라고 말한다', () => {
+    renderView({ abandoned: manyAbandoned(21) });
+
+    expect(
+      within(staleRegion()).getByText('21개 · 최근 180일 동안 클릭 0회 + 등록한 지도 180일 지남'),
+    ).toBeInTheDocument();
+    expect(within(staleRegion()).getAllByRole('listitem')).toHaveLength(20);
+  });
+
+  /**
+   * 기준 탭은 rpc 를 다시 쳐서 목록을 통째로 갈아 끼운다(위 파일 JSDoc) — 다른 기준의 목록은
+   * 다른 목록이라, 앞 기준에서 보던 쪽 번호를 이어받을 자리가 없다. `key={retentionDays}` 가 그
+   * 리셋을 진다(CleanupView 의 해당 주석 — 지우면 이 테스트가 먼저 깨진다).
+   */
+  it('기준 탭이 바뀌면 방치 목록은 1쪽부터 다시 시작한다', () => {
+    const many = manyAbandoned(21);
+    const { rerender } = render(
+      <CleanupView
+        retentionDays={180}
+        duplicateUrlGroups={DUP}
+        domainGroups={DOMAIN}
+        abandoned={many}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '오래 손대지 않은 링크 다음 쪽' }));
+    expect(within(staleRegion()).getByText('2 / 2 쪽')).toBeInTheDocument();
+
+    rerender(
+      <CleanupView
+        retentionDays={365}
+        duplicateUrlGroups={DUP}
+        domainGroups={DOMAIN}
+        abandoned={many}
+      />,
+    );
+
+    expect(within(staleRegion()).getByText('1 / 2 쪽')).toBeInTheDocument();
   });
 
   /**

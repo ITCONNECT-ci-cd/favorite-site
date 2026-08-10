@@ -91,6 +91,8 @@ const CHECKBOX = 'h-[13px] w-[13px] flex-none cursor-pointer accent-ink disabled
 const BAR = 'flex flex-wrap items-center gap-x-[10px] gap-y-[6px] bg-toolbar px-[16px] py-[10px]';
 /** 몇 개 골랐는지. **포커스를 받을 수 있는 것은 의도다** — 아래 `BulkBar` 의 포커스 주석 참조. */
 const STATUS = 'min-w-0 flex-1 text-[11.5px] text-desc outline-none';
+/** 쪽 위치 표시 — 바로 위와 같은 활자다(포커스를 받지 않으므로 `outline-none` 은 빠진다). */
+const PAGE_POSITION = 'min-w-0 flex-1 text-[11.5px] text-desc';
 
 /** 버튼 몸통 — 삭제 확인(components/card/DeleteConfirm.tsx)의 26px 알약과 같은 치수다. */
 const BUTTON =
@@ -107,6 +109,16 @@ const PLAIN = `${BUTTON} border border-border-strong bg-card`;
  * 와 같은 이유) — 두 곳에 숫자를 따로 적으면 값을 바꿀 때 테스트만 조용히 통과한다.
  */
 export const CONFIRM_ARM_MS = 300;
+
+/**
+ * ③ 방치 목록을 한 쪽에 몇 줄까지 그리는가. 기본 기준(180일)에서 **211건이 한꺼번에 서던** 화면을
+ * 자르기 위한 값이다(사용자 요구: "20개까지 보이게 하고 페이지네이션 처리… 너무 길어").
+ * 시드가 원래 등록일을 보존했고 클릭 이력이 거의 없어, 미고정 링크 대부분이 방치로 잡힌다.
+ *
+ * 테스트가 이 값을 그대로 흘려보내므로 export 한다(위 `CONFIRM_ARM_MS` 와 같은 이유) — 두 곳에
+ * 숫자를 따로 적으면 값을 바꿀 때 테스트만 조용히 통과한다.
+ */
+export const LINKS_PER_PAGE = 20;
 
 /** 매 렌더 새 Set 을 만들지 않기 위한 빈 선택. */
 const NOTHING: ReadonlySet<string> = new Set();
@@ -216,7 +228,8 @@ export function CleanupGroupList({
 
 /**
  * ③ — 평면 목록(오래 손대지 않은 링크). 그룹이 없으므로 접을 것도 없고, 대신 **구역 전체 선택**을
- * 둔다: 여기 있는 줄은 전부 화면에 보이므로 한 번에 골라도 무엇을 고르는지 보인다.
+ * 둔다: 그려 놓은 줄은 전부 화면에 보이므로(쪽으로 끊은 뒤에도 그렇다 — 아래) 한 번에 골라도
+ * 무엇을 고르는지 보인다.
  *
  * ①②에는 구역 전체 선택을 두지 않는다 — 여러 그룹을, 그것도 **접힌 채로** 통째로 고르게 되어
  * 화면에 보이지 않는 선택이 만들어진다.
@@ -225,21 +238,117 @@ export function CleanupGroupList({
  * 그룹 전체 선택 한 번이 곧 "그 주소를 통째로 없앤다"이고, 그 길은 이미 열려 있으며 막지 않는다 —
  * 그 선택은 그룹이 함께 펴지면서 눈에 드러나고(`toggleOpen(group.key, true)`) 확인을 한 번 더
  * 거친다. 여기서 막는 것은 **보이지 않는 것을 고르는 일**이지 전부 고르는 일이 아니다.
+ *
+ * ## 쪽 넘김 — 왜 여기서 자르고, 왜 URL 이 아닌가
+ *
+ * 기본 기준(180일)에서 이 목록은 **211건**이 한꺼번에 섰다. 그래서 `LINKS_PER_PAGE` 만큼만 그리고
+ * 앞뒤로 넘긴다. 자르는 자리가 서버가 아니라 여기인 것은 기준 탭과 사정이 다르기 때문이다:
+ * 기준 탭이 URL(`?days=`)인 이유는 기준일마다 `cleanup_abandoned` rpc 를 **다시 쳐야** 해서지만
+ * (CleanupView JSDoc), 쪽 넘김은 이미 받아 둔 배열을 자르는 일이라 서버에 물을 것이 없다.
+ * 통계 화면의 기간 탭이 같은 이유로 `useState` 를 쓴다(StatsView "왜 서버 재조회가 없는가").
+ *
+ * 접힘(①②)과 나란히 두고 보면 처방이 갈린 이유가 보인다. 그룹 목록은 **머리 줄만 남겨** 길이를
+ * 지킬 수 있었지만 — 접힌 줄에도 이름·미리보기·건수가 남아 무엇을 열지 고를 수 있다 — 평면 목록에는
+ * 접을 머리가 없다. 줄 자체를 덜 그리는 것 말고는 길이를 줄일 방법이 없어서 쪽으로 끊는다.
+ *
+ * ## 고르는 단위도 쪽이다
+ *
+ * `useCleanupSelection` 의 "고른 것은 지금 화면에 있는 것뿐"이 여기서는 **이 쪽**을 뜻한다.
+ * 훅에 넘기는 id 도, 구역 전체 선택이 고르는 id 도 현재 쪽의 것뿐이라 "선택한 N개 삭제"의 N 은
+ * 언제나 눈에 보이는 것만 센다. 쪽을 넘길 때 체크를 비우는 근거는 아래 `go()` 주석에 있다.
  */
 export function CleanupLinkList({ label, items }: { label: string; items: readonly CleanupItem[] }) {
-  const bulk = useCleanupSelection(items.map((item) => item.id));
+  /** 보고 있는 쪽(0부터). 요청한 값일 뿐이고, 실제로 그리는 쪽은 아래에서 범위로 물린 `current` 다. */
+  const [page, setPage] = useState(0);
+  /** 방금 누른 쪽 넘김 버튼 — 그 버튼이 잠기면 포커스를 반대쪽으로 넘기기 위해 기억해 둔다. */
+  const pressed = useRef<'prev' | 'next' | null>(null);
+  const prevRef = useRef<HTMLButtonElement>(null);
+  const nextRef = useRef<HTMLButtonElement>(null);
+
+  const pageCount = Math.max(1, Math.ceil(items.length / LINKS_PER_PAGE));
+  /**
+   * 실제로 그리는 쪽. `page` 를 그대로 쓰지 않고 **범위로 물린다**: 마지막 쪽에 있던 것을 전부
+   * 지우면 서버가 다시 그린 `items` 가 짧아지면서 그 쪽 번호가 사라지는데, 그대로 두면 빈 목록이
+   * 뜬다. 물리는 자리를 effect 가 아니라 렌더로 둔 것은 한 프레임 동안 빈 화면이 스치지 않게
+   * 하기 위해서다(`page` 는 뒤처진 채 남을 수 있으나, 아래 `go()` 가 언제나 `current` 에서
+   * 다음 쪽을 세므로 다음 클릭 한 번에 따라잡는다).
+   */
+  const current = Math.min(page, pageCount - 1);
+  const shown = items.slice(current * LINKS_PER_PAGE, (current + 1) * LINKS_PER_PAGE);
+  const bulk = useCleanupSelection(shown.map((item) => item.id));
+
+  useEffect(() => {
+    const from = pressed.current;
+    // 쪽이 저절로 물린 경우(삭제로 목록이 짧아졌다)는 아무도 버튼을 누르지 않았다 — 포커스는 그대로.
+    if (from === null) return;
+    pressed.current = null;
+
+    // 누른 버튼이 살아서 잠기지 않았으면 포커스도 거기 있는 것이 맞다.
+    const node = from === 'prev' ? prevRef.current : nextRef.current;
+    if (node !== null && node.isConnected && !node.disabled) return;
+
+    /* 끝 쪽에 닿아 방금 누른 버튼이 잠겼다. 브라우저는 잠긴 버튼에서 포커스를 떼어 문서 뿌리로
+       보내므로 그냥 두면 손이 허공에 남는다 — 이 저장소가 `BulkBar` 의 `restoreTrigger` ·
+       DeleteConfirm 에서 지켜 온 위생을 여기서도 지킨다. 갈 수 있는 방향은 반대쪽뿐이다. */
+    focusBack(current === 0 ? nextRef.current : prevRef.current);
+  }, [current]);
+
+  function go(to: number, from: 'prev' | 'next'): void {
+    pressed.current = from;
+    setPage(to);
+    /* 쪽을 넘기면 체크를 비운다. 안 비우면 `checked` 에 남은 이전 쪽 선택이 그 쪽으로 돌아왔을 때
+       되살아나, **고른 적 없다고 생각하는 것이 체크된 채로** 선다. 되돌릴 수 없는 삭제 화면에서
+       그것은 확인 단계를 무력화한다 — 이 화면이 같은 이유로 `CONFIRM_ARM_MS` 무장 지연을 두고
+       있다. "고른 것은 지금 화면에 있는 것뿐"(useCleanupSelection)을 쪽 단위로도 지키는 자리다. */
+    bulk.clear();
+  }
 
   if (items.length === 0) return null;
 
   return (
     <>
       <ul>
-        {items.map((item) => (
+        {shown.map((item) => (
           <LinkRow key={item.id} item={item} bulk={bulk} />
         ))}
       </ul>
 
-      <BulkBar label={label} bulk={bulk} selectAll={items.map((item) => item.id)} />
+      <BulkBar label={label} bulk={bulk} selectAll={shown.map((item) => item.id)} />
+
+      {/* 쪽이 하나뿐이면 줄 자체를 그리지 않는다 — 넘길 곳이 없는데 컨트롤만 서면 군더더기다. */}
+      {pageCount > 1 && (
+        <div className={`${BAR} border-t border-line`}>
+          {/* 쪽이 바뀐 것은 눈에만 보이므로 여기서 낭독한다. `role="status"` 를 쓰지 않는 것은 한
+              화면의 그 역할이 이미 알림(components/Toast.tsx)의 자리라서다 — 같은 역할이 둘이면
+              어느 쪽이 방금 말했는지 흐려진다. 목록 `aria-label` 을 갱신하는 길과 **둘 다** 하면
+              같은 것이 두 번 읽히므로, 낭독은 이 한 곳에서만 한다. */}
+          <p aria-live="polite" className={PAGE_POSITION}>
+            {current + 1} / {pageCount} 쪽
+          </p>
+          {/* 확인이 열려 있는 동안(그리고 그 왕복 중에도 — `locked` 은 `confirming` 이다) 쪽을
+              넘기지 못하게 잠근다. 넘어가면 화면이 물은 개수와 실제로 지우는 개수가 갈린다. */}
+          <button
+            ref={prevRef}
+            type="button"
+            aria-label={`${label} 이전 쪽`}
+            disabled={current === 0 || bulk.locked}
+            onClick={() => go(current - 1, 'prev')}
+            className={PLAIN}
+          >
+            이전
+          </button>
+          <button
+            ref={nextRef}
+            type="button"
+            aria-label={`${label} 다음 쪽`}
+            disabled={current === pageCount - 1 || bulk.locked}
+            onClick={() => go(current + 1, 'next')}
+            className={PLAIN}
+          >
+            다음
+          </button>
+        </div>
+      )}
     </>
   );
 }
@@ -318,6 +427,7 @@ function PickBox({
  * 체크 집합은 id 를 들고 있을 뿐이라, 다른 창이 링크를 지우면 이미 없는 id 가 집합에 남는다.
  * 그래서 세는 것도 보내는 것도 언제나 **`visibleIds` 로 거른 결과**다 — 화면에 없는 것이 개수에
  * 끼거나 삭제 요청에 실리지 않는다(LinkTable 의 "그리는 목록과 보내는 목록" 과 같은 위생).
+ * ③ 방치 목록은 쪽으로 끊어 그리므로 그 "지금 화면"이 곧 **현재 쪽**이다(CleanupLinkList).
  *
  * `confirming` 이 여기 있는 것은 **줄의 체크박스를 잠그기 위해서**다. 확인하는 동안 선택이 바뀌면
  * 화면이 물은 개수("선택한 3개를 삭제할까요")와 실제로 지우는 개수가 갈린다.
@@ -360,8 +470,10 @@ function useCleanupSelection(visibleIds: readonly string[]) {
     toggle,
     setMany,
     confirming,
-    /** 확인하는 동안에는 선택을 잠근다(위 JSDoc). */
+    /** 확인하는 동안에는 선택을 잠근다(위 JSDoc). ③의 쪽 넘김도 이 빗장을 나눠 진다. */
     locked: confirming,
+    /** 고른 것만 비운다 — 쪽을 넘길 때 쓴다(`CleanupLinkList` 의 `go()` 에 근거가 있다). */
+    clear: () => setChecked(NOTHING),
     ask: () => setConfirming(true),
     /** 취소 — 고른 것은 그대로 두고 확인만 닫는다. */
     close: () => setConfirming(false),
