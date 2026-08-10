@@ -12,6 +12,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "seed": "tsx scripts/seed.ts",
+    "verify:deploy": "tsx scripts/verify-deploy.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
