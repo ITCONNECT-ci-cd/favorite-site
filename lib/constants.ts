@@ -1,19 +1,32 @@
 export const OPERATING_CATEGORY_NAME = '현재 운영 중인 사이트';
 
 /**
- * 홈 섹션 제목 겸 전용 목록 화면의 제목. 셋 다 사용자에게 **글자 그대로 보이는** 문자열이고,
+ * 홈의 즐겨찾기를 세 묶음으로 나누는 기준이 되는 **상위 분류 이름 두 개**
+ * (2026-08-10 사용자 요청 — 나머지 상위는 전부 '업무용 서비스'로 떨어진다).
+ *
+ * 판정은 `lib/fav-groups.ts` 가 한다. 여기 값과 실제 분류 이름이 어긋나면 그 분류의 즐겨찾기가
+ * 조용히 '업무용 서비스'로 밀린다 — `OPERATING_CATEGORY_NAME` 과 같은 성질의 이름 결합이라
+ * **분류를 개명하면 이 상수도 함께 고쳐야 한다.**
+ */
+export const NEWS_CATEGORY_NAME = '뉴스·인사이트';
+export const AI_TOOLS_CATEGORY_NAME = 'AI 도구 모음';
+
+/**
+ * 홈 섹션 제목 겸 전용 목록 화면의 제목. 사용자에게 **글자 그대로 보이는** 문자열이고,
  * G4 부터는 '한 번에 열기' 토스트의 탭 그룹 명칭으로도 나가므로 한곳에서만 적는다 — 홈 섹션과
- * `/favorites`·`/daily` 가 서로 다른 이름으로 갈라지면 같은 목록이 화면마다 달리 불린다.
+ * `/favorites` 가 서로 다른 이름으로 갈라지면 같은 목록이 화면마다 달리 불린다.
  *
  * '현재 운영 중인 사이트'는 위 `OPERATING_CATEGORY_NAME` 이 겸한다(그 이름으로 카테고리를 찾는
  * 판정에도 쓰이므로 값이 하나여야 한다 — D1·D2).
  *
- * 사이드바·모바일 칩의 항목 이름은 여기 묶지 않는다. 프로토타입이 칩만 '매일 사용'으로 줄여
- * 적는 등 내비게이션은 자기 사정으로 다르게 부를 수 있다(components/MobileChips.tsx 주석).
+ * 사이드바·모바일 칩의 항목 이름은 여기 묶지 않는다. 내비게이션은 자기 사정으로 다르게 부를 수
+ * 있다(components/MobileChips.tsx 주석).
+ *
+ * ⓘ **`DAILY_TITLE`·`DAILY_PIN_MAX` 는 없어졌다** — '매일 사용하는 사이트'는 화면·경로·관리자
+ * 고정 토글까지 통째로 걷어냈다(2026-08-10 사용자 결정: 실제로 쓰지 않는 자리였다).
+ * `bookmarks.is_pinned` 컬럼과 이미 고정돼 있던 표시만 DB 에 남아 있어 되살릴 여지는 있다.
  */
 export const FAVORITES_TITLE = '내 즐겨찾기';
-export const DAILY_TITLE = '매일 사용하는 사이트';
-export const DAILY_PIN_MAX = 12;
 export const CLICK_COOLDOWN_MS = 30_000;
 export const CLICK_DAILY_CAP = 10;
 export const FAVS_KEY = 'linkdash:favs';        // string[] (bookmark id)

@@ -37,13 +37,12 @@ beforeEach(() => {
 });
 
 describe('MobileChips — 구성 (프로토타입 navChips)', () => {
-  it('빠른 접근 넷 + 나머지 상위 카테고리를 순서대로 놓는다', () => {
+  it('빠른 접근 셋 + 나머지 상위 카테고리를 순서대로 놓는다', () => {
     renderChips();
 
     expect(chips().map((link) => link.textContent)).toEqual([
       '홈',
       '내 즐겨찾기',
-      '매일 사용',
       '현재 운영 중인 사이트',
       'AI 도구 모음',
       '마케팅',
@@ -60,10 +59,9 @@ describe('MobileChips — 구성 (프로토타입 navChips)', () => {
   it('운영 중인 사이트를 빠른 접근 뒤로 올리고 분류 줄에서는 뺀다 — 사이드바와 같은 순서', () => {
     renderChips();
 
-    // 프로토타입의 그룹 순서(ORDER 상수)가 이 분류로 시작해 거기서도 네 번째로 찍힌다.
-    // 우리 시드에서는 맨 뒤라, 거르지 않으면 프로토타입 화면과도 사이드바와도 어긋난다.
-    expect(chips()).toHaveLength(13);
-    expect(chips()[3]).toHaveTextContent('현재 운영 중인 사이트');
+    // 우리 시드에서는 맨 뒤라, 거르지 않으면 사이드바와 어긋난다. 빠른 접근 둘 바로 뒤가 자리다.
+    expect(chips()).toHaveLength(12);
+    expect(chips()[2]).toHaveTextContent('현재 운영 중인 사이트');
     expect(chips().filter((c) => c.textContent === '현재 운영 중인 사이트')).toHaveLength(1);
   });
 
@@ -73,7 +71,6 @@ describe('MobileChips — 구성 (프로토타입 navChips)', () => {
     expect(chips().map((link) => link.textContent)).toEqual([
       '홈',
       '내 즐겨찾기',
-      '매일 사용',
       'AI 도구 모음',
       '마케팅',
       '웹 도구',
@@ -107,7 +104,6 @@ describe('MobileChips — 구성 (프로토타입 navChips)', () => {
 
     expect(chip('홈')).toHaveAttribute('href', '/');
     expect(chip('내 즐겨찾기')).toHaveAttribute('href', '/favorites');
-    expect(chip('매일 사용')).toHaveAttribute('href', '/daily');
     expect(chip('AI 도구 모음')).toHaveAttribute('href', '/category/ai');
     expect(chip('현재 운영 중인 사이트')).toHaveAttribute('href', '/category/op');
   });
@@ -184,7 +180,6 @@ describe('MobileChips ↔ Sidebar 교차 계약', () => {
           categories={CATEGORIES}
           counts={{}}
           totalCount={290}
-          dailyCount={12}
           favCount={3}
           operatingCategoryId="op"
         />
@@ -197,7 +192,7 @@ describe('MobileChips ↔ Sidebar 교차 계약', () => {
         .map((link) => link.getAttribute('href'));
 
     // 길이도 함께 못박는다 — 양쪽이 똑같이 비어 버린 경우를 통과시키지 않기 위해서다.
-    expect(hrefsIn('바로 가기')).toHaveLength(13);
+    expect(hrefsIn('바로 가기')).toHaveLength(12);
     expect(hrefsIn('바로 가기')).toEqual(hrefsIn('사이드바'));
   });
 });

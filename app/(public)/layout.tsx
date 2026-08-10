@@ -95,7 +95,7 @@ function ShellUnavailable() {
  * 공개 화면의 공통 셸 — DESIGN_SPEC 2장.
  *
  * **`(public)` 은 라우트 그룹이라 URL 에 나타나지 않는다** — 이 레이아웃이 감싸는 화면의
- * 주소는 `/`·`/favorites`·`/daily`·`/category/[id]` 그대로다. 셸이 여기 있는 이유는
+ * 주소는 `/`·`/favorites`·`/category/[id]` 그대로다. 셸이 여기 있는 이유는
  * 관리 라우트(`app/admin/*`)를 이 그룹 **밖**에 두기 위해서다. 루트 레이아웃이 셸을 들고
  * 있던 시절에는 로그인 화면까지 공개 사이드바 안에 갇혔다(H2 라우트 그룹 분리).
  * 그러니 이 파일을 다시 `app/layout.tsx` 로 올리지 마라.
@@ -175,9 +175,8 @@ export default async function PublicLayout({ children }: LayoutProps<"/">) {
    */
   const isAdmin = (await sessionPromise) !== null;
 
-  /** 셸이 내려보내는 값 넷 — 사이드바·헤더가 쓰는 숫자다. */
+  /** 셸이 내려보내는 값 셋 — 사이드바·헤더가 쓰는 숫자다. */
   const totalCount = bookmarks.length;
-  const dailyCount = bookmarks.filter((bookmark) => bookmark.is_pinned).length;
   const counts = rollupCounts(categories, bookmarks);
   const operatingCategoryId = findOperatingCategoryId(categories);
 
@@ -196,7 +195,6 @@ export default async function PublicLayout({ children }: LayoutProps<"/">) {
           categories={categories}
           counts={counts}
           totalCount={totalCount}
-          dailyCount={dailyCount}
           operatingCategoryId={operatingCategoryId}
         />
       </aside>

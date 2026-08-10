@@ -31,7 +31,7 @@ export const metadata: Metadata = {
  * 가 화면을 꽉 채운 중앙 정렬)과도 어긋난다.
  *
  * 그래서 공개 셸은 `app/(public)/layout.tsx` 로 내려갔다. `(public)` 은 **라우트 그룹**이라
- * URL 에 나타나지 않는다 — `/`·`/favorites`·`/daily`·`/category/[id]` 주소는 그대로다.
+ * URL 에 나타나지 않는다 — `/`·`/favorites`·`/category/[id]` 주소는 그대로다.
  * 관리 라우트(`app/admin/*`)는 그 그룹 밖에 있어 공개 셸을 상속하지 않는다.
  *
  * **여기에 데이터 조회를 다시 들이지 마라.** 조회가 없어야 이 레이아웃이 실패할 일이 없고,

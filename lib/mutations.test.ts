@@ -5,7 +5,6 @@ import { readFileSync } from 'node:fs';
 import { revalidatePath } from 'next/cache';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { DAILY_PIN_MAX } from '@/lib/constants';
 import {
   createBookmark,
   createCategory,
@@ -18,7 +17,6 @@ import {
   renameSubCategory,
   reorderBookmarks,
   reorderCategories,
-  togglePin,
   updateBookmark,
   type ActionResult,
   type DbError,
@@ -36,7 +34,6 @@ vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 // `process.cwd()` 가 아니라 이 파일 기준으로 읽는다 — Windows 에서 cwd 의 드라이브 문자 대소문자가
 // 실행 방식마다 달라져(`e:\` vs `E:\`) 경로 조립이 어긋난 이력이 있다. import.meta.url 은 흔들리지 않는다.
 const source = readFileSync(new URL('./mutations.ts', import.meta.url), 'utf8');
-const initSql = readFileSync(new URL('../supabase/migrations/0001_init.sql', import.meta.url), 'utf8');
 
 type QueryResult = { data: unknown; error: DbError | null };
 /** fetch 자체가 거부되는 상황(네트워크 단절 등) — 결과가 아니라 예외로 돌아온다. */
@@ -148,7 +145,6 @@ const ALL_ACTIONS: Record<string, () => Promise<ActionResult>> = {
   deleteBookmark: () => deleteBookmark('bm-1'),
   deleteBookmarks: () => deleteBookmarks(['bm-1', 'bm-2']),
   reorderBookmarks: () => reorderBookmarks(['bm-1', 'bm-2']),
-  togglePin: () => togglePin('bm-1'),
 };
 
 const ACTION_ENTRIES = Object.entries(ALL_ACTIONS);
@@ -162,11 +158,11 @@ beforeEach(() => {
 // ───────────────────────────────────────────────────────────── 계약 · 구조
 
 describe('모듈 계약', () => {
-  it('내보내는 액션 이름은 전수 테스트 목록과 정확히 같다 (14번째를 추가하면 여기서 걸린다)', async () => {
+  it('내보내는 액션 이름은 전수 테스트 목록과 정확히 같다 (13번째를 추가하면 여기서 걸린다)', async () => {
     const actions = await import('@/lib/mutations');
 
     expect(Object.keys(actions).sort()).toEqual(Object.keys(ALL_ACTIONS).sort());
-    expect(ACTION_ENTRIES).toHaveLength(13);
+    expect(ACTION_ENTRIES).toHaveLength(12);
   });
 
   it("첫 줄이 'use server' 다 — 이게 빠지면 그냥 서버 함수가 되어 화면에서 부를 수 없다", () => {
@@ -187,12 +183,6 @@ describe('모듈 계약', () => {
     expect(source).not.toMatch(/createAdminSupabaseClient\s*\(/);
   });
 
-  it('고정 상한 문구의 숫자는 DB 트리거와 같다 — 마이그레이션 SQL 을 직접 대조한다', () => {
-    // 상수만 다시 적으면(`expect(DAILY_PIN_MAX).toBe(12)`) 그건 상수의 복사본일 뿐이라
-    // DB 트리거가 15로 바뀌어도 초록불이 유지된다. 진짜 계약 상대인 SQL 을 읽는다.
-    expect(initSql).toContain(`>= ${DAILY_PIN_MAX}`);
-    expect(initSql).toContain(`PIN_LIMIT: 매일 고정은 최대 ${DAILY_PIN_MAX}개입니다`);
-  });
 });
 
 // ───────────────────────────────────────────────────────────── 인증 관문
@@ -213,7 +203,7 @@ describe('인증 관문 — getAdminSession 이 null 이면 아무것도 하지 
     expect(revalidatePath).not.toHaveBeenCalled();
   });
 
-  it('거부 사유를 세분화하지 않는다 — 13개 액션이 모두 같은 문구다', async () => {
+  it('거부 사유를 세분화하지 않는다 — 12개 액션이 모두 같은 문구다', async () => {
     signedOut();
     const messages = new Set<string>();
     for (const [, run] of ACTION_ENTRIES) {
@@ -263,7 +253,6 @@ const HOSTILE: [string, () => Promise<ActionResult>][] = [
   ['reorderCategories("bm-1")', () => reorderCategories('bm-1' as never)],
   ['reorderCategories([7])', () => reorderCategories([7] as never)],
   ['reorderBookmarks({ 0: "a" })', () => reorderBookmarks({ 0: 'a' } as never)],
-  ['togglePin([])', () => togglePin([] as never)],
 ];
 
 describe('적대적 페이로드 — 타입을 무시한 입력이 DB 에 닿지 않는다', () => {
@@ -770,26 +759,10 @@ describe('createBookmark', () => {
         description: null,
         favicon_url: null,
         sort_order: 0,
-        // 안 주면 고정은 꺼진 채로 들어간다 — 홈 '매일' 섹션 타일만 참을 준다.
+        // '매일 고정'은 없어졌지만 컬럼은 남아 있어 늘 false 를 실어 보낸다(NewBookmark 주석).
         is_pinned: false,
       },
     ]);
-  });
-
-  it('pinned 를 주면 만들면서 매일 고정까지 켠다 (홈 매일 섹션 타일)', async () => {
-    const { ops } = signedIn([NO_ROWS, OK]);
-
-    await createBookmark({ url: 'https://a.b/', categoryId: 'cat-1', pinned: true });
-
-    expect(insertPayload(ops[1]).is_pinned).toBe(true);
-  });
-
-  it("참 같은 값으로는 고정이 켜지지 않는다 — 'true' 문자열도 거짓이다", async () => {
-    const { ops } = signedIn([NO_ROWS, OK]);
-
-    await createBookmark({ url: 'https://a.b/', categoryId: 'cat-1', pinned: 'true' as never });
-
-    expect(insertPayload(ops[1]).is_pinned).toBe(false);
   });
 
   it('공백만 있는 이름도 host 로 대체한다', async () => {
@@ -1294,73 +1267,6 @@ describe('reorderBookmarks — 목록이 쥔 자리를 서로 맞바꾼다', () 
     expect(ops).toHaveLength(0);
   });
 });
-
-describe('togglePin', () => {
-  it('고정되지 않은 링크는 고정한다', async () => {
-    const { ops } = signedIn([{ data: { id: 'bm-1', is_pinned: false }, error: null }, OK]);
-
-    await expect(togglePin('bm-1')).resolves.toEqual({ ok: true });
-
-    expect(argsOf(ops[1], 'update')).toEqual([{ is_pinned: true }]);
-    expect(revalidatePath).toHaveBeenCalledWith('/', 'layout');
-  });
-
-  it('고정된 링크는 푼다', async () => {
-    const { ops } = signedIn([{ data: { id: 'bm-1', is_pinned: true }, error: null }, OK]);
-
-    await expect(togglePin('bm-1')).resolves.toEqual({ ok: true });
-
-    expect(argsOf(ops[1], 'update')).toEqual([{ is_pinned: false }]);
-  });
-
-  it(`13번째 고정은 DB 트리거가 막고, 그 예외를 사용자 문구로 바꾼다`, async () => {
-    // 0001_init.sql 의 enforce_pin_limit(): raise exception 'PIN_LIMIT: …'
-    signedIn([
-      { data: { id: 'bm-1', is_pinned: false }, error: null },
-      {
-        data: null,
-        error: { message: 'PIN_LIMIT: 매일 고정은 최대 12개입니다', code: 'P0001' },
-      },
-    ]);
-
-    await expect(togglePin('bm-1')).resolves.toEqual({
-      ok: false,
-      error: `매일 고정은 최대 ${DAILY_PIN_MAX}개입니다.`,
-    });
-    expect(revalidatePath).not.toHaveBeenCalled();
-  });
-
-  it('없는 링크면 거부한다', async () => {
-    const { ops } = signedIn([{ data: null, error: null }]);
-
-    await expect(togglePin('없음')).resolves.toEqual({
-      ok: false,
-      error: '링크를 찾을 수 없습니다.',
-    });
-    expect(ops).toHaveLength(1);
-  });
-
-  it('사전 조회가 실패하면 뒤집어 쓰지 않는다 — 현재 값을 모르면 반대를 정할 수 없다', async () => {
-    const { ops } = signedIn([{ data: null, error: { message: 'boom', code: '08006' } }]);
-
-    const result = await togglePin('bm-1');
-
-    expect(result.ok).toBe(false);
-    expect(ops).toHaveLength(1);
-    expect(revalidatePath).not.toHaveBeenCalled();
-  });
-
-  it('토글 도중 링크가 사라지면 성공이라고 하지 않는다', async () => {
-    signedIn([{ data: { id: 'bm-1', is_pinned: false }, error: null }, NO_ROWS]);
-
-    await expect(togglePin('bm-1')).resolves.toEqual({
-      ok: false,
-      error: '링크를 찾을 수 없습니다.',
-    });
-  });
-});
-
-// ───────────────────────────────────────────────────────────── 오류 노출
 
 describe('오류 문구 — 내부 정보를 화면으로 흘리지 않는다', () => {
   const LEAKY: DbError = {

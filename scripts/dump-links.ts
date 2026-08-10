@@ -16,7 +16,7 @@ async function main(): Promise<void> {
 
   const bookmarks = await supabase
     .from('bookmarks')
-    .select('id, category_id, title, url, description, tags, is_pinned, sort_order')
+    .select('id, category_id, title, url, description, tags, favicon_url, is_pinned, sort_order')
     .order('sort_order');
   if (bookmarks.error !== null) throw bookmarks.error;
 

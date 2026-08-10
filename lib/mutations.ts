@@ -52,7 +52,6 @@
 
 import { revalidatePath } from 'next/cache';
 
-import { DAILY_PIN_MAX } from '@/lib/constants';
 import { createServerSupabaseClient, getAdminSession } from '@/lib/supabase/server';
 import { hostOf } from '@/lib/url';
 
@@ -94,15 +93,6 @@ export type NewBookmark = {
   description?: string | null;
   categoryId: string;
   faviconUrl?: string | null;
-  /**
-   * 만들면서 '매일 사용하는 사이트' 고정까지 켠다 — 홈의 **'매일' 섹션 타일**만 참으로 준다(J5).
-   *
-   * 그 자리에서 만든 링크는 고른 분류로 들어가지만, 고정이 꺼져 있으면 **방금 누른 섹션에는
-   * 나타나지 않는다.** 눌린 자리와 결과가 어긋나는 그 한 가지 때문에 이 플래그가 있다.
-   *
-   * 참이 아닌 값(미지정 포함)은 전부 거짓이다 — 남이 보낸 `"true"` 문자열로 고정이 켜지지 않는다.
-   */
-  pinned?: boolean;
 };
 
 /**
@@ -116,9 +106,6 @@ type WriteClient = Awaited<ReturnType<typeof createServerSupabaseClient>>;
 /** 카테고리 행에서 우리가 보는 부분 — 상위/하위 판정은 `parent_id` 하나로 끝난다. */
 type CategoryRow = { id: string; parent_id: string | null };
 
-/** 링크 행에서 `togglePin` 이 보는 부분. */
-type PinRow = { id: string; is_pinned: boolean };
-
 /** 링크 행에서 `reorderBookmarks` 가 보는 부분 — 지금 쥐고 있는 자리를 읽는다. */
 type OrderRow = { id: string; sort_order: number };
 
@@ -126,30 +113,14 @@ type OrderRow = { id: string; sort_order: number };
 //
 // 화면에 나가는 문장을 **한 블록에 모아 둔다.** 같은 상황을 여러 액션이 서로 다르게 말하면
 // (`카테고리를 찾을 수 없습니다.` 를 액션마다 따로 적으면) 문구가 조용히 갈라진다. 여기서만
-// 고치면 13개 액션이 함께 바뀐다. 문구를 바꿀 때 테스트도 함께 바뀌는 것은 의도다 —
+// 고치면 12개 액션이 함께 바뀐다. 문구를 바꿀 때 테스트도 함께 바뀌는 것은 의도다 —
 // 사용자에게 보이는 문장은 계약이다.
 
 /**
- * 미인증 거부 문구. **13개 액션이 모두 같은 문구를 쓴다** — 어떤 액션이 왜 막혔는지 나눠 말하면
+ * 미인증 거부 문구. **12개 액션이 모두 같은 문구를 쓴다** — 어떤 액션이 왜 막혔는지 나눠 말하면
  * 그 자체가 서버 구조를 알려 주는 단서가 된다(H2 의 "사유 비구분" 방침과 같은 결).
  */
 const DENIED: ActionResult = { ok: false, error: '로그인이 필요합니다.' };
-
-/**
- * 고정 상한 초과 문구. 숫자는 `DAILY_PIN_MAX` 에서 온다 — DB 트리거(`enforce_pin_limit`, 12)와
- * 화면 문구가 따로 놀지 않게 하기 위해서다.
- *
- * DB 예외 원문은 `PIN_LIMIT: 매일 고정은 최대 12개입니다`(마침표 없음)지만, 이 파일의 다른 문구가
- * 모두 마침표로 끝나므로 토스트 문장으로 다듬어 마침표를 붙였다. 문장 자체는 원문 그대로다.
- *
- * ⚠️ **상한은 `0005_lift_pin_limit.sql` 이 걷어냈다**(매일 쓰는 사이트가 20개 안팎으로 늘어 12가
- * 실제 사용을 막았다 — 2026-08-10 제품 결정). 0005 가 적용된 DB 에서는 트리거가 없으므로 이
- * 문구가 나갈 일이 없다. 그래도 남겨 두는 이유는 **0005 를 아직 적용하지 않은 DB**(새로 세운
- * 프로젝트, 스테이징)에서 13번째 고정이 거부될 때 "처리하지 못했습니다" 같은 뭉뚱그린 문장 대신
- * 무엇에 막혔는지 그대로 알려 주기 위해서다. 상한을 되살릴 일이 없다고 판단되면 이 상수·아래
- * 분기·`DAILY_PIN_MAX` 를 함께 지우면 된다.
- */
-const PIN_LIMIT_MESSAGE = `매일 고정은 최대 ${DAILY_PIN_MAX}개입니다.`;
 
 const INVALID_REQUEST = '요청이 올바르지 않습니다.';
 const NAME_REQUIRED = '이름을 입력하세요.';
@@ -173,8 +144,8 @@ const SIGN_IN_AGAIN = '권한이 없습니다. 다시 로그인해 주세요.';
 /**
  * 분류되지 않은 DB 실패의 기본 문구(`describeFailure` 의 default).
  *
- * **동작을 가리키지 않는 낱말('처리')인 것은 의도다.** 이 한 문장을 13개 액션이 나눠 쓰는데,
- * '저장'이라고 말하면 삭제·고정 해제가 실패한 자리에서 하지도 않은 일을 말하게 된다(바로 위
+ * **동작을 가리키지 않는 낱말('처리')인 것은 의도다.** 이 한 문장을 12개 액션이 나눠 쓰는데,
+ * '저장'이라고 말하면 삭제가 실패한 자리에서 하지도 않은 일을 말하게 된다(바로 위
  * `ORDER_FAILED` 는 반대다 — 순서 저장 한 곳만 쓰므로 그 동작을 이름으로 부른다).
  *
  * `lib/constants.ts` 의 `REQUEST_FAILED` 와 **같은 문장**이어야 한다 — 화면이 응답을 아예 받지
@@ -496,8 +467,10 @@ export async function createBookmark(input: NewBookmark): Promise<ActionResult> 
     description: asText(input.description),
     favicon_url: faviconUrl,
     sort_order: sortOrder,
-    // `=== true` 다 — 남이 보낸 `"true"`·`1` 같은 참 같은 값으로 고정이 켜지지 않는다(NewBookmark).
-    is_pinned: input.pinned === true,
+    /* '매일 고정'은 없어졌지만 컬럼은 남아 있다(constants.ts). DB 기본값에 기대지 않고 늘 실어
+       보내는 것은 `favicon_url` 과 같은 이유다 — 기본값이 바뀌면 이 액션이 만든 행의 의미가
+       조용히 따라 바뀐다. */
+    is_pinned: false,
   });
   if (error !== null) return describeFailure('링크 추가', error);
 
@@ -697,47 +670,6 @@ export async function reorderBookmarks(orderedIds: string[]): Promise<ActionResu
   return writeOrder(supabase, 'bookmarks', changes, 'any');
 }
 
-/**
- * '매일 사용하는 사이트' 고정을 켜고 끈다.
- *
- * **개수 상한은 없다** — `0005_lift_pin_limit.sql` 이 `enforce_pin_limit` 트리거를 걷어냈다(12개가
- * 실제 사용을 막아 제품 결정으로 해제, 2026-08-10). 홈의 '매일' 섹션과 `/daily` 는 `is_pinned` 로
- * 거르기만 하고 개수를 자르지 않으므로 화면도 그대로 늘어난다.
- *
- * 액션이 개수를 **미리 세지 않는** 설계는 그대로다(원래 이유: 세어 보고 쓰는 사이에 다른 요청이
- * 끼어드는 TOCTOU). 아래 `describeFailure` 의 `PIN_LIMIT` 분기는 0005 를 아직 적용하지 않은 DB 를
- * 위한 전이 경로로만 남아 있다 — 적용된 DB 에서는 그 예외가 오지 않는다.
- *
- * 읽고 나서 쓰는(read-then-write) 이유: PostgREST 의 update 값에는 **컬럼 식을 넣을 수 없다**
- * (`is_pinned = not is_pinned` 를 표현할 방법이 없고 리터럴만 받는다). 그래서 현재 값을 읽어 반대를
- * 쓴다 — 그 사이 다른 창이 토글하면 나중 요청이 이기지만, 다시 누르면 맞아 돌아온다.
- *
- * (0005 이전 DB 에서도 고정을 **푸는** 방향은 트리거가 발동하지 않았다 — `when (new.is_pinned)`.)
- */
-export async function togglePin(id: string): Promise<ActionResult> {
-  const supabase = await writeClient();
-  if (supabase === null) return DENIED;
-
-  const targetId = asText(id);
-  if (targetId === null) return fail(INVALID_REQUEST);
-
-  const found = await supabase.from('bookmarks').select('id, is_pinned').eq('id', targetId).maybeSingle();
-  if (found.error !== null) return describeFailure('링크 조회', found.error);
-
-  const bookmark = found.data as PinRow | null;
-  if (bookmark === null) return fail(BOOKMARK_NOT_FOUND);
-
-  const { data, error } = await supabase
-    .from('bookmarks')
-    .update({ is_pinned: !bookmark.is_pinned })
-    .eq('id', targetId)
-    .select('id');
-  if (error !== null) return describeFailure('고정 토글', error);
-  if (isEmpty(data)) return fail(BOOKMARK_NOT_FOUND);
-
-  return succeed();
-}
-
 // ───────────────────────────────────────────────────────── 내부 helpers
 
 /**
@@ -779,15 +711,11 @@ function failAfterPartialChange(changed: number, result: ActionResult): ActionRe
 /**
  * DB 오류를 **사용자에게 보여도 되는 한 문장**으로 바꾼다. 원본은 서버 로그로만 보낸다.
  *
- * `PIN_LIMIT` 을 코드(`P0001`)가 아니라 메시지로 알아보는 이유: `P0001` 은 `raise exception`
- * 전부가 쓰는 범용 코드라, 나중에 다른 트리거가 생기면 그 예외까지 고정 상한 문구로 둔갑한다.
+ * 예전에 있던 `PIN_LIMIT` 분기는 '매일 고정'과 함께 걷어냈다 — 고정을 켜는 액션이 없으므로
+ * 그 트리거(0001, 0005 가 이미 제거)가 발동할 경로 자체가 사라졌다.
  */
 function describeFailure(context: string, error: DbError): ActionResult {
   console.error(`[mutations] ${context} 실패`, error);
-
-  if (typeof error.message === 'string' && error.message.includes('PIN_LIMIT')) {
-    return fail(PIN_LIMIT_MESSAGE);
-  }
 
   switch (error.code) {
     case '23505': // unique_violation — categories(name, parent_id)

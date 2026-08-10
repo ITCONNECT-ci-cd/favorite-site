@@ -204,17 +204,13 @@ describe('AdminPage — 카테고리 · 링크 (I1 2단)', () => {
     expect(within(linkList()).queryByText('bm-4')).not.toBeInTheDocument();
   });
 
-  it('행이 든 값은 표가 그리는 여섯 칸뿐이다 (클릭 수·고정·하위 배정)', async () => {
+  it('행이 든 값은 표가 그리는 다섯 칸뿐이다 (클릭 수·하위 배정)', async () => {
     render((await AdminPage()) as ReactElement);
 
     const row = within(linkList()).getAllByRole('listitem')[1];
 
     expect(row).toHaveTextContent('7'); // bm-2 의 클릭 수 (뷰에서 붙어 온 값)
     expect(within(row).getByRole('combobox', { name: 'bm-2 하위 카테고리' })).toHaveValue('sub-chat');
-    expect(within(row).getByRole('button', { name: 'bm-2 매일 고정' })).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    );
   });
 
   it('하위 select 의 옵션은 하위 칩 줄과 같은 목록이다 (한 번 접어 둘이 나눠 쓴다)', async () => {

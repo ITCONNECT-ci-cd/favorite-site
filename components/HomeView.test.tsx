@@ -43,7 +43,7 @@ vi.mock('@/lib/mutations', async (importOriginal) => ({
 
 /**
  * fixture 는 실시드 그대로다 (`test/fixtures/seed.ts`) — 화면에 적히는 실측치
- * (매일 12 · 운영 중 16)가 시드와 어긋나면 여기서 먼저 깨진다.
+ * (운영 중 16)가 시드와 어긋나면 여기서 먼저 깨진다.
  */
 const DATA: SiteData = siteData();
 
@@ -51,8 +51,16 @@ const OPERATING_ID = CATEGORIES.find(
   (category) => category.parent_id === null && category.name === OPERATING_CATEGORY_NAME,
 )!.id;
 
-/** 즐겨찾기 순서 검증용 — sort_order 순서(5 → 40 → 200)와 일부러 다르게 담는다. */
-const FAV_IDS = [BOOKMARKS[200].id, BOOKMARKS[5].id, BOOKMARKS[40].id];
+/**
+ * 즐겨찾기 순서 검증용 — sort_order 순서(2 → 5 → 40)와 일부러 다르게 담는다.
+ *
+ * 셋 다 'AI 도구 모음' 소속이라 **한 묶음('AI 서비스')에 모인다** — 카드 배선을 보는 테스트가
+ * 묶음 하나만 들여다보면 되게 하려는 것이다. 나누는 것 자체는 아래 `MIXED_FAV_IDS` 가 본다.
+ */
+const FAV_IDS = [BOOKMARKS[40].id, BOOKMARKS[2].id, BOOKMARKS[5].id];
+
+/** 두 묶음에 걸치는 집합 — 'UI/UX 디자인'(→ 업무용 서비스) 하나와 'AI 도구 모음' 둘. */
+const MIXED_FAV_IDS = [BOOKMARKS[200].id, BOOKMARKS[5].id, BOOKMARKS[40].id];
 
 const section = (name: string) => screen.getByRole('region', { name });
 
@@ -99,8 +107,8 @@ const openLink = (name: string, index = 0) => within(cards(name)[index]).getByRo
 
 /**
  * 다른 화면(목록·카테고리)에서 담는 상황 모사.
- * 홈에는 담을 수단이 없다 — 즐겨찾기 섹션의 핀은 이미 담긴 카드에만 있고, 매일·운영은 핀 자체가
- * 없다. 그래서 '담기 → 카드 등장'은 같은 스토어를 쓰는 바깥 인스턴스로 확인한다.
+ * 홈에는 담을 수단이 없다 — 즐겨찾기 묶음의 핀은 이미 담긴 카드에만 있고, 운영 중 섹션은 핀
+ * 자체가 없다. 그래서 '담기 → 카드 등장'은 같은 스토어를 쓰는 바깥 인스턴스로 확인한다.
  */
 function FavToggler({ id }: { id: string }) {
   const { toggle } = useFavorites();
@@ -117,13 +125,14 @@ beforeEach(() => {
 });
 
 describe('HomeView — 섹션 구성', () => {
-  it('내 즐겨찾기 · 매일 사용하는 사이트 · 현재 운영 중인 사이트 순으로 놓는다', () => {
-    setFavs(FAV_IDS);
+  it('즐겨찾기 묶음 · 현재 운영 중인 사이트 순으로 놓는다', () => {
+    setFavs(MIXED_FAV_IDS);
     render(<HomeView data={DATA} isAdmin={false} />);
 
+    // 'AI 소식'은 담긴 것이 없어 서지 않는다. 묶음 차례는 FAV_GROUPS 가 정한다.
     expect(screen.getAllByRole('heading').map((heading) => heading.textContent)).toEqual([
-      '내 즐겨찾기',
-      '매일 사용하는 사이트',
+      'AI 서비스',
+      '업무용 서비스',
       '현재 운영 중인 사이트',
     ]);
   });
@@ -153,33 +162,66 @@ describe('HomeView — 섹션 구성', () => {
   });
 });
 
-describe('HomeView — 내 즐겨찾기 섹션', () => {
-  it('favs(localStorage) 순서 그대로 카드를 놓는다', () => {
-    setFavs(FAV_IDS);
+describe('HomeView — 즐겨찾기 묶음 (AI 소식 · AI 서비스 · 업무용 서비스)', () => {
+  it('담긴 링크를 그 링크의 상위 분류가 정하는 묶음으로 나눠 놓는다', () => {
+    setFavs(MIXED_FAV_IDS);
     render(<HomeView data={DATA} isAdmin={false} />);
 
-    expectCards('내 즐겨찾기', [BOOKMARKS[200], BOOKMARKS[5], BOOKMARKS[40]]);
+    // 담은 차례(200 → 5 → 40)가 묶음 안에서 그대로 유지된다.
+    expectCards('AI 서비스', [BOOKMARKS[5], BOOKMARKS[40]]);
+    expectCards('업무용 서비스', [BOOKMARKS[200]]);
   });
 
-  it('보조문과 열기 버튼에 담긴 개수를 적는다', () => {
-    setFavs(FAV_IDS);
+  it('담긴 차례는 묶음 안에서 그대로다 (localStorage 순서)', () => {
+    // 담은 차례를 뒤집어 담는다 — sort_order 로 다시 세우지 않는다는 것이 이 테스트의 전부다.
+    setFavs([BOOKMARKS[40].id, BOOKMARKS[5].id]);
     render(<HomeView data={DATA} isAdmin={false} />);
 
-    const header = section('내 즐겨찾기');
+    expectCards('AI 서비스', [BOOKMARKS[40], BOOKMARKS[5]]);
+  });
+
+  it("'뉴스·인사이트' 분류의 링크는 'AI 소식'으로 간다", () => {
+    const news: Category = { id: 'cat-news', name: '뉴스·인사이트', parent_id: null, sort_order: 99 };
+    const article: BookmarkWithCount = { ...BOOKMARKS[7], id: 'bm-news', category_id: 'cat-news' };
+    setFavs([article.id]);
+    render(
+      <HomeView
+        data={{ categories: [...CATEGORIES, news], bookmarks: [...DATA.bookmarks, article] }}
+        isAdmin={false}
+      />,
+    );
+
+    expectCards('AI 소식', [article]);
+    // 빈 묶음은 그리지 않는다.
+    expect(screen.queryByRole('region', { name: 'AI 서비스' })).toBeNull();
+  });
+
+  it('빈 묶음은 그리지 않는다 — 담긴 것이 있는 묶음만 선다', () => {
+    setFavs([BOOKMARKS[5].id]);
+    render(<HomeView data={DATA} isAdmin={false} />);
+
+    expect(screen.getByRole('region', { name: 'AI 서비스' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'AI 소식' })).toBeNull();
+    expect(screen.queryByRole('region', { name: '업무용 서비스' })).toBeNull();
+  });
+
+  it('묶음마다 담긴 개수와 열기 버튼을 적는다', () => {
+    setFavs(MIXED_FAV_IDS);
+    render(<HomeView data={DATA} isAdmin={false} />);
+
+    const header = section('AI 서비스');
 
     expect(
-      within(header).getByText('핀으로 직접 담은 3개 · 이 브라우저에만 저장됩니다'),
+      within(header).getByText('핀으로 담은 2개 · 이 브라우저에만 저장됩니다'),
     ).toBeInTheDocument();
-    expect(
-      within(header).getByRole('button', { name: '3개 한 번에 열기' }),
-    ).toBeInTheDocument();
+    expect(within(header).getByRole('button', { name: '2개 한 번에 열기' })).toBeInTheDocument();
   });
 
   it('카드의 핀이 켜진 상태로 보인다', () => {
-    setFavs(FAV_IDS);
+    setFavs(MIXED_FAV_IDS);
     render(<HomeView data={DATA} isAdmin={false} />);
 
-    const pinButtons = pins('내 즐겨찾기');
+    const pinButtons = [...pins('AI 서비스'), ...pins('업무용 서비스')];
 
     expect(pinButtons).toHaveLength(3);
     for (const pin of pinButtons) expect(pin).toHaveAttribute('aria-pressed', 'true');
@@ -189,17 +231,15 @@ describe('HomeView — 내 즐겨찾기 섹션', () => {
     setFavs([BOOKMARKS[5].id, '사라진-링크', BOOKMARKS[40].id]);
     render(<HomeView data={DATA} isAdmin={false} />);
 
-    expectCards('내 즐겨찾기', [BOOKMARKS[5], BOOKMARKS[40]]);
-    expect(
-      screen.getByText('핀으로 직접 담은 2개 · 이 브라우저에만 저장됩니다'),
-    ).toBeInTheDocument();
+    expectCards('AI 서비스', [BOOKMARKS[5], BOOKMARKS[40]]);
+    expect(screen.getByText('핀으로 담은 2개 · 이 브라우저에만 저장됩니다')).toBeInTheDocument();
   });
 
-  it('0개면 열기 버튼 없이 빈 즐겨찾기 안내만 보여준다 (DESIGN_SPEC 3장)', () => {
+  it('0개면 묶음 셋 대신 안내 한 장만 남는다', () => {
     render(<HomeView data={DATA} isAdmin={false} />);
 
     const empty = within(section('내 즐겨찾기')).getByText(
-      '다른 화면에서 카드 오른쪽 위의 핀을 누르면 이 자리에 모입니다. 매일 사용하는 사이트와 달리 내가 직접 담고 빼는 목록입니다.',
+      '다른 화면에서 카드 오른쪽 위의 핀을 누르면 이 자리에 모입니다. 담고 빼는 것은 전적으로 내 몫이고, 이 브라우저에만 저장됩니다.',
     );
 
     // 점선 테두리 #d8d3cb · 배경 #f3f1ed · 라운드 10px · 패딩 16px · 11.5px #6d6a65
@@ -212,57 +252,12 @@ describe('HomeView — 내 즐겨찾기 섹션', () => {
       'text-[11.5px]',
       'text-desc',
     );
-    expect(pins('내 즐겨찾기')).toHaveLength(0);
+    for (const group of ['AI 소식', 'AI 서비스', '업무용 서비스']) {
+      expect(screen.queryByRole('region', { name: group })).toBeNull();
+    }
     expect(
       within(section('내 즐겨찾기')).queryByRole('button', { name: /한 번에 열기$/ }),
     ).not.toBeInTheDocument();
-  });
-});
-
-describe('HomeView — 매일 사용하는 사이트 섹션', () => {
-  it('is_pinned 12개를 sort_order 순으로 놓는다', () => {
-    render(<HomeView data={DATA} isAdmin={false} />);
-
-    const pinned = BOOKMARKS.filter((bookmark) => bookmark.is_pinned);
-
-    expect(pinned).toHaveLength(12);
-    expectCards('매일 사용하는 사이트', pinned);
-  });
-
-  it('보조문은 **사실**을 적는다 — 고정은 관리 화면에서 하고, 자리는 바뀐다', () => {
-    render(<HomeView data={DATA} isAdmin={false} />);
-
-    const header = section('매일 사용하는 사이트');
-
-    expect(
-      within(header).getByText('관리자가 고정한 12개 · 회사가 함께 쓰는 목록입니다'),
-    ).toBeInTheDocument();
-    expect(
-      within(header).getByRole('button', { name: '12개 한 번에 열기' }),
-    ).toBeInTheDocument();
-  });
-
-  it('관리자에게는 여기서 할 수 있는 일(드래그·추가)을 알린다', () => {
-    render(<HomeView data={DATA} isAdmin />);
-
-    expect(
-      within(section('매일 사용하는 사이트')).getByText(
-        '관리자가 고정한 12개 · 끌어서 순서를 바꾸고 왼쪽 타일로 추가합니다',
-      ),
-    ).toBeInTheDocument();
-  });
-
-  it('할 수 없는 일을 안내하지 않는다 — 비관리자에게 드래그를 말하지 않는다', () => {
-    render(<HomeView data={DATA} isAdmin={false} />);
-
-    expect(within(section('매일 사용하는 사이트')).queryByText(/끌어서/)).toBeNull();
-  });
-
-  it('카드에 핀을 노출하지 않는다 (관리자 영역)', () => {
-    setFavs([BOOKMARKS.find((bookmark) => bookmark.is_pinned)!.id]);
-    render(<HomeView data={DATA} isAdmin={false} />);
-
-    expect(pins('매일 사용하는 사이트')).toHaveLength(0);
   });
 });
 
@@ -365,22 +360,22 @@ describe('HomeView — 핀 토글 (D6)', () => {
       </>,
     );
 
-    // FAV_IDS 순서라 첫 카드는 BOOKMARKS[200] 이다.
-    fireEvent.click(pins('내 즐겨찾기')[0]);
+    // FAV_IDS 순서라 첫 카드는 BOOKMARKS[40] 이다.
+    fireEvent.click(pins('AI 서비스')[0]);
 
-    expectCards('내 즐겨찾기', [BOOKMARKS[5], BOOKMARKS[40]]);
-    expect(screen.getByText(`${BOOKMARKS[200].title} 즐겨찾기 해제`)).toBeInTheDocument();
-    expect(storedFavs()).toEqual([BOOKMARKS[5].id, BOOKMARKS[40].id]);
+    expectCards('AI 서비스', [BOOKMARKS[2], BOOKMARKS[5]]);
+    expect(screen.getByText(`${BOOKMARKS[40].title} 즐겨찾기 해제`)).toBeInTheDocument();
+    expect(storedFavs()).toEqual([BOOKMARKS[2].id, BOOKMARKS[5].id]);
   });
 
   it('보조문·열기 버튼의 개수도 함께 줄어든다', () => {
     setFavs(FAV_IDS);
     render(<HomeView data={DATA} isAdmin={false} />);
 
-    fireEvent.click(pins('내 즐겨찾기')[0]);
+    fireEvent.click(pins('AI 서비스')[0]);
 
     expect(
-      screen.getByText('핀으로 직접 담은 2개 · 이 브라우저에만 저장됩니다'),
+      screen.getByText('핀으로 담은 2개 · 이 브라우저에만 저장됩니다'),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '2개 한 번에 열기' })).toBeInTheDocument();
   });
@@ -389,12 +384,12 @@ describe('HomeView — 핀 토글 (D6)', () => {
     setFavs([BOOKMARKS[5].id]);
     render(<HomeView data={DATA} isAdmin={false} />);
 
-    fireEvent.click(pins('내 즐겨찾기')[0]);
+    fireEvent.click(within(section('AI 서비스')).getAllByRole('button', { name: /.+ 즐겨찾기$/ })[0]);
 
-    expect(pins('내 즐겨찾기')).toHaveLength(0);
+    expect(screen.queryByRole('region', { name: 'AI 서비스' })).toBeNull();
     expect(
       within(section('내 즐겨찾기')).getByText(
-        '다른 화면에서 카드 오른쪽 위의 핀을 누르면 이 자리에 모입니다. 매일 사용하는 사이트와 달리 내가 직접 담고 빼는 목록입니다.',
+        '다른 화면에서 카드 오른쪽 위의 핀을 누르면 이 자리에 모입니다. 담고 빼는 것은 전적으로 내 몫이고, 이 브라우저에만 저장됩니다.',
       ),
     ).toBeInTheDocument();
   });
@@ -406,26 +401,24 @@ describe('HomeView — 핀 토글 (D6)', () => {
         <FavToggler id={BOOKMARKS[5].id} />
       </>,
     );
-    expect(pins('내 즐겨찾기')).toHaveLength(0);
+    expect(screen.queryByRole('region', { name: 'AI 서비스' })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: '다른 화면에서 담기' }));
 
-    expectCards('내 즐겨찾기', [BOOKMARKS[5]]);
-    expect(pins('내 즐겨찾기')[0]).toHaveAttribute('aria-pressed', 'true');
+    expectCards('AI 서비스', [BOOKMARKS[5]]);
+    expect(pins('AI 서비스')[0]).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('핀을 배선한 뒤에도 매일·운영 섹션에는 핀이 없다 (관리자 영역)', () => {
+  it('핀을 배선한 뒤에도 운영 중 섹션에는 핀이 없다 (관리자 영역)', () => {
     setFavs(FAV_IDS);
     render(<HomeView data={DATA} isAdmin={false} />);
 
-    expect(pins('내 즐겨찾기')).toHaveLength(3);
-    expect(pins('매일 사용하는 사이트')).toHaveLength(0);
+    expect(pins('AI 서비스')).toHaveLength(3);
     expect(pins('현재 운영 중인 사이트')).toHaveLength(0);
   });
 });
 
 describe('HomeView — 카드 클릭 기록 (F3)', () => {
-  const DAILY = BOOKMARKS.filter((bookmark) => bookmark.is_pinned);
   const OPERATING = BOOKMARKS.filter((bookmark) => bookmark.category_id === OPERATING_ID);
 
   setupToastTimers();
@@ -447,21 +440,21 @@ describe('HomeView — 카드 클릭 기록 (F3)', () => {
   it('즐겨찾기 카드를 열면 그 링크의 클릭을 기록하고 프로토타입 문구로 알린다', () => {
     renderHome();
 
-    fireEvent.click(openLink('내 즐겨찾기'));
+    fireEvent.click(openLink('AI 서비스'));
 
     // 인자가 id 하나뿐이다 — isBulk 는 넘기지 않는다(사람이 카드를 누른 클릭 = 기본 false).
-    expect(recordClick).toHaveBeenCalledWith(BOOKMARKS[200].id);
+    expect(recordClick).toHaveBeenCalledWith(BOOKMARKS[40].id);
     expect(recordClick).toHaveBeenCalledOnce();
-    expect(screen.getByText(`${BOOKMARKS[200].title} · 새 탭으로 이동`)).toBeInTheDocument();
+    expect(screen.getByText(`${BOOKMARKS[40].title} · 새 탭으로 이동`)).toBeInTheDocument();
   });
 
-  it('매일 사용하는 사이트 카드도 기록한다', () => {
+  it('운영 중 사이트 카드도 기록한다', () => {
     renderHome();
 
-    fireEvent.click(openLink('매일 사용하는 사이트'));
+    fireEvent.click(openLink('현재 운영 중인 사이트'));
 
-    expect(recordClick).toHaveBeenCalledWith(DAILY[0].id);
-    expect(screen.getByText(`${DAILY[0].title} · 새 탭으로 이동`)).toBeInTheDocument();
+    expect(recordClick).toHaveBeenCalledWith(OPERATING[0].id);
+    expect(screen.getByText(`${OPERATING[0].title} · 새 탭으로 이동`)).toBeInTheDocument();
   });
 
   it('현재 운영 중인 사이트 카드도 기록한다 — 세 섹션 모두 클릭 기록 대상이다', () => {
@@ -476,33 +469,32 @@ describe('HomeView — 카드 클릭 기록 (F3)', () => {
   it('가운데 클릭(새 탭)도 기록한다', () => {
     renderHome();
 
-    middleClick(openLink('매일 사용하는 사이트'));
+    middleClick(openLink('현재 운영 중인 사이트'));
 
-    expect(recordClick).toHaveBeenCalledWith(DAILY[0].id);
-    expect(screen.getByText(`${DAILY[0].title} · 새 탭으로 이동`)).toBeInTheDocument();
+    expect(recordClick).toHaveBeenCalledWith(OPERATING[0].id);
+    expect(screen.getByText(`${OPERATING[0].title} · 새 탭으로 이동`)).toBeInTheDocument();
   });
 
   it('기본 동작을 막지 않는다 — 이동은 브라우저에 맡긴다', () => {
     renderHome();
 
     // preventDefault 를 부르면 dispatchEvent 가 false 를 돌려준다.
-    expect(fireEvent.click(openLink('내 즐겨찾기'))).toBe(true);
-    expect(middleClick(openLink('매일 사용하는 사이트'))).toBe(true);
+    expect(fireEvent.click(openLink('AI 서비스'))).toBe(true);
+    expect(middleClick(openLink('현재 운영 중인 사이트'))).toBe(true);
   });
 
   it('핀을 눌러도 클릭을 기록하지 않는다 (여는 동작이 아니다)', () => {
     renderHome();
 
-    fireEvent.click(pins('내 즐겨찾기')[0]);
+    fireEvent.click(pins('AI 서비스')[0]);
 
     expect(recordClick).not.toHaveBeenCalled();
   });
 });
 
 describe('HomeView — 섹션 한 번에 열기 (G4)', () => {
-  const DAILY = BOOKMARKS.filter((bookmark) => bookmark.is_pinned);
   const OPERATING = BOOKMARKS.filter((bookmark) => bookmark.category_id === OPERATING_ID);
-  const FAV_ITEMS = [BOOKMARKS[200], BOOKMARKS[5], BOOKMARKS[40]];
+  const FAV_ITEMS = [BOOKMARKS[40], BOOKMARKS[2], BOOKMARKS[5]];
 
   setupToastTimers();
   const windowOpen = setupWindowOpen();
@@ -538,28 +530,15 @@ describe('HomeView — 섹션 한 번에 열기 (G4)', () => {
     );
   }
 
-  it('내 즐겨찾기 — 담긴 순서대로 열고 섹션 이름으로 묶는다', () => {
+  it('즐겨찾기 묶음 — 담긴 순서대로 열고 묶음 이름으로 묶는다', () => {
     renderHome();
 
-    fireEvent.click(openAll('내 즐겨찾기'));
+    fireEvent.click(openAll('AI 서비스'));
 
     expectOpened(FAV_ITEMS);
     expect(
       screen.getByText(
-        '3개를 새 탭으로 엽니다 · 크롬에서 "내 즐겨찾기" 탭 그룹으로 묶어 두면 좋습니다',
-      ),
-    ).toBeInTheDocument();
-  });
-
-  it('매일 사용하는 사이트 — 12개를 연다', () => {
-    renderHome();
-
-    fireEvent.click(openAll('매일 사용하는 사이트'));
-
-    expectOpened(DAILY);
-    expect(
-      screen.getByText(
-        '12개를 새 탭으로 엽니다 · 크롬에서 "매일 사용하는 사이트" 탭 그룹으로 묶어 두면 좋습니다',
+        '3개를 새 탭으로 엽니다 · 크롬에서 "AI 서비스" 탭 그룹으로 묶어 두면 좋습니다',
       ),
     ).toBeInTheDocument();
   });
@@ -588,12 +567,12 @@ describe('HomeView — 섹션 한 번에 열기 (G4)', () => {
   it('핀을 빼서 줄어든 목록만 연다 — 버튼 라벨과 실제로 여는 수가 같다', () => {
     renderHome();
 
-    fireEvent.click(pins('내 즐겨찾기')[0]);
+    fireEvent.click(pins('AI 서비스')[0]);
     vi.mocked(recordClick).mockClear();
 
-    fireEvent.click(openAll('내 즐겨찾기'));
+    fireEvent.click(openAll('AI 서비스'));
 
-    expectOpened([BOOKMARKS[5], BOOKMARKS[40]]);
+    expectOpened([BOOKMARKS[2], BOOKMARKS[5]]);
   });
 
   /**
@@ -605,7 +584,7 @@ describe('HomeView — 섹션 한 번에 열기 (G4)', () => {
     windowOpen.mockReturnValue(null);
     renderHome();
 
-    fireEvent.click(openAll('내 즐겨찾기'));
+    fireEvent.click(openAll('AI 서비스'));
 
     // 시도는 목록 끝까지 한다 — 앞이 막혔다고 뒤를 포기하지 않는다.
     expect(windowOpen).toHaveBeenCalledTimes(FAV_ITEMS.length);
@@ -616,11 +595,11 @@ describe('HomeView — 섹션 한 번에 열기 (G4)', () => {
     windowOpen.mockReturnValue(null);
     renderHome();
 
-    fireEvent.click(openAll('매일 사용하는 사이트'));
+    fireEvent.click(openAll('현재 운영 중인 사이트'));
 
     expect(
       screen.getByText(
-        '팝업 차단으로 12개 모두 열리지 않았습니다 · 주소창의 팝업 차단 아이콘에서 이 사이트를 허용해 주세요',
+        '팝업 차단으로 16개 모두 열리지 않았습니다 · 주소창의 팝업 차단 아이콘에서 이 사이트를 허용해 주세요',
       ),
     ).toBeInTheDocument();
     // "열었다"고 읽히는 말이 화면 어디에도 없어야 한다 — 그것이 이 고장의 본체였다.
@@ -636,7 +615,7 @@ describe('HomeView — 섹션 한 번에 열기 (G4)', () => {
       .mockReturnValue(null);
     renderHome();
 
-    fireEvent.click(openAll('내 즐겨찾기'));
+    fireEvent.click(openAll('AI 서비스'));
 
     expect(windowOpen).toHaveBeenCalledTimes(3);
     expect(vi.mocked(recordClick).mock.calls).toEqual([
@@ -658,7 +637,6 @@ describe('HomeView — 섹션 한 번에 열기 (G4)', () => {
  * 판정은 서버(app/(public)/page.tsx)가 하고, 이 화면은 받은 값을 나르기만 한다.
  */
 describe('HomeView — 관리자 편집 노출 (J1)', () => {
-  const DAILY_COUNT = BOOKMARKS.filter((bookmark) => bookmark.is_pinned).length;
   const OPERATING_COUNT = BOOKMARKS.filter(
     (bookmark) => bookmark.category_id === OPERATING_ID,
   ).length;
@@ -674,25 +652,25 @@ describe('HomeView — 관리자 편집 노출 (J1)', () => {
     expect(deletes()).toHaveLength(0);
   });
 
-  it('isAdmin 이면 세 섹션의 카드 전부에 연필·휴지통이 붙는다 (즐겨찾기 3 + 매일 12 + 운영 16)', () => {
+  it('isAdmin 이면 모든 섹션의 카드에 연필·휴지통이 붙는다 (즐겨찾기 3 + 운영 16)', () => {
     setFavs(FAV_IDS);
     render(<HomeView data={DATA} isAdmin />);
 
-    const total = FAV_IDS.length + DAILY_COUNT + OPERATING_COUNT;
+    const total = FAV_IDS.length + OPERATING_COUNT;
 
-    expect(total).toBe(31);
+    expect(total).toBe(19);
     expect(edits()).toHaveLength(total);
     expect(deletes()).toHaveLength(total);
   });
 
-  it('핀을 감춘 섹션(매일·운영 중)에서도 관리자 아이콘은 나온다', () => {
+  it('핀을 감춘 섹션(운영 중)에서도 관리자 아이콘은 나온다', () => {
     render(<HomeView data={DATA} isAdmin />);
 
-    const daily = within(section('매일 사용하는 사이트'));
+    const operating = within(section(OPERATING_CATEGORY_NAME));
 
-    expect(pins('매일 사용하는 사이트')).toHaveLength(0);
-    expect(daily.queryAllByRole('button', { name: /.+ 수정$/ })).toHaveLength(DAILY_COUNT);
-    expect(daily.queryAllByRole('button', { name: /.+ 삭제$/ })).toHaveLength(DAILY_COUNT);
+    expect(pins(OPERATING_CATEGORY_NAME)).toHaveLength(0);
+    expect(operating.queryAllByRole('button', { name: /.+ 수정$/ })).toHaveLength(OPERATING_COUNT);
+    expect(operating.queryAllByRole('button', { name: /.+ 삭제$/ })).toHaveLength(OPERATING_COUNT);
   });
 });
 
@@ -724,25 +702,13 @@ describe('HomeView — 링크 추가 타일 (K1)', () => {
     );
   });
 
-  it("'매일' 섹션에도 선다 — 그 타일은 고정까지 켜서 결과가 그 자리에 보인다", () => {
-    render(<HomeView data={DATA} isAdmin />);
-
-    const grid = body('매일 사용하는 사이트');
-
-    expect(grid.firstElementChild).toBe(quickAddTile('매일 사용하는 사이트'));
-    expect(cards('매일 사용하는 사이트')).toHaveLength(
-      BOOKMARKS.filter((bookmark) => bookmark.is_pinned).length,
-    );
-  });
-
   it('즐겨찾기에는 두지 않는다 — 담는 일은 카드의 핀이 한다', () => {
     // 이 브라우저의 localStorage 에서 나온 목록이라, 거기서 만든 링크가 왜 그 자리에 안 보이는지
-    // 설명할 수 없다. 고정으로 맞출 수 있는 '매일'과 다른 점이 그것이다.
     setFavs(FAV_IDS);
     render(<HomeView data={DATA} isAdmin />);
 
-    expect(quickAddTile('내 즐겨찾기')).toBeNull();
-    expect(screen.getAllByRole('button', { name: '링크 추가' })).toHaveLength(2);
+    expect(quickAddTile('AI 서비스')).toBeNull();
+    expect(screen.getAllByRole('button', { name: '링크 추가' })).toHaveLength(1);
   });
 
   it('기본 분류는 그 섹션의 분류다 — 보고 있는 목록에 한 건 더 붙인다', () => {
@@ -762,8 +728,7 @@ describe('HomeView — 링크 추가 타일 (K1)', () => {
     expect(screen.getAllByRole('option')).toHaveLength(CATEGORIES.length);
   });
 
-  it('운영 중 분류가 없어 그 섹션이 접혀도 매일 섹션의 타일은 남는다', () => {
-    // 운영 중 섹션은 통째로 사라지지만 '매일'은 분류가 아니라 is_pinned 로 모은 목록이라 남는다.
+  it('운영 중 분류가 없으면 그 섹션도 타일도 사라진다', () => {
     render(
       <HomeView
         data={{
@@ -774,44 +739,32 @@ describe('HomeView — 링크 추가 타일 (K1)', () => {
       />,
     );
 
-    // 섹션 자체가 없으므로 그 안의 타일도 없다 — 남은 하나는 '매일' 것이다.
     expect(screen.queryByRole('region', { name: OPERATING_CATEGORY_NAME })).toBeNull();
-    expect(screen.getAllByRole('button', { name: '링크 추가' })).toHaveLength(1);
-    expect(quickAddTile('매일 사용하는 사이트')).toBeInTheDocument();
-  });
-
-  it('넣을 분류가 하나도 없으면 타일이 통째로 사라진다 — QuickAddCard 자신의 판단', () => {
-    // QuickAddCard 자신의 판단이다(분류 0개면 아무것도 그리지 않는다). 여기서 보는 것은
-    // 매일 섹션의 타일이 그 판단에 걸리도록 **빈 분류 목록**을 넘긴다는 점이다.
-    render(<HomeView data={{ categories: [], bookmarks: DATA.bookmarks }} isAdmin />);
-
     expect(screen.queryByRole('button', { name: '링크 추가' })).toBeNull();
   });
 });
 
 /**
- * J2. 카드 인라인 편집 — 홈은 **섹션 세 곳의 카드 렌더 지점 전부**에 같은 배선을 흘린다.
+ * J2. 카드 인라인 편집 — 홈은 **모든 섹션의 카드 렌더 지점**에 같은 배선을 흘린다.
  *
  * 폼 자체(필드 구성·수치·저장 실패 처리)는 `components/card/InlineEdit.test.tsx` 가 고정한다.
  * 여기서 보는 것은 화면의 몫인 두 가지다 — **어느 카드가 폼으로 바뀌는가**와
  * **동시에 한 장만인가**(DESIGN_SPEC 2-1).
  */
 describe('HomeView — 카드 인라인 편집 (J2)', () => {
-  const FAV_FIRST = BOOKMARKS[200];
-  const DAILY_ITEMS = BOOKMARKS.filter((bookmark) => bookmark.is_pinned);
-  const DAILY_FIRST = DAILY_ITEMS[0];
+  const FAV_FIRST = BOOKMARKS[40];
   const OPERATING_ITEMS = BOOKMARKS.filter((bookmark) => bookmark.category_id === OPERATING_ID);
 
   /**
-   * 운영 중 섹션에만 있는 카드. 시드에는 **매일과 운영 중에 함께 놓이는 링크가 셋** 있어
-   * (구글 드라이브·ITCONNECT·itconnect.co.kr) 아무 카드나 고르면 폼이 두 자리에 열린다 —
-   * 그것은 의도된 동작이라 아래 별도 테스트가 따로 못박는다.
+   * **두 섹션에 함께 놓이는 링크** — 운영 중 분류의 링크를 즐겨찾기에도 담으면 '업무용 서비스'
+   * 묶음과 '현재 운영 중인 사이트'에 카드가 하나씩 선다. 카드는 둘이지만 링크는 하나라,
+   * 한쪽에서 연 폼이 두 자리 모두에 뜨는 것이 의도된 동작이다(아래 별도 테스트).
    */
-  const OPERATING_ONLY_INDEX = OPERATING_ITEMS.findIndex((bookmark) => !bookmark.is_pinned);
-  const OPERATING_ONLY = OPERATING_ITEMS[OPERATING_ONLY_INDEX];
+  const SHARED = OPERATING_ITEMS[0];
 
-  /** 매일·운영 중 두 섹션에 함께 놓이는 링크 — 카드는 둘이지만 링크는 하나다. */
-  const SHARED = OPERATING_ITEMS.find((bookmark) => bookmark.is_pinned)!;
+  /** 운영 중 섹션에만 있는 카드 — 위 겹치는 하나를 피한다. */
+  const OPERATING_ONLY_INDEX = 1;
+  const OPERATING_ONLY = OPERATING_ITEMS[OPERATING_ONLY_INDEX];
 
   /** 섹션의 n 번째 카드에 붙은 연필. 같은 링크가 두 섹션에 나올 수 있어 카드 안에서 찾는다. */
   const pencil = (name: string, index = 0) =>
@@ -821,7 +774,8 @@ describe('HomeView — 카드 인라인 편집 (J2)', () => {
   const forms = () => screen.queryAllByRole('form');
 
   function renderHome() {
-    setFavs(FAV_IDS);
+    // SHARED 를 함께 담아 '업무용 서비스' 묶음과 운영 중 섹션에 같은 링크가 서게 한다.
+    setFavs([...FAV_IDS, SHARED.id]);
     render(<HomeView data={DATA} isAdmin />);
   }
 
@@ -833,9 +787,9 @@ describe('HomeView — 카드 인라인 편집 (J2)', () => {
   it('연필을 누르면 그 카드의 본문·하단이 편집 폼으로 바뀐다', () => {
     renderHome();
 
-    fireEvent.click(pencil('내 즐겨찾기'));
+    fireEvent.click(pencil('AI 서비스'));
 
-    const card = cards('내 즐겨찾기')[0];
+    const card = cards('AI 서비스')[0];
 
     expect(within(card).getByRole('form', { name: `${FAV_FIRST.title} 수정` })).toBeInTheDocument();
     expect(within(card).getByRole('textbox', { name: '이름' })).toHaveValue(FAV_FIRST.title);
@@ -847,31 +801,29 @@ describe('HomeView — 카드 인라인 편집 (J2)', () => {
   it('폼을 연 카드 말고는 그대로다', () => {
     renderHome();
 
-    fireEvent.click(pencil('내 즐겨찾기'));
+    fireEvent.click(pencil('AI 서비스'));
 
     expect(forms()).toHaveLength(1);
-    expect(within(cards('내 즐겨찾기')[1]).getByRole('link')).toBeInTheDocument();
+    expect(within(cards('AI 서비스')[1]).getByRole('link')).toBeInTheDocument();
   });
 
   it('다른 카드의 연필을 누르면 앞 카드의 폼이 닫힌다 — 동시에 한 장만', () => {
     renderHome();
 
-    fireEvent.click(pencil('내 즐겨찾기', 0));
-    fireEvent.click(pencil('내 즐겨찾기', 1));
+    fireEvent.click(pencil('AI 서비스', 0));
+    fireEvent.click(pencil('AI 서비스', 1));
 
     expect(forms()).toHaveLength(1);
-    expect(formIn('내 즐겨찾기', 1)).toBeInTheDocument();
+    expect(formIn('AI 서비스', 1)).toBeInTheDocument();
   });
 
-  it('섹션이 달라도 한 장만 열린다 — 세 렌더 지점이 같은 상태를 나눠 쓴다', () => {
+  it('섹션이 달라도 한 장만 열린다 — 여러 렌더 지점이 같은 상태를 나눠 쓴다', () => {
+    // 두 섹션에 함께 놓인 SHARED 는 일부러 피한다 — 그 링크는 두 자리에 함께 열리는 것이
+    // 의도된 동작이라(아래 별도 테스트) 여기서 쓰면 무엇을 보는지 흐려진다.
     renderHome();
 
-    fireEvent.click(pencil('내 즐겨찾기'));
-    expect(formIn('내 즐겨찾기')).toHaveAccessibleName(`${FAV_FIRST.title} 수정`);
-
-    fireEvent.click(pencil('매일 사용하는 사이트'));
-    expect(forms()).toHaveLength(1);
-    expect(formIn('매일 사용하는 사이트')).toHaveAccessibleName(`${DAILY_FIRST.title} 수정`);
+    fireEvent.click(pencil('AI 서비스'));
+    expect(formIn('AI 서비스')).toHaveAccessibleName(`${FAV_FIRST.title} 수정`);
 
     fireEvent.click(pencil('현재 운영 중인 사이트', OPERATING_ONLY_INDEX));
     expect(forms()).toHaveLength(1);
@@ -886,9 +838,8 @@ describe('HomeView — 카드 인라인 편집 (J2)', () => {
     // '동시에 한 장만'은 **여러 링크를 동시에 고치지 않는다**는 뜻이지 카드 수를 세는 규칙이 아니다.
     renderHome();
 
-    const dailyIndex = DAILY_ITEMS.findIndex((bookmark) => bookmark.id === SHARED.id);
 
-    fireEvent.click(pencil('매일 사용하는 사이트', dailyIndex));
+    fireEvent.click(pencil('업무용 서비스', 0));
 
     expect(screen.getAllByRole('form', { name: `${SHARED.title} 수정` })).toHaveLength(2);
     expect(forms()).toHaveLength(2);
@@ -897,18 +848,18 @@ describe('HomeView — 카드 인라인 편집 (J2)', () => {
   it('저장에 성공하면 그 링크의 patch 를 보내고 폼이 닫힌다', async () => {
     renderHome();
 
-    fireEvent.click(pencil('매일 사용하는 사이트'));
-    fireEvent.change(within(cards('매일 사용하는 사이트')[0]).getByRole('textbox', { name: '이름' }), {
+    fireEvent.click(pencil('업무용 서비스'));
+    fireEvent.change(within(cards('업무용 서비스')[0]).getByRole('textbox', { name: '이름' }), {
       target: { value: '고친 이름' },
     });
     await act(async () => {
-      fireEvent.click(within(cards('매일 사용하는 사이트')[0]).getByRole('button', { name: '저장' }));
+      fireEvent.click(within(cards('업무용 서비스')[0]).getByRole('button', { name: '저장' }));
     });
 
-    expect(updateBookmark).toHaveBeenCalledWith(DAILY_FIRST.id, { title: '고친 이름' });
+    expect(updateBookmark).toHaveBeenCalledWith(SHARED.id, { title: '고친 이름' });
     expect(forms()).toHaveLength(0);
     // 화면의 값은 서버가 다시 그려 준다(액션의 revalidatePath) — 이 테스트의 props 는 그대로다.
-    expect(within(cards('매일 사용하는 사이트')[0]).getByRole('link')).toBeInTheDocument();
+    expect(within(cards('업무용 서비스')[0]).getByRole('link')).toBeInTheDocument();
   });
 
   it('취소하면 아무것도 보내지 않고 폼이 닫힌다', () => {
@@ -923,14 +874,14 @@ describe('HomeView — 카드 인라인 편집 (J2)', () => {
 
   /**
    * 섹션이 늘어날 때 `{...editing(bookmark)}` 스프레드를 빠뜨리면 그 섹션의 연필만 조용히 아무
-   * 일도 하지 않는다 — 위 테스트들은 세 섹션을 이름으로 짚어 보므로 새 섹션을 보지 못한다.
+   * 일도 하지 않는다 — 위 테스트들은 섹션을 이름으로 짚어 보므로 새 섹션을 보지 못한다.
    * 그래서 화면에 있는 연필을 **전수** 눌러 본다.
    */
   it('화면의 연필 전부가 폼을 연다 — 배선을 빠뜨린 렌더 지점이 없다', () => {
     renderHome();
 
     const all = screen.getAllByRole('button', { name: /.+ 수정$/ });
-    expect(all).toHaveLength(31);
+    expect(all).toHaveLength(20);
 
     for (const button of all) {
       fireEvent.click(button);
@@ -955,17 +906,15 @@ describe('HomeView — 카드 인라인 편집 (J2)', () => {
  * 고정한다. 여기서 보는 것은 화면의 몫 — **어느 카드가 오버레이를 갖는가**와 **편집과의 상호 배제**다.
  */
 describe('HomeView — 카드 삭제 확인 (J3)', () => {
-  const FAV_FIRST = BOOKMARKS[200];
-  const DAILY_ITEMS = BOOKMARKS.filter((bookmark) => bookmark.is_pinned);
-  const DAILY_FIRST = DAILY_ITEMS[0];
+  const FAV_FIRST = BOOKMARKS[40];
   const OPERATING_ITEMS = BOOKMARKS.filter((bookmark) => bookmark.category_id === OPERATING_ID);
 
-  /** 운영 중 섹션에만 있는 카드 — 매일과 겹치는 셋을 피한다(J2 describe 와 같은 사정). */
-  const OPERATING_ONLY_INDEX = OPERATING_ITEMS.findIndex((bookmark) => !bookmark.is_pinned);
-  const OPERATING_ONLY = OPERATING_ITEMS[OPERATING_ONLY_INDEX];
+  /** 두 섹션에 함께 놓이는 링크 — J2 describe 와 같은 사정이다. */
+  const SHARED = OPERATING_ITEMS[0];
 
-  /** 매일·운영 중 두 섹션에 함께 놓이는 링크 — 카드는 둘이지만 링크는 하나다. */
-  const SHARED = OPERATING_ITEMS.find((bookmark) => bookmark.is_pinned)!;
+  /** 운영 중 섹션에만 있는 카드 — 위 겹치는 하나를 피한다. */
+  const OPERATING_ONLY_INDEX = 1;
+  const OPERATING_ONLY = OPERATING_ITEMS[OPERATING_ONLY_INDEX];
 
   /** 섹션의 n 번째 카드에 붙은 휴지통·연필. 같은 링크가 두 섹션에 나올 수 있어 카드 안에서 찾는다. */
   const trash = (name: string, index = 0) =>
@@ -979,7 +928,8 @@ describe('HomeView — 카드 삭제 확인 (J3)', () => {
     within(cards(name)[index]).getByRole('button', { name: '삭제' });
 
   function renderHome() {
-    setFavs(FAV_IDS);
+    // SHARED 를 함께 담아 '업무용 서비스' 묶음과 운영 중 섹션에 같은 링크가 서게 한다.
+    setFavs([...FAV_IDS, SHARED.id]);
     render(<HomeView data={DATA} isAdmin />);
   }
 
@@ -993,12 +943,12 @@ describe('HomeView — 카드 삭제 확인 (J3)', () => {
   it('휴지통을 눌러도 지우지 않는다 — 그 카드 위에 확인 오버레이만 뜬다', () => {
     renderHome();
 
-    fireEvent.click(trash('내 즐겨찾기'));
+    fireEvent.click(trash('AI 서비스'));
 
     expect(deleteBookmark).not.toHaveBeenCalled();
     expect(overlays()).toHaveLength(1);
     expect(
-      within(cards('내 즐겨찾기')[0]).getByRole('alertdialog', {
+      within(cards('AI 서비스')[0]).getByRole('alertdialog', {
         name: `${FAV_FIRST.title} 삭제 확인`,
       }),
     ).toBeInTheDocument();
@@ -1007,10 +957,10 @@ describe('HomeView — 카드 삭제 확인 (J3)', () => {
   it('오버레이는 덧대기다 — 본문은 그대로 남는다', () => {
     renderHome();
 
-    fireEvent.click(trash('내 즐겨찾기'));
+    fireEvent.click(trash('AI 서비스'));
 
     // 편집 폼(교체)과 달리 본문 앵커가 그대로 있다 — 오버레이가 배경으로 덮을 뿐이다.
-    const card = cards('내 즐겨찾기')[0];
+    const card = cards('AI 서비스')[0];
 
     expect(within(card).getByRole('link')).toBeInTheDocument();
     expect(within(card).getByRole('alertdialog')).toBe(card.lastElementChild);
@@ -1019,21 +969,18 @@ describe('HomeView — 카드 삭제 확인 (J3)', () => {
   it('오버레이를 연 카드 말고는 그대로다', () => {
     renderHome();
 
-    fireEvent.click(trash('내 즐겨찾기'));
+    fireEvent.click(trash('AI 서비스'));
 
     expect(overlays()).toHaveLength(1);
-    expect(within(cards('내 즐겨찾기')[1]).queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(within(cards('AI 서비스')[1]).queryByRole('alertdialog')).not.toBeInTheDocument();
   });
 
-  it('섹션이 달라도 한 링크만 묻는다 — 세 렌더 지점이 같은 상태를 나눠 쓴다', () => {
+  it('섹션이 달라도 한 링크만 묻는다 — 여러 렌더 지점이 같은 상태를 나눠 쓴다', () => {
+    // 두 섹션에 함께 놓인 SHARED 는 일부러 피한다(J2 의 같은 자리와 같은 사정).
     renderHome();
 
-    fireEvent.click(trash('내 즐겨찾기'));
+    fireEvent.click(trash('AI 서비스'));
     expect(overlays()[0]).toHaveAccessibleName(`${FAV_FIRST.title} 삭제 확인`);
-
-    fireEvent.click(trash('매일 사용하는 사이트'));
-    expect(overlays()).toHaveLength(1);
-    expect(overlays()[0]).toHaveAccessibleName(`${DAILY_FIRST.title} 삭제 확인`);
 
     fireEvent.click(trash('현재 운영 중인 사이트', OPERATING_ONLY_INDEX));
     expect(overlays()).toHaveLength(1);
@@ -1043,9 +990,8 @@ describe('HomeView — 카드 삭제 확인 (J3)', () => {
   it('같은 링크가 두 섹션에 놓였으면 두 자리 모두 오버레이가 뜬다 — 지우는 것은 한 건이다', () => {
     renderHome();
 
-    const dailyIndex = DAILY_ITEMS.findIndex((bookmark) => bookmark.id === SHARED.id);
 
-    fireEvent.click(trash('매일 사용하는 사이트', dailyIndex));
+    fireEvent.click(trash('업무용 서비스', 0));
 
     expect(screen.getAllByRole('alertdialog', { name: `${SHARED.title} 삭제 확인` })).toHaveLength(2);
   });
@@ -1053,11 +999,10 @@ describe('HomeView — 카드 삭제 확인 (J3)', () => {
   it('두 자리 중 한쪽에서 확인하면 한 번만 보내고 두 자리가 함께 닫힌다', async () => {
     renderHome();
 
-    const dailyIndex = DAILY_ITEMS.findIndex((bookmark) => bookmark.id === SHARED.id);
 
-    fireEvent.click(trash('매일 사용하는 사이트', dailyIndex));
+    fireEvent.click(trash('업무용 서비스', 0));
     await act(async () => {
-      fireEvent.click(confirmIn('매일 사용하는 사이트', dailyIndex));
+      fireEvent.click(confirmIn('업무용 서비스', 0));
     });
 
     expect(deleteBookmark).toHaveBeenCalledExactlyOnceWith(SHARED.id);
@@ -1067,15 +1012,16 @@ describe('HomeView — 카드 삭제 확인 (J3)', () => {
   it('확인하면 그 링크의 id 를 보내고 오버레이가 닫힌다', async () => {
     renderHome();
 
-    fireEvent.click(trash('매일 사용하는 사이트'));
+    fireEvent.click(trash('AI 서비스'));
     await act(async () => {
-      fireEvent.click(confirmIn('매일 사용하는 사이트'));
+      fireEvent.click(confirmIn('AI 서비스'));
     });
 
-    expect(deleteBookmark).toHaveBeenCalledWith(DAILY_FIRST.id);
+    expect(deleteBookmark).toHaveBeenCalledWith(FAV_FIRST.id);
     expect(overlays()).toHaveLength(0);
-    // 목록은 서버가 다시 그려 준다(액션의 revalidatePath) — 이 테스트의 props 는 그대로다.
-    expect(cards('매일 사용하는 사이트')).toHaveLength(DAILY_ITEMS.length);
+    // 지운 링크는 즐겨찾기에서도 빠지므로(J3 DeleteConfirm 의 `remove`) 이 묶음에서 한 장 준다.
+    // 분류 화면의 목록 자체는 서버가 다시 그려 준다(액션의 revalidatePath).
+    expect(cards('AI 서비스')).toHaveLength(FAV_IDS.length - 1);
   });
 
   it('취소하면 아무것도 보내지 않고 오버레이가 닫힌다', () => {
@@ -1095,10 +1041,10 @@ describe('HomeView — 카드 삭제 확인 (J3)', () => {
   it('삭제를 물으면 열려 있던 편집이 닫힌다 (프로토타입 askDel)', () => {
     renderHome();
 
-    fireEvent.click(pencil('내 즐겨찾기'));
+    fireEvent.click(pencil('AI 서비스'));
     expect(forms()).toHaveLength(1);
 
-    fireEvent.click(trash('매일 사용하는 사이트'));
+    fireEvent.click(trash('현재 운영 중인 사이트', OPERATING_ONLY_INDEX));
 
     expect(forms()).toHaveLength(0);
     expect(overlays()).toHaveLength(1);
@@ -1107,10 +1053,10 @@ describe('HomeView — 카드 삭제 확인 (J3)', () => {
   it('편집을 열면 묻고 있던 삭제가 닫힌다 (프로토타입 startEdit)', () => {
     renderHome();
 
-    fireEvent.click(trash('내 즐겨찾기'));
+    fireEvent.click(trash('AI 서비스'));
     expect(overlays()).toHaveLength(1);
 
-    fireEvent.click(pencil('매일 사용하는 사이트'));
+    fireEvent.click(pencil('현재 운영 중인 사이트', OPERATING_ONLY_INDEX));
 
     expect(overlays()).toHaveLength(0);
     expect(forms()).toHaveLength(1);
@@ -1118,14 +1064,14 @@ describe('HomeView — 카드 삭제 확인 (J3)', () => {
 
   /**
    * 섹션이 늘어날 때 `{...deleting(bookmark)}` 스프레드를 빠뜨리면 그 섹션의 휴지통만 조용히
-   * 아무 일도 하지 않는다 — 위 테스트들은 세 섹션을 이름으로 짚어 보므로 새 섹션을 보지 못한다.
+   * 아무 일도 하지 않는다 — 위 테스트들은 섹션을 이름으로 짚어 보므로 새 섹션을 보지 못한다.
    * 그래서 화면에 있는 휴지통을 **전수** 눌러 본다.
    */
   it('화면의 휴지통 전부가 오버레이를 연다 — 배선을 빠뜨린 렌더 지점이 없다', () => {
     renderHome();
 
     const all = screen.getAllByRole('button', { name: /.+ 삭제$/ });
-    expect(all).toHaveLength(31);
+    expect(all).toHaveLength(20);
 
     for (const button of all) {
       fireEvent.click(button);
@@ -1147,7 +1093,7 @@ describe('HomeView — 카드 삭제 확인 (J3)', () => {
  *
  * 저장이 어떻게 일어나는지(자리 맞바꾸기)는 `lib/mutations.test.ts` 가, 옮김 계산은
  * `lib/reorder.test.ts` 가 못박는다. 여기서 보는 것은 **홈이 어느 목록을 어디로 보내는가**다 —
- * 섹션 셋이 저장소가 다르므로(서버 둘 · localStorage 하나) 그 갈래가 이 화면의 계약이다.
+ * 즐겨찾기 묶음은 localStorage, 운영 중 섹션은 서버라 그 갈래가 이 화면의 계약이다.
  */
 describe('HomeView — 드래그 정렬 (J5)', () => {
   /** 끌어서 놓기 한 번 — jsdom 에는 DragEvent 가 없어 dataTransfer 없이 흘려보낸다. */
@@ -1171,29 +1117,19 @@ describe('HomeView — 드래그 정렬 (J5)', () => {
     setFavs(FAV_IDS);
     render(<HomeView data={DATA} isAdmin={false} />);
 
-    for (const card of cards('매일 사용하는 사이트')) {
+    for (const card of cards(OPERATING_CATEGORY_NAME)) {
       expect(card).not.toHaveAttribute('draggable');
     }
     // 앵커의 기본 드래그(주소 끌어다 놓기)도 그대로 살아 있다.
-    expect(openLink('매일 사용하는 사이트')).not.toHaveAttribute('draggable');
+    expect(openLink(OPERATING_CATEGORY_NAME)).not.toHaveAttribute('draggable');
   });
 
   it('관리자 카드는 끌 수 있고, 그때만 앵커가 드래그 소스에서 빠진다', () => {
     render(<HomeView data={DATA} isAdmin />);
 
-    expect(cards('매일 사용하는 사이트')[0]).toHaveAttribute('draggable', 'true');
+    expect(cards(OPERATING_CATEGORY_NAME)[0]).toHaveAttribute('draggable', 'true');
     // 앵커를 그대로 두면 본문을 집었을 때 순서 바꾸기가 아니라 주소 끌기가 일어난다.
-    expect(openLink('매일 사용하는 사이트')).toHaveAttribute('draggable', 'false');
-  });
-
-  it("'매일' 섹션 — 고정된 목록 전부를 넘긴다 (여러 분류가 섞여 있어도)", async () => {
-    render(<HomeView data={DATA} isAdmin />);
-    const pinned = DATA.bookmarks.filter((bookmark) => bookmark.is_pinned);
-
-    await drag('매일 사용하는 사이트', 2, 0);
-
-    const expected = [pinned[2], pinned[0], pinned[1], ...pinned.slice(3)].map((b) => b.id);
-    expect(reorderBookmarks).toHaveBeenCalledWith(expected);
+    expect(openLink(OPERATING_CATEGORY_NAME)).toHaveAttribute('draggable', 'false');
   });
 
   it('옮긴 자리는 저장을 기다리지 않고 곧바로 보인다 (낙관적 순서)', async () => {
@@ -1202,11 +1138,11 @@ describe('HomeView — 드래그 정렬 (J5)', () => {
     vi.mocked(reorderBookmarks).mockReturnValue(pending.promise);
 
     render(<HomeView data={DATA} isAdmin />);
-    const pinned = DATA.bookmarks.filter((bookmark) => bookmark.is_pinned);
+    const items = DATA.bookmarks.filter((bookmark) => bookmark.category_id === OPERATING_ID);
 
-    await drag('매일 사용하는 사이트', 2, 0);
+    await drag(OPERATING_CATEGORY_NAME, 2, 0);
 
-    expect(cards('매일 사용하는 사이트')[0]).toHaveTextContent(pinned[2].title);
+    expect(cards(OPERATING_CATEGORY_NAME)[0]).toHaveTextContent(items[2].title);
 
     await pending.finish();
   });
@@ -1226,7 +1162,7 @@ describe('HomeView — 드래그 정렬 (J5)', () => {
     setFavs(FAV_IDS);
     render(<HomeView data={DATA} isAdmin />);
 
-    await drag('내 즐겨찾기', 2, 0);
+    await drag('AI 서비스', 2, 0);
 
     expect(reorderBookmarks).not.toHaveBeenCalled();
     expect(storedFavs()).toEqual([FAV_IDS[2], FAV_IDS[0], FAV_IDS[1]]);
@@ -1236,7 +1172,7 @@ describe('HomeView — 드래그 정렬 (J5)', () => {
     render(<HomeView data={DATA} isAdmin />);
 
     await act(async () => {
-      fireEvent.drop(cards('매일 사용하는 사이트')[0]);
+      fireEvent.drop(cards(OPERATING_CATEGORY_NAME)[0]);
     });
 
     expect(reorderBookmarks).not.toHaveBeenCalled();
@@ -1255,7 +1191,7 @@ describe('HomeView — 드래그 정렬 (J5)', () => {
       </>,
     );
 
-    await drag('매일 사용하는 사이트', 1, 0);
+    await drag(OPERATING_CATEGORY_NAME, 1, 0);
 
     expect(screen.getByRole('status')).toHaveTextContent(
       '순서를 저장하지 못했습니다. 새로고침 후 다시 시도해 주세요.',
