@@ -28,7 +28,7 @@ import { createServiceRoleClient } from '@/scripts/lib/service-client';
  *   ⑩ `0004_cleanup.sql` 을 실행했는가 — 방치 판정 함수(cleanup_abandoned)가 DB 에 있는가.
  *
  * ⑧⑨⑩ 은 같은 방식이다 — 각 파일이 만드는 함수 하나의 **존재**로 그 파일의 적용을 대표 확인한다
- * (같은 파일 안이라 하나가 있으면 전부 적용된 것이다). **아침 절차: 마이그레이션 0002·0003·0004 를
+ * (같은 파일 안이라 하나가 있으면 전부 적용된 것이다). **아침 절차: 마이그레이션 0002·0003·0004·0005 를
  * SQL Editor 에서 전부 적용한 뒤 이 스크립트로 10종을 통과시킨다.** 하나라도 미적용이면 해당
  * 검사가 시끄럽게 실패한다(fail-loud).
  *
@@ -38,8 +38,13 @@ import { createServiceRoleClient } from '@/scripts/lib/service-client';
 /** 임시 행 식별자 — 검사가 중간에 죽었을 때 수동 정리용으로 남긴다. */
 const MARKER = '__verify_schema__';
 
-/** PRD 하드 제약 — enforce_pin_limit 트리거가 강제하는 상한. */
+/**
+ * 0001 이 `enforce_pin_limit` 트리거로 강제하던 옛 상한. 0005 가 그 트리거를 지웠으므로
+ * 지금은 "여기를 넘길 수 있는가"를 보는 기준점으로만 쓴다(검사 ④).
+ */
 const PIN_LIMIT = 12;
+/** 검사 ④ 가 만들어 보는 고정 개수 — 옛 상한을 한 개 넘긴다. */
+const PIN_PROBE = PIN_LIMIT + 1;
 
 /** ⑦ 의 raw fetch 상한. supabase-js 를 거치지 않는 유일한 호출이라 직접 건다. */
 const SETTINGS_FETCH_TIMEOUT_MS = 10_000;
@@ -184,13 +189,19 @@ async function checkAnonClicksDenied(anon: SupabaseClient, service: SupabaseClie
 }
 
 /**
- * ④ is_pinned 12개 초과 시도 → PIN_LIMIT 예외.
+ * ④ 고정 상한이 **걷혔는지** 확인한다 (0005 적용 여부).
  *
- * 이미 고정된 행이 있으면 그만큼만 채워 정확히 12를 만든 뒤 한 번 더 시도한다(시드 전후 무관).
- * 트리거는 행 단위로 세므로 한 건씩 따로 넣는다 — 다중 VALUES 한 문장은 같은 명령 안의
- * 앞선 행이 count 에 안 잡혀 상한을 넘길 수 있다.
+ * 0001 은 `enforce_pin_limit` 트리거로 12개 상한을 강제했고, 0005 가 그 트리거를 지운다.
+ * 그래서 이 검사는 방향이 뒤집혀 있다 — 예전에는 "13번째가 거부되는가"를 봤지만 지금은
+ * **"13번째가 통과하는가"** 를 본다. 거부되면 0005 가 아직 적용되지 않은 것이다.
+ *
+ * 기존 고정이 몇 개든 상관없이 `PIN_PROBE`(= 옛 상한 + 1)개가 되도록 채운다. 트리거는 행
+ * 단위로 세므로 한 건씩 따로 넣는다 — 다중 VALUES 한 문장은 같은 명령 안의 앞선 행이
+ * count 에 안 잡혀, 트리거가 남아 있어도 통과해 버려 검사가 거짓 통과한다.
+ *
+ * 넣은 행은 `finally` 에서 전부 지운다(중간에 실패해도 시드가 늘어난 채로 남지 않는다).
  */
-async function checkPinLimit(service: SupabaseClient): Promise<Outcome> {
+async function checkPinLimitLifted(service: SupabaseClient): Promise<Outcome> {
   const created: string[] = [];
 
   try {
@@ -202,7 +213,12 @@ async function checkPinLimit(service: SupabaseClient): Promise<Outcome> {
 
     const pinned = existing.count ?? 0;
 
-    for (let i = pinned; i < PIN_LIMIT; i += 1) {
+    if (pinned >= PIN_PROBE) {
+      // 이미 옛 상한을 넘겨 고정돼 있다 = 트리거가 없다는 뜻이다(있었다면 그 상태가 될 수 없다).
+      return pass(`고정이 이미 ${pinned}건 — 옛 상한(${PIN_LIMIT})을 넘겼으므로 트리거가 없다`);
+    }
+
+    for (let i = pinned; i < PIN_PROBE; i += 1) {
       const id = randomUUID();
       const { error } = await service.from('bookmarks').insert({
         id,
@@ -210,28 +226,22 @@ async function checkPinLimit(service: SupabaseClient): Promise<Outcome> {
         url: `https://example.com/verify-pin-${i + 1}`,
         is_pinned: true,
       });
-      if (error) return fail(`${i + 1}번째 고정 삽입이 상한 전에 실패했다: ${describe(error)}`);
+
+      if (error) {
+        if (/PIN_LIMIT/.test(error.message)) {
+          return fail(
+            `${i + 1}번째 고정이 PIN_LIMIT 으로 거부됐다 — 0005_lift_pin_limit.sql 이 아직 적용되지 않았다`,
+          );
+        }
+
+        return fail(`${i + 1}번째 고정 삽입이 상한과 무관한 이유로 실패했다: ${describe(error)}`);
+      }
+
       created.push(id);
     }
 
-    const overflowId = randomUUID();
-    const overflow = await service.from('bookmarks').insert({
-      id: overflowId,
-      title: `${MARKER} pin overflow`,
-      url: 'https://example.com/verify-pin-overflow',
-      is_pinned: true,
-    });
-
-    if (!overflow.error) {
-      created.push(overflowId);
-      return fail(`${PIN_LIMIT + 1}번째 고정이 통과했다 — bookmarks_pin_limit 트리거가 없다`);
-    }
-    if (!/PIN_LIMIT/.test(overflow.error.message)) {
-      return fail(`거부되긴 했으나 PIN_LIMIT 예외가 아니다: ${describe(overflow.error)}`);
-    }
-
     return pass(
-      `기존 ${pinned}건 + 임시 ${created.length}건 = ${PIN_LIMIT}건에서 다음 고정이 거부됨 ${describe(overflow.error)}`,
+      `기존 ${pinned}건 + 임시 ${created.length}건 = ${PIN_PROBE}건까지 고정됨 — 옛 상한(${PIN_LIMIT})을 넘겼다`,
     );
   } finally {
     if (created.length > 0) await service.from('bookmarks').delete().in('id', created);
@@ -552,7 +562,11 @@ async function main(): Promise<void> {
     { id: '①', label: 'anon: categories·bookmarks select 성공', run: () => checkAnonRead(anon) },
     { id: '②', label: 'anon: bookmarks insert 거부', run: () => checkAnonBookmarkInsertDenied(anon, service) },
     { id: '③', label: 'anon: clicks select·insert 거부', run: () => checkAnonClicksDenied(anon, service) },
-    { id: '④', label: `service: is_pinned ${PIN_LIMIT + 1}번째 → PIN_LIMIT`, run: () => checkPinLimit(service) },
+    {
+      id: '④',
+      label: `service: 고정 ${PIN_PROBE}번째 통과 (0005 상한 해제)`,
+      run: () => checkPinLimitLifted(service),
+    },
     { id: '⑤', label: 'anon: bookmark_click_counts select 성공', run: () => checkAnonViewRead(anon) },
     { id: '⑥', label: 'service: 동명 상위 카테고리 중복 거부', run: () => checkCategoryUnique(service) },
     { id: '⑦', label: 'auth: public signup·익명 로그인 비활성', run: () => checkSignupDisabled(url, anonKey) },
@@ -561,8 +575,8 @@ async function main(): Promise<void> {
     { id: '⑩', label: 'rpc: 방치 판정 함수 cleanup_abandoned 존재 (0004 적용)', run: () => checkCleanupApplied(service) },
   ];
 
-  console.log('스키마·설정 검증 — 0001 결과(①~⑥), Auth 설정(⑦), 마이그레이션 0002·0003·0004 적용(⑧⑨⑩)을 확인합니다.');
-  console.log('아침 절차: SQL Editor 에서 0002·0003·0004 를 전부 적용한 뒤 이 스크립트로 10종을 통과시킵니다.');
+  console.log('스키마·설정 검증 — 0001 결과(①~⑥, ④는 0005 로 상한 해제), Auth 설정(⑦), 마이그레이션 0002·0003·0004 적용(⑧⑨⑩)을 확인합니다.');
+  console.log('적용 절차: SQL Editor 에서 0002·0003·0004·0005 를 전부 적용한 뒤 이 스크립트로 10종을 통과시킵니다.');
   console.log(`대상: ${url}`);
   console.log('');
 
@@ -585,7 +599,7 @@ async function main(): Promise<void> {
 
   if (failed > 0) {
     console.error(`${checks.length}종 중 ${failed}종 실패.`);
-    console.error('  ①~⑥ 이 실패했다면: 0001_init.sql 이 그대로 적용됐는지 확인하세요.');
+    console.error('  ①~⑥ 이 실패했다면: 0001_init.sql 이 그대로 적용됐는지 확인하세요 (단 ④ 는 0005_lift_pin_limit.sql 을 봅니다).');
     console.error('  ⑦ 이 실패했다면: 위 안내대로 대시보드에서 signup 을 끄세요 (코드로는 못 고칩니다).');
     console.error('  ⑧⑨⑩ 이 실패했다면: 각각 0002·0003·0004 마이그레이션을 SQL Editor 에서 파일 전체 실행하세요.');
     console.error('  ⑦~⑩ 은 저장소에서 고칠 수 없는 항목입니다 — 대시보드·SQL Editor 에서 사람이 해야 합니다.');
@@ -594,7 +608,7 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `${checks.length}종 전부 통과 — B2 완료 기준과 배포 전 설정 요건(signup·0002·0003·0004)을 만족합니다.`,
+    `${checks.length}종 전부 통과 — B2 완료 기준과 배포 전 설정 요건(signup·0002·0003·0004·0005)을 만족합니다.`,
   );
 }
 

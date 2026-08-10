@@ -129,6 +129,13 @@ const DENIED: ActionResult = { ok: false, error: '로그인이 필요합니다.'
  *
  * DB 예외 원문은 `PIN_LIMIT: 매일 고정은 최대 12개입니다`(마침표 없음)지만, 이 파일의 다른 문구가
  * 모두 마침표로 끝나므로 토스트 문장으로 다듬어 마침표를 붙였다. 문장 자체는 원문 그대로다.
+ *
+ * ⚠️ **상한은 `0005_lift_pin_limit.sql` 이 걷어냈다**(매일 쓰는 사이트가 20개 안팎으로 늘어 12가
+ * 실제 사용을 막았다 — 2026-08-10 제품 결정). 0005 가 적용된 DB 에서는 트리거가 없으므로 이
+ * 문구가 나갈 일이 없다. 그래도 남겨 두는 이유는 **0005 를 아직 적용하지 않은 DB**(새로 세운
+ * 프로젝트, 스테이징)에서 13번째 고정이 거부될 때 "처리하지 못했습니다" 같은 뭉뚱그린 문장 대신
+ * 무엇에 막혔는지 그대로 알려 주기 위해서다. 상한을 되살릴 일이 없다고 판단되면 이 상수·아래
+ * 분기·`DAILY_PIN_MAX` 를 함께 지우면 된다.
  */
 const PIN_LIMIT_MESSAGE = `매일 고정은 최대 ${DAILY_PIN_MAX}개입니다.`;
 
@@ -639,15 +646,19 @@ export async function reorderBookmarks(orderedIds: string[]): Promise<ActionResu
 /**
  * '매일 사용하는 사이트' 고정을 켜고 끈다.
  *
- * **13번째 고정은 DB 트리거(`enforce_pin_limit`)가 막는다** — 액션이 미리 세지 않는 것은 의도다.
- * 세어 보고 쓰는 사이에 다른 요청이 끼어들 수 있어(TOCTOU) 상한이 조용히 13이 될 수 있고, 트리거는
- * `pg_advisory_xact_lock` 으로 그 경합까지 직렬화한다. 여기서는 그 예외를 사용자 문구로 바꾸는 일만 한다.
+ * **개수 상한은 없다** — `0005_lift_pin_limit.sql` 이 `enforce_pin_limit` 트리거를 걷어냈다(12개가
+ * 실제 사용을 막아 제품 결정으로 해제, 2026-08-10). 홈의 '매일' 섹션과 `/daily` 는 `is_pinned` 로
+ * 거르기만 하고 개수를 자르지 않으므로 화면도 그대로 늘어난다.
+ *
+ * 액션이 개수를 **미리 세지 않는** 설계는 그대로다(원래 이유: 세어 보고 쓰는 사이에 다른 요청이
+ * 끼어드는 TOCTOU). 아래 `describeFailure` 의 `PIN_LIMIT` 분기는 0005 를 아직 적용하지 않은 DB 를
+ * 위한 전이 경로로만 남아 있다 — 적용된 DB 에서는 그 예외가 오지 않는다.
  *
  * 읽고 나서 쓰는(read-then-write) 이유: PostgREST 의 update 값에는 **컬럼 식을 넣을 수 없다**
  * (`is_pinned = not is_pinned` 를 표현할 방법이 없고 리터럴만 받는다). 그래서 현재 값을 읽어 반대를
  * 쓴다 — 그 사이 다른 창이 토글하면 나중 요청이 이기지만, 다시 누르면 맞아 돌아온다.
  *
- * 고정을 **푸는** 방향은 트리거가 아예 발동하지 않는다(`when (new.is_pinned)`).
+ * (0005 이전 DB 에서도 고정을 **푸는** 방향은 트리거가 발동하지 않았다 — `when (new.is_pinned)`.)
  */
 export async function togglePin(id: string): Promise<ActionResult> {
   const supabase = await writeClient();
