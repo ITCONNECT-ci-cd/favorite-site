@@ -1,6 +1,12 @@
 import Link from 'next/link';
 
 import {
+  CleanupGroupList,
+  CleanupLinkList,
+  type CleanupItem,
+  type CleanupItemGroup,
+} from '@/components/admin/CleanupSelection';
+import {
   CLEANUP_RETENTION_DAYS,
   type AbandonedBookmark,
   type CleanupBookmark,
@@ -25,15 +31,25 @@ import { hostOf } from '@/lib/url';
  * 다시 그릴 뿐 서버 왕복이 없기 때문이다. 정리 도구의 기준 탭은 사정이 다르다: 방치 판정은
  * 기준일마다 `cleanup_abandoned(retention_days)` **rpc 를 새로 쳐야** 하고(clicks 는 비공개라
  * DB 함수 몫 — M1), 잘라 쓸 상위 집합이 없다. 그래서 기준일은 URL 에 싣고(`?days=`) 서버가
- * 그 값으로 다시 조회한다. 결과적으로 이 화면은 상태가 없어 **서버 컴포넌트**로 남고, 방치
- * 데이터(비공개)가 클라이언트 번들로 새지도 않는다. 탭은 `Link` 라 프리페치로 즉시 넘어간다.
+ * 그 값으로 다시 조회한다. 탭은 `Link` 라 프리페치로 즉시 넘어간다.
+ *
+ * ## 클라이언트로 넘기는 것은 **줄에 그릴 세 칸뿐이다**
+ *
+ * 접힘·체크·일괄 삭제는 서버 왕복 없이 그 자리에서 일어나야 하므로 목록만
+ * `components/admin/CleanupSelection.tsx`(클라이언트)로 떼어 냈다. 이 화면은 서버 컴포넌트로
+ * 남아 **경계에서 자료를 깎는다**: 판정 결과를 통째로 넘기지 않고 `CleanupItem`(id·title·host)
+ * 으로 접어 넘기므로, 방치 판정이 클릭 기록에서 끌어온 `last_clicked_at` 과 `created_at`·
+ * `category_id` 는 클라이언트 경계를 넘지 않는다. 기준 탭·0건 안내·"정리 대상 아님" 명시처럼
+ * 상호작용이 없는 것들도 여기 그대로 남는다.
  *
  * ## 한 북마크가 ①과 ②에 함께 뜰 수 있다 (M1 인계)
  *
  * 한 host 가 완전 중복 URL 과 서로 다른 페이지를 **둘 다** 가지면 그 중복 북마크는 ①과 ②에
  * 모두 등장한다(M1 findDomainGroups 의 distinct≥2 필터는 "중복뿐인 host"만 뺀다). 두 구역은
  * 서로 **독립한 목록**이라(키를 공유하지 않는다 — ①은 url, ②는 host, ③은 id) 겹쳐도 무해하다.
- * 시드엔 완전 중복이 0건이라 실제 겹침은 없지만, 구조가 그 경우를 견딘다.
+ * 체크 상태도 구역마다 따로다 — 목록 컴포넌트가 구역마다 하나씩 서서 각자 자기 선택을 든다
+ * (CleanupSelection 의 "구역마다 따로 산다"). 시드엔 완전 중복이 0건이라 실제 겹침은 없지만,
+ * 구조가 그 경우를 견딘다.
  *
  * `<main>` 은 페이지가 갖고(app/admin/cleanup/page.tsx), 본문 패딩·스크롤은 셸이 진다
  * (AdminShell 계약). 여기서는 그 안의 콘텐츠만 만든다.
@@ -56,10 +72,6 @@ export type CleanupViewProps = {
 const PANEL = 'overflow-hidden rounded-[9px] border border-border bg-card';
 /** 패널 머리 줄 — 프로토타입 `padding:14px 16px;border-bottom;background:#f7f5f2`. */
 const PANEL_HEAD = 'border-b border-border bg-page px-[16px] py-[14px]';
-/** 구분선 있는 행 공통(①②③) — 프로토타입 `border-bottom:1px solid #f2f0ec`. */
-const ROW = 'flex items-center gap-[12px] border-b border-line px-[16px]';
-/** 개수 배지 공통 틀 — 프로토타입 `background:#f3f1ed;border:1px solid #e7e3dc;border-radius:4px`. */
-const COUNT = 'flex-none rounded-[4px] border border-select-hover bg-side px-[7px] py-[2px] text-[11px]';
 
 /** 기준 탭 하나 — 프로토타입 579행: 높이 24px, 좌우 9px, 라운드 6px, 11px/600, 테두리 #ddd8d1. */
 const TAB =
@@ -76,6 +88,36 @@ function titlesOf(bookmarks: readonly CleanupBookmark[], limit?: number): string
   const list = limit === undefined ? bookmarks : bookmarks.slice(0, limit);
 
   return list.map((bookmark) => bookmark.title).join(' · ');
+}
+
+/**
+ * 판정 결과 한 건을 **줄에 그릴 만큼만** 접는다 — 이 세 칸이 클라이언트 경계를 넘는 전부다
+ * (위 JSDoc "클라이언트로 넘기는 것은 줄에 그릴 세 칸뿐이다"). 주소는 여기서 host 로 바꿔 넘긴다:
+ * `hostOf` 는 카드 하단 줄과 같은 규칙이라 판정과 화면이 어긋나지 않고, 원본 url 은 줄에 쓰이지
+ * 않으므로 함께 보낼 이유가 없다.
+ */
+function toItem(bookmark: CleanupBookmark): CleanupItem {
+  return { id: bookmark.id, title: bookmark.title, host: hostOf(bookmark.url) };
+}
+
+/** ① 완전 동일 URL 그룹 → 접었다 펴는 그룹. 이름은 host 지만 키는 url 이다(같은 host 의 다른 중복과 갈린다). */
+function toDuplicateGroups(groups: readonly DuplicateUrlGroup[]): CleanupItemGroup[] {
+  return groups.map((group) => ({
+    key: group.url,
+    label: hostOf(group.url),
+    preview: titlesOf(group.bookmarks),
+    items: group.bookmarks.map(toItem),
+  }));
+}
+
+/** ② 같은 host 그룹 → 접었다 펴는 그룹. */
+function toDomainGroups(groups: readonly DomainGroup[]): CleanupItemGroup[] {
+  return groups.map((group) => ({
+    key: group.host,
+    label: group.host,
+    preview: titlesOf(group.bookmarks, 6),
+    items: group.bookmarks.map(toItem),
+  }));
 }
 
 export function CleanupView({
@@ -100,20 +142,11 @@ export function CleanupView({
             /* 0건 안내(DESIGN_SPEC 6장) — 빈 목록은 고장과 구분되지 않는다. */
             <p className={`${NOTICE} text-fainter`}>주소가 완전히 같은 중복은 없습니다.</p>
           ) : (
-            <ul>
-              {duplicateUrlGroups.map((group) => (
-                /* 키는 url — 이 목록 안에서만 유일하면 된다(②③ 와 키를 공유하지 않는다). */
-                <li key={group.url} className={`${ROW} py-[11px]`}>
-                  <span className="w-[150px] flex-none truncate text-[12.5px] font-semibold text-ink">
-                    {hostOf(group.url)}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-[11.5px] text-desc">
-                    {titlesOf(group.bookmarks)}
-                  </span>
-                  <span className={`${COUNT} font-semibold text-ink`}>{group.bookmarks.length}개</span>
-                </li>
-              ))}
-            </ul>
+            <CleanupGroupList
+              label="같은 주소를 두 번 등록"
+              groups={toDuplicateGroups(duplicateUrlGroups)}
+              tone="strong"
+            />
           )}
         </section>
 
@@ -130,19 +163,14 @@ export function CleanupView({
           {domainGroups.length === 0 ? (
             <p className={`${NOTICE} text-fainter`}>같은 도메인으로 묶이는 링크가 없습니다.</p>
           ) : (
-            <ul>
-              {domainGroups.map((group) => (
-                <li key={group.host} className={`${ROW} py-[10px]`}>
-                  <span className="w-[150px] flex-none truncate text-[12px] font-semibold text-ink">
-                    {group.host}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-[11px] text-fainter">
-                    {titlesOf(group.bookmarks, 6)}
-                  </span>
-                  <span className={`${COUNT} text-desc`}>{group.bookmarks.length}개</span>
-                </li>
-              ))}
-            </ul>
+            /* '정리 대상이 아닙니다'(위 안내)와 삭제 수단이 함께 있는 것은 모순이 아니다 — 그 문장은
+               **자동으로 지울 대상이 아니라는 판정**이고, 여기서 지우는 것은 사람이 그룹을 펴서 보고
+               고른 것뿐이다(사용자 요구: "같은 도메인이 겹치면 삭제"). */
+            <CleanupGroupList
+              label="같은 도메인 · 서로 다른 페이지"
+              groups={toDomainGroups(domainGroups)}
+              tone="soft"
+            />
           )}
         </section>
       </div>
@@ -191,23 +219,9 @@ export function CleanupView({
         ) : abandoned.length === 0 ? (
           <p className={`${NOTICE} text-fainter`}>오래 손대지 않은 링크가 없습니다.</p>
         ) : (
-          <ul>
-            {abandoned.map((bookmark) => (
-              <li key={bookmark.id} className={`${ROW} py-[10px]`}>
-                {/* 프로토타입 587행의 체크 자리 — 정리 도구는 표시 전용이라 동작 없는 장식이다. */}
-                <span
-                  aria-hidden="true"
-                  className="h-[13px] w-[13px] flex-none rounded-[4px] border border-check-off"
-                />
-                <span className="w-[170px] flex-none truncate text-[12.5px] font-medium text-ink">
-                  {bookmark.title}
-                </span>
-                <span className="min-w-0 flex-1 truncate text-[11px] text-fainter">
-                  {hostOf(bookmark.url)}
-                </span>
-              </li>
-            ))}
-          </ul>
+          /* 프로토타입 587행이 장식으로 두었던 체크 자리가 여기서 실제 체크가 된다 — 방치 목록은
+             줄이 전부 보이므로 구역 전체 선택도 함께 둔다(CleanupLinkList 주석). */
+          <CleanupLinkList label="오래 손대지 않은 링크" items={abandoned.map(toItem)} />
         )}
       </section>
     </div>

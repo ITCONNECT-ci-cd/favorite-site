@@ -11,6 +11,7 @@ import {
   createCategory,
   createSubCategory,
   deleteBookmark,
+  deleteBookmarks,
   deleteCategory,
   deleteSubCategory,
   renameCategory,
@@ -55,6 +56,7 @@ const BUILDER_METHODS = [
   'update',
   'delete',
   'eq',
+  'in',
   'is',
   'not',
   'order',
@@ -128,7 +130,7 @@ function insertPayload(op: Op): Record<string, unknown> {
 /**
  * **모든 액션 하나씩** — 이름은 I·J 트랙이 부르는 계약이고, 호출식은 미인증 전수 검사에 쓴다.
  *
- * 이 한 덩어리가 "export 이름 목록"과 "전수 테스트 목록"을 겸한다. 따로 두면 13번째 액션을
+ * 이 한 덩어리가 "export 이름 목록"과 "전수 테스트 목록"을 겸한다. 따로 두면 14번째 액션을
  * 추가하면서 이름만 적고 호출식을 안 적어도 초록불이 나는데, 그러면 그 액션의 인증 관문은
  * 아무도 확인하지 않은 채 배포된다. 아래 '모듈 계약' 이 `Object.keys(모듈)` 과 이 키를 대조하므로,
  * 액션을 늘리면서 여기에 호출식을 적지 않으면 반드시 빨간불이 난다.
@@ -144,6 +146,7 @@ const ALL_ACTIONS: Record<string, () => Promise<ActionResult>> = {
   createBookmark: () => createBookmark({ url: 'https://example.com', categoryId: 'cat-1' }),
   updateBookmark: () => updateBookmark('bm-1', { title: '새 이름' }),
   deleteBookmark: () => deleteBookmark('bm-1'),
+  deleteBookmarks: () => deleteBookmarks(['bm-1', 'bm-2']),
   reorderBookmarks: () => reorderBookmarks(['bm-1', 'bm-2']),
   togglePin: () => togglePin('bm-1'),
 };
@@ -159,11 +162,11 @@ beforeEach(() => {
 // ───────────────────────────────────────────────────────────── 계약 · 구조
 
 describe('모듈 계약', () => {
-  it('내보내는 액션 이름은 전수 테스트 목록과 정확히 같다 (13번째를 추가하면 여기서 걸린다)', async () => {
+  it('내보내는 액션 이름은 전수 테스트 목록과 정확히 같다 (14번째를 추가하면 여기서 걸린다)', async () => {
     const actions = await import('@/lib/mutations');
 
     expect(Object.keys(actions).sort()).toEqual(Object.keys(ALL_ACTIONS).sort());
-    expect(ACTION_ENTRIES).toHaveLength(12);
+    expect(ACTION_ENTRIES).toHaveLength(13);
   });
 
   it("첫 줄이 'use server' 다 — 이게 빠지면 그냥 서버 함수가 되어 화면에서 부를 수 없다", () => {
@@ -208,7 +211,7 @@ describe('인증 관문 — getAdminSession 이 null 이면 아무것도 하지 
     expect(revalidatePath).not.toHaveBeenCalled();
   });
 
-  it('거부 사유를 세분화하지 않는다 — 12개 액션이 모두 같은 문구다', async () => {
+  it('거부 사유를 세분화하지 않는다 — 13개 액션이 모두 같은 문구다', async () => {
     signedOut();
     const messages = new Set<string>();
     for (const [, run] of ACTION_ENTRIES) {
@@ -248,6 +251,13 @@ const HOSTILE: [string, () => Promise<ActionResult>][] = [
   ['updateBookmark("bm-1", { description: 7 })', () => updateBookmark('bm-1', { description: 7 } as never)],
   ['updateBookmark(7, { title })', () => updateBookmark(7 as never, { title: '이름' })],
   ['deleteBookmark(7)', () => deleteBookmark(7 as never)],
+  ['deleteBookmarks("bm-1")', () => deleteBookmarks('bm-1' as never)],
+  ['deleteBookmarks([7])', () => deleteBookmarks([7] as never)],
+  ['deleteBookmarks([""])', () => deleteBookmarks([''] as never)],
+  // 빈 선택은 화면에서 버튼이 잠겨 나올 수 없는 요청이다 — "아무것도 안 지웠는데 성공"으로 접지 않는다.
+  ['deleteBookmarks([])', () => deleteBookmarks([])],
+  // 같은 id 가 두 번 오면 지운 건수와 요청 건수가 영영 어긋난다 — 정렬과 같은 규칙으로 통째로 거부한다.
+  ['deleteBookmarks(["a","a"])', () => deleteBookmarks(['a', 'a'])],
   ['reorderCategories("bm-1")', () => reorderCategories('bm-1' as never)],
   ['reorderCategories([7])', () => reorderCategories([7] as never)],
   ['reorderBookmarks({ 0: "a" })', () => reorderBookmarks({ 0: 'a' } as never)],
@@ -1021,6 +1031,123 @@ describe('deleteBookmark', () => {
     await expect(deleteBookmark('없음')).resolves.toEqual({
       ok: false,
       error: '링크를 찾을 수 없습니다.',
+    });
+  });
+});
+
+/**
+ * M2 정리 도구의 일괄 삭제. 한 건짜리 `deleteBookmark` 를 여러 번 부르는 대신 `in` 한 문장으로
+ * 지운다 — 여기서 못박는 것은 **무엇을 한 문장에 묶는가**(in · 배치 크기)와 **몇 건이 지워졌을 때
+ * 성공이라 부르는가**다.
+ */
+describe('deleteBookmarks', () => {
+  it('받은 id 를 in 한 문장으로 지운다 (건수만큼 왕복하지 않는다)', async () => {
+    const { ops } = signedIn([{ data: [{ id: 'a' }, { id: 'b' }], error: null }]);
+
+    await expect(deleteBookmarks([' a ', 'b'])).resolves.toEqual({ ok: true });
+
+    expect(ops).toHaveLength(1);
+    expect(ops[0].table).toBe('bookmarks');
+    expect(ops[0].calls.some((call) => call.method === 'delete')).toBe(true);
+    // 앞뒤 공백은 다듬어 보낸다(다른 액션과 같은 `asText`).
+    expect(argsOf(ops[0], 'in')).toEqual(['id', ['a', 'b']]);
+    // 지운 건수를 알아야 "한 건도 못 지웠다"를 가릴 수 있다.
+    expect(argsOf(ops[0], 'select')).toEqual(['id']);
+    expect(revalidatePath).toHaveBeenCalledWith('/', 'layout');
+  });
+
+  it('빈 선택은 "요청이 올바르지 않다"로 거부한다 — 0건 삭제를 성공이라 부르지 않는다', async () => {
+    // `reorderBookmarks([])` 는 성공이지만(빈 목록을 정렬한 결과는 빈 목록이다) 삭제는 다르다.
+    // "링크를 찾을 수 없습니다."(0건 삭제)와도 구분한다 — 이건 요청 자체가 잘못된 것이다.
+    const { ops } = signedIn([OK]);
+
+    await expect(deleteBookmarks([])).resolves.toEqual({
+      ok: false,
+      error: '요청이 올바르지 않습니다.',
+    });
+    expect(ops).toHaveLength(0);
+  });
+
+  it('한 건도 지워지지 않으면 지웠다고 하지 않는다 (화면도 다시 그리지 않는다)', async () => {
+    signedIn([NO_ROWS]);
+
+    await expect(deleteBookmarks(['없음-1', '없음-2'])).resolves.toEqual({
+      ok: false,
+      error: '링크를 찾을 수 없습니다.',
+    });
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it('일부가 이미 지워져 있어도 나머지를 지웠으면 성공이다 (요청한 끝 상태에 도달했다)', async () => {
+    // 고른 뒤 다른 창이 한 건을 먼저 지운 경우. 사용자가 원한 끝 상태("이 둘은 없다")는 이뤄졌다.
+    signedIn([{ data: [{ id: 'a' }], error: null }]);
+
+    await expect(deleteBookmarks(['a', 'b'])).resolves.toEqual({ ok: true });
+    expect(revalidatePath).toHaveBeenCalledWith('/', 'layout');
+  });
+
+  it('100건을 넘으면 나눠 보낸다 — id 를 다 실은 URL 이 게이트웨이 한도를 넘는다', async () => {
+    const ids = Array.from({ length: 150 }, (_, index) => `bm-${index}`);
+    const { ops } = signedIn([
+      { data: ids.slice(0, 100).map((id) => ({ id })), error: null },
+      { data: ids.slice(100).map((id) => ({ id })), error: null },
+    ]);
+
+    await expect(deleteBookmarks(ids)).resolves.toEqual({ ok: true });
+
+    expect(ops).toHaveLength(2);
+    expect(argsOf(ops[0], 'in')).toEqual(['id', ids.slice(0, 100)]);
+    expect(argsOf(ops[1], 'in')).toEqual(['id', ids.slice(100)]);
+  });
+
+  it('앞 묶음이 지워진 뒤 뒤 묶음이 실패하면, 실패를 알리면서도 화면은 다시 그린다', async () => {
+    const ids = Array.from({ length: 150 }, (_, index) => `bm-${index}`);
+    signedIn([
+      { data: ids.slice(0, 100).map((id) => ({ id })), error: null },
+      { data: null, error: { message: 'boom', code: '08006' } },
+    ]);
+
+    const result = await deleteBookmarks(ids);
+
+    expect(result.ok).toBe(false);
+    // 100건은 이미 없어졌다 — 화면이 옛 목록을 들고 있으면 지워진 링크를 다시 고르게 된다.
+    expect(revalidatePath).toHaveBeenCalledWith('/', 'layout');
+  });
+
+  it('fetch 가 거부돼도 던지지 않고 실패를 돌려준다 (Promise.allSettled)', async () => {
+    const ids = Array.from({ length: 150 }, (_, index) => `bm-${index}`);
+    signedIn([
+      { data: ids.slice(0, 100).map((id) => ({ id })), error: null },
+      { rejectWith: new TypeError('fetch failed') },
+    ]);
+
+    await expect(deleteBookmarks(ids)).resolves.toEqual({
+      ok: false,
+      error: '처리하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+    });
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('[mutations]'),
+      expect.any(TypeError),
+    );
+    expect(revalidatePath).toHaveBeenCalledWith('/', 'layout'); // 앞 묶음은 이미 지워졌다
+  });
+
+  it('아무것도 지워지지 않은 채 거부되면 화면을 다시 그리지 않는다', async () => {
+    const ids = Array.from({ length: 150 }, (_, index) => `bm-${index}`);
+    signedIn([NO_ROWS, { rejectWith: new TypeError('fetch failed') }]);
+
+    const result = await deleteBookmarks(ids);
+
+    expect(result.ok).toBe(false);
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it('DB 오류는 사용자 문구로 바꾸고 원문은 서버 로그에만 남긴다', async () => {
+    signedIn([{ data: null, error: { message: 'JWT expired', code: 'PGRST301' } }]);
+
+    await expect(deleteBookmarks(['a'])).resolves.toEqual({
+      ok: false,
+      error: '권한이 없습니다. 다시 로그인해 주세요.',
     });
   });
 });
