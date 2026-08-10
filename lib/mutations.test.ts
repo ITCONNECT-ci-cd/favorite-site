@@ -170,7 +170,9 @@ describe('모듈 계약', () => {
   });
 
   it("첫 줄이 'use server' 다 — 이게 빠지면 그냥 서버 함수가 되어 화면에서 부를 수 없다", () => {
-    expect(source.split('\n')[0]).toBe("'use server';");
+    // `\r` 을 함께 버린다 — Windows 의 `core.autocrlf=true` 체크아웃은 작업 트리를 CRLF 로 만든다
+    // (커밋된 blob 은 LF). 검사 대상은 지시문의 **위치**이지 줄바꿈이 아니다.
+    expect(source.split(/\r?\n/)[0]).toBe("'use server';");
   });
 
   it('service role 클라이언트를 어떤 형태로도 끌어오지 않는다', () => {

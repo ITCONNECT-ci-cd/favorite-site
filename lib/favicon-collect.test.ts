@@ -375,7 +375,10 @@ describe('service role 의 사용 범위 — Storage 뿐 (테이블 금지)', ()
   it("첫 줄이 'use server' 다 — 이게 빠지면 화면에서 부를 수 없는 그냥 서버 함수가 된다", () => {
     // H4 가 `lib/mutations.ts` 에 세운 것과 같은 단언. 지시문은 파일 맨 위여야 하고,
     // 위쪽에 JSDoc 블록을 얹다가 한 줄 밀리면 조용히 서버 액션이 아니게 된다.
-    expect(source.split('\n')[0]).toBe("'use server';");
+    // 줄바꿈으로 자를 때 `\r` 을 함께 버린다 — Windows 는 `core.autocrlf=true` 로 체크아웃하면
+    // 작업 트리가 CRLF 가 되고(커밋된 blob 은 LF), `split('\n')` 만 쓰면 첫 줄에 `\r` 이 남아
+    // 소스가 멀쩡한데도 이 단언만 깨진다. 검사하려는 것은 지시문의 **위치**이지 줄바꿈이 아니다.
+    expect(source.split(/\r?\n/)[0]).toBe("'use server';");
   });
 
   it('관문이 함수의 첫 줄이다 (소스)', () => {
