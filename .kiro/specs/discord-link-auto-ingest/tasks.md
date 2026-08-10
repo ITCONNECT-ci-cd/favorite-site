@@ -208,6 +208,9 @@
     Hermes middleware runtime에서 검증한다.
   - [ ] 지정 production channel에서 사용자가 연속 전송한 두 메시지가 서로 다른 receipt/message ID로
     저장되는지 live canary로 검증한다.
+    - 2026-08-10 첫 두 메시지는 bot user가 아닌 managed role mention이라 gateway가 무시했다. exact
+      message ID로 두 URL을 수동 복구해 서로 다른 receipt 저장은 확인했지만, 다음 no-mention 사용자 URL의
+      gateway 자동 응답을 확인할 때까지 이 항목은 완료 처리하지 않는다.
   - [x] agent web tool이 HMAC secret/signing client process env를 볼 수 없고 DNS result·redirect hop마다
     private/reserved 대역을 막는다는 네트워크 증거를 수집한다.
   - [x] 격리를 증명할 수 없는 환경의 no-fetch host/empty-description fallback을 설정하고 smoke한다.
@@ -236,7 +239,7 @@
   - [x] 정식 활성화 전에 agent stop → role NOLOGIN → session terminate → 복구의 kill-switch
     drill도 이상 유무와 무관하게 실제 수행한다.
   - [x] 자동 favicon을 켜기 전에 provider hostname 전달 privacy review를 승인하거나 버튼을 비활성화한다.
-  - [ ] production 감시 channel을 한 곳만 guarded activation하고 즉시 중지할 담당자를 지정한다.
+  - [x] production 감시 channel을 한 곳만 guarded activation하고 즉시 중지할 담당자를 지정한다.
   - [ ] 첫 24시간 자동 행, receipt outcome, expired oldest age, rate ring, DB session, favicon/orphan backlog를
     전수/집계 검토한다.
   - [x] 이상 시 agent stop → role NOLOGIN → session terminate → app rollback 순서와 schema/data 보존을
