@@ -256,25 +256,10 @@ describe('QuickAddCard — 등록', () => {
       description: '검색형 AI',
       categoryId: 'cat-ops',
       faviconUrl: ICON_URL,
-      // 이 타일은 '매일' 섹션이 아니라 분류 목록에 서 있다 — 고정은 켜지 않는다.
-      pinned: false,
     });
     // 순서가 뒤집히면 파비콘 없는 행이 만들어지고 두 번 쓰게 된다(I3 와 같은 계약).
     expect(vi.mocked(collectFavicon).mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(createBookmark).mock.invocationCallOrder[0],
-    );
-  });
-
-  it('pinNew 를 주면 만들면서 매일 고정까지 켜고, 알림도 그렇게 말한다', async () => {
-    renderTile({ pinNew: true });
-
-    open();
-    fill({ url: 'https://a.b/', title: '가나' });
-    await click(addButton());
-
-    expect(createBookmark).toHaveBeenCalledWith(expect.objectContaining({ pinned: true }));
-    expect(screen.getByRole('status')).toHaveTextContent(
-      '가나 추가됨 · 현재 운영 중인 사이트 · 매일 고정',
     );
   });
 

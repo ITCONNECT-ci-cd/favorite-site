@@ -71,8 +71,6 @@ export function MobileChips({ categories, operatingCategoryId }: MobileChipsProp
   const items = [
     { href: '/', name: '홈' },
     { href: '/favorites', name: '내 즐겨찾기' },
-    // 프로토타입은 이 칩만 '매일 사용'으로 줄여 적는다(사이드바는 '매일 사용하는 사이트').
-    { href: '/daily', name: '매일 사용' },
     ...(operating === undefined ? [] : [chipOf(operating)]),
     ...tops.filter((category) => category.id !== operatingCategoryId).map(chipOf),
   ];

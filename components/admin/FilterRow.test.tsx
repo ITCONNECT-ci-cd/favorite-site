@@ -50,7 +50,6 @@ function link(overrides: Partial<AdminLink> & Pick<AdminLink, 'id' | 'title'>): 
     categoryId: 'cat-ai',
     faviconUrl: null,
     clickCount: 0,
-    isPinned: false,
     ...overrides,
   };
 }

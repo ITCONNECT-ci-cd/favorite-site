@@ -19,10 +19,13 @@ import type { BookmarkWithCount, SiteData } from '@/lib/types';
 import { hostOf } from '@/lib/url';
 
 /**
- * 빈 입력에서 보여 주는 "고정해 둔 링크" 개수.
- * 프로토타입 1005행 `recent: daily.slice(0, 6)` — daily 는 `is_pinned` 인 링크를 순서대로 모은 것이다.
+ * 빈 입력에서 보여 주는 "많이 연 링크" 개수.
+ *
+ * 프로토타입은 이 자리에 `daily.slice(0, 6)`(고정해 둔 링크)을 놓았는데, '매일 사용하는 사이트'가
+ * 없어지면서 그 목록의 출처가 사라졌다(2026-08-10). 대신 **클릭 수 상위**를 보여 준다 —
+ * 이미 카드에 그리는 값이라 새로 실어 올 것이 없고, "자주 가는 곳"이라는 뜻은 그대로다.
  */
-const PINNED_ROW_COUNT = 6;
+const TOP_ROW_COUNT = 6;
 
 /**
  * 0건 안내 문구 — 프로토타입 1003·1004행 원문 그대로다.
@@ -73,7 +76,7 @@ const PANEL = [
 const RESULT_ROW = 'flex h-[56px] items-center gap-[12px] border-b border-line px-[18px] cursor-pointer';
 
 /** 고정 링크 행 44px. */
-const PINNED_ROW =
+const TOP_ROW =
   'flex h-[44px] items-center gap-[12px] rounded-[6px] px-[8px] cursor-pointer hover:bg-[#f5f3ef]';
 
 /** 파비콘 타일 공통 뼈대 — 결과 행(26px)과 고정 링크 행(22px)이 크기만 달리해 함께 쓴다. */
@@ -311,13 +314,15 @@ function PalettePanel({
     () => new Map(data.categories.map((category) => [category.id, category.name])),
     [data.categories],
   );
-  const pinned = useMemo(
-    () => data.bookmarks.filter((bookmark) => bookmark.is_pinned).slice(0, PINNED_ROW_COUNT),
+  /* 클릭 수 내림차순 상위 몇 개. 동점이면 서버가 준 차례(sort_order)를 그대로 따르도록
+     **안정 정렬**에 기댄다 — `Array.prototype.sort` 는 규격상 안정이다. */
+  const mostOpened = useMemo(
+    () => [...data.bookmarks].sort((left, right) => right.click_count - left.click_count).slice(0, TOP_ROW_COUNT),
     [data.bookmarks],
   );
 
   const trimmed = query.trim();
-  const showRecent = trimmed === '' && pinned.length > 0;
+  const showRecent = trimmed === '' && mostOpened.length > 0;
   // AI 가 도는 중이거나 결과를 내놓았으면 0건 안내를 감춘다(프로토타입 1002행).
   const showEmpty = trimmed !== '' && results.length === 0 && !aiBusy;
 
@@ -574,10 +579,10 @@ function PalettePanel({
           {showRecent && (
             <div className="px-[18px] pt-[14px] pb-[18px]">
               <div className="mb-[8px] text-[10.5px] font-bold tracking-[0.06em] text-fainter">
-                고정해 둔 링크
+                많이 연 링크
               </div>
-              {pinned.map((bookmark) => (
-                <PinnedRow key={bookmark.id} bookmark={bookmark} anchor={anchorProps(bookmark)} />
+              {mostOpened.map((bookmark) => (
+                <TopRow key={bookmark.id} bookmark={bookmark} anchor={anchorProps(bookmark)} />
               ))}
             </div>
           )}
@@ -689,15 +694,15 @@ function ResultRow({
 }
 
 /**
- * 빈 입력에서 보여 주는 "고정해 둔 링크" 행 44px.
+ * 빈 입력에서 보여 주는 "많이 연 링크" 행 44px.
  * 여는 계약은 결과 행과 같다 — 프로토타입도 `recent` 에 같은 `open` 을 걸었다(914·1003행).
  * 선택(↑↓·↵)은 결과 행에만 있다: 질의가 있어야 결과가 있고, 이 줄은 질의가 없을 때만 보인다.
  */
-function PinnedRow({ bookmark, anchor }: { bookmark: BookmarkWithCount; anchor: RowAnchorProps }) {
+function TopRow({ bookmark, anchor }: { bookmark: BookmarkWithCount; anchor: RowAnchorProps }) {
   const { title, url, description } = bookmark;
 
   return (
-    <a {...anchor} className={PINNED_ROW}>
+    <a {...anchor} className={TOP_ROW}>
       <FaviconTile bookmark={bookmark} size={22} />
       <span className="w-[200px] flex-none truncate text-[13.5px] font-semibold">{title}</span>
       <span className="min-w-0 flex-1 truncate text-[12px] text-desc">{description ?? ''}</span>

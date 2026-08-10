@@ -13,7 +13,8 @@ import { QuickAddCard } from '@/components/card/QuickAddCard';
 import { toQuickAddOptions } from '@/components/card/quick-add-options';
 import { useCardHandlers } from '@/components/useCardHandlers';
 import { useCardReorder } from '@/components/useCardReorder';
-import { DAILY_TITLE, FAVORITES_TITLE, OPERATING_CATEGORY_NAME } from '@/lib/constants';
+import { FAVORITES_TITLE, OPERATING_CATEGORY_NAME } from '@/lib/constants';
+import { FAV_GROUPS, groupFavorites } from '@/lib/fav-groups';
 import { pickFavorites } from '@/lib/favorites';
 import type { BookmarkWithCount, Category, SiteData } from '@/lib/types';
 
@@ -21,7 +22,7 @@ export type HomeViewProps = {
   /** 서버(app/page.tsx)가 getAllData 로 읽어 넘긴 전체 데이터. 두 배열 모두 sort_order 순이다. */
   data: SiteData;
   /**
-   * 서버가 관리자 세션을 확인했는가 (J1) — 세 섹션의 카드 전부에 그대로 흘린다.
+   * 서버가 관리자 세션을 확인했는가 (J1) — 모든 섹션의 카드에 그대로 흘린다.
    *
    * 이 화면은 판정하지 않고 나르기만 한다. 참이면 카드가 연필·휴지통을 **렌더**하고,
    * 거짓이면 그 마크업이 응답에 실리지 않는다(LinkCard 의 isAdmin JSDoc).
@@ -35,29 +36,15 @@ export type HomeViewProps = {
   isAdmin: boolean;
 };
 
-/** 빈 즐겨찾기 안내 — DESIGN_SPEC 3장의 문구를 그대로 옮긴다. */
-const EMPTY_FAVS_TEXT =
-  '다른 화면에서 카드 오른쪽 위의 핀을 누르면 이 자리에 모입니다. 매일 사용하는 사이트와 달리 내가 직접 담고 빼는 목록입니다.';
-
 /**
- * '매일 사용하는 사이트' 섹션 보조문.
+ * 담은 즐겨찾기가 **하나도 없을 때만** 나오는 안내. 원문(DESIGN_SPEC 3장)에서 '매일 사용하는
+ * 사이트와 달리…' 대목을 뺐다 — 그 목록이 없어져(2026-08-10) 비교 대상이 사라졌다.
  *
- * 원래 문구(`직접 고정한 N개 · 자리가 바뀌지 않습니다`)는 **두 군데가 사실과 달랐다**
- * (2026-08-10 사용자 지적).
- *
- * 1. "직접 고정한" — 이 섹션에는 핀이 아예 없다(`showPin={false}`). 고정을 켜고 끄는 곳은
- *    관리 화면의 링크 표뿐이라, 홈에서 직접 고정한 적이 없는 사람에게는 거짓말이었다.
- * 2. "자리가 바뀌지 않습니다" — 관리 화면의 드래그가 이미 `sort_order` 를 바꿨고, 이제
- *    이 섹션에서 직접 끌어 옮길 수도 있다(J5). 정반대를 말하고 있었다.
- *
- * 관리자와 그 밖의 사람에게 다른 문장을 준다. 할 수 없는 일을 알려 주는 안내는 안내가 아니라
- * 잡음이라, 드래그와 추가는 그것이 실제로 되는 화면에서만 말한다.
+ * 세 묶음이 각자 빈 상자를 그리지 않고 **전체가 비었을 때 한 번만** 그린다. 담긴 것이 없는 사람
+ * 화면에 똑같은 안내가 셋 쌓이면 그건 안내가 아니라 벽이다.
  */
-function dailyNote(count: number, isAdmin: boolean): string {
-  return isAdmin
-    ? `관리자가 고정한 ${count}개 · 끌어서 순서를 바꾸고 왼쪽 타일로 추가합니다`
-    : `관리자가 고정한 ${count}개 · 회사가 함께 쓰는 목록입니다`;
-}
+const EMPTY_FAVS_TEXT =
+  '다른 화면에서 카드 오른쪽 위의 핀을 누르면 이 자리에 모입니다. 담고 빼는 것은 전적으로 내 몫이고, 이 브라우저에만 저장됩니다.';
 
 /**
  * '현재 운영 중인 사이트' 상위 카테고리와 그 하위까지의 id 집합. 없으면 null(섹션을 접는다).
@@ -84,8 +71,12 @@ function findOperatingIds(categories: readonly Category[]): { id: string; ids: S
 }
 
 /**
- * 홈 — DESIGN_SPEC 3장. 섹션 세 개(내 즐겨찾기 · 매일 사용하는 사이트 · 현재 운영 중인 사이트)를
+ * 홈 — 즐겨찾기 세 묶음(AI 소식 · AI 서비스 · 업무용 서비스)과 '현재 운영 중인 사이트'를
  * 위에서 아래로 둔다.
+ *
+ * DESIGN_SPEC 3장의 원래 구성은 '내 즐겨찾기 / 매일 사용하는 사이트 / 현재 운영 중인 사이트'
+ * 였다. 2026-08-10 사용자 결정으로 **'매일'은 통째로 걷어내고**(실제로 쓰지 않았다) 즐겨찾기를
+ * 세 묶음으로 나눴다. 스펙만 보고 되살리지 마라.
  *
  * 스펙 3장 "하단 안내"(`나머지 N개는 왼쪽 사이드바에서…` 점선 박스)는 **의도적으로 빼 둔 것**이다
  * (계획서 V6 편차 — 사용자 결정). 스펙만 보고 되살리지 마라.
@@ -95,13 +86,13 @@ function findOperatingIds(categories: readonly Category[]): { id: string; ids: S
  * `useFavorites` 를 **한 번만** 불러 결과를 돌려준다 — 카드마다 부르면 렌더 때마다 카드 수만큼
  * 동기 localStorage 읽기가 생긴다(E1 규약).
  *
- * 세 섹션이 모두 같은 배선을 쓴다: 즐겨찾기든 관리자가 정한 자리든 클릭 집계 대상인 것은 같다.
+ * 모든 섹션이 같은 배선을 쓴다: 즐겨찾기든 분류에서 온 것이든 클릭 집계 대상인 것은 같다.
  *
- * `isAdmin` 도 세 섹션 모두에 같이 준다 — 관리자가 고칠 수 있는 대상은 '어느 섹션에 놓였는가'와
+ * `isAdmin` 도 모든 섹션에 같이 준다 — 관리자가 고칠 수 있는 대상은 '어느 섹션에 놓였는가'와
  * 무관하다. 연필이 하는 일(J2 인라인 편집)은 아래 `editingId` 가, 휴지통이 하는 일(J3 삭제 확인)은
  * `deletingId` 가 든다. 두 상태는 서로를 밀어낸다 — 그 이유는 각 선언에 적어 두었다.
  *
- * **추가(K1)만은 세 섹션에 고루 두지 않는다** — '현재 운영 중인 사이트' 섹션 하나에만 선다.
+ * **추가(K1)만은 고루 두지 않는다** — '현재 운영 중인 사이트' 섹션 하나에만 선다.
  * 근거는 그 섹션의 `lead` 주석에 있다.
  */
 export function HomeView({ data, isAdmin }: HomeViewProps) {
@@ -113,7 +104,7 @@ export function HomeView({ data, isAdmin }: HomeViewProps) {
    * 다른 카드의 연필을 누르면 id 가 덮여 앞 카드의 폼이 사라진다. 카드는 이 규칙을 모른다
    * (LinkCard 의 isEditing JSDoc: 판정도 상태도 여러 카드를 아는 화면이 든다).
    *
-   * 섹션이 셋이어도 상태는 **하나**다. 같은 화면 안에서 섹션을 넘나들어도 폼은 한 장이어야 한다.
+   * 섹션이 여럿이어도 상태는 **하나**다. 같은 화면 안에서 섹션을 넘나들어도 폼은 한 장이어야 한다.
    */
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -129,7 +120,7 @@ export function HomeView({ data, isAdmin }: HomeViewProps) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   /**
-   * 세 섹션이 카드에 똑같이 내려보내는 편집 배선 한 벌. 렌더 지점이 셋이라 여기 모아 둔다 —
+   * 모든 섹션이 카드에 똑같이 내려보내는 편집 배선 한 벌. 렌더 지점이 여럿이라 여기 모아 둔다 —
    * 한 곳만 고쳐지면 그 섹션에서만 '한 장만' 규칙이 깨진다.
    *
    * 플래그와 노드를 **함께** 넘긴다. 하나만 주면 카드가 무시하도록 되어 있는데(폼 없는 빈 카드
@@ -152,7 +143,7 @@ export function HomeView({ data, isAdmin }: HomeViewProps) {
   }
 
   /**
-   * 같은 자리의 삭제 배선 한 벌 — 위 `editing` 과 나란히 세 렌더 지점 전부에 스프레드한다.
+   * 같은 자리의 삭제 배선 한 벌 — 위 `editing` 과 나란히 모든 렌더 지점에 스프레드한다.
    *
    * 카드에는 플래그가 없다(`isEditing` 같은 짝이 없다) — 오버레이는 교체가 아니라 **덧대기**라
    * 노드가 곧 상태다(LinkCard 의 `deleteSlot` 계약).
@@ -175,7 +166,11 @@ export function HomeView({ data, isAdmin }: HomeViewProps) {
   // 담은 순서 유지 · 죽은 id 제외는 `/favorites` 와 같은 규칙이라 lib/favorites 의 순수 함수를 쓴다.
   const favItems = pickFavorites(bookmarks, favs);
 
-  const daily = bookmarks.filter((bookmark) => bookmark.is_pinned);
+  /**
+   * 즐겨찾기를 세 묶음으로 가른다 (2026-08-10). 판정은 링크가 속한 **상위 분류**가 하고
+   * (`lib/fav-groups.ts`), 이 화면은 나온 대로 그리기만 한다.
+   */
+  const favGroups = groupFavorites(favItems, categories);
 
   const operating = findOperatingIds(categories);
   const operatingItems =
@@ -185,95 +180,70 @@ export function HomeView({ data, isAdmin }: HomeViewProps) {
           (bookmark) => bookmark.category_id !== null && operating.ids.has(bookmark.category_id),
         );
 
-  /* 세 섹션의 드래그 정렬 (J5). **섹션마다 따로 든다** — 낙관적 순서도 '요청 중' 빗장도 목록
-     하나에 대한 것이라, 하나로 묶으면 '매일'을 끌던 도중의 빗장이 '운영 중'의 드롭까지 삼킨다.
+  /* 섹션마다 드래그 정렬을 **따로** 든다 (J5) — 낙관적 순서도 '요청 중' 빗장도 목록 하나에 대한
+     것이라, 하나로 묶으면 한 섹션을 끌던 도중의 빗장이 다른 섹션의 드롭까지 삼킨다.
 
-     즐겨찾기만 저장소가 다르다: 순서를 서버가 아니라 이 브라우저가 들고 있으므로
+     즐겨찾기 세 묶음은 저장소가 다르다: 순서를 서버가 아니라 이 브라우저가 들고 있으므로
      (`pickFavorites` 가 localStorage 의 담긴 차례를 그대로 따른다) `reorderBookmarks` 대신
-     `reorderFavs` 를 넘긴다. 관문은 셋 다 `isAdmin` 으로 같다 — 저장되는 곳이 다를 뿐
-     "관리자로 접속했을 때 공개 화면에서 끌어 순서를 바꾼다"가 이 기능의 범위다. */
-  const favOrder = useCardReorder(favItems, isAdmin, reorderFavs);
-  const dailyOrder = useCardReorder(daily, isAdmin);
+     `reorderFavs` 를 넘긴다. **한 묶음의 차례만 넘겨도 안전하다** — `useFavorites().reorder` 는
+     받은 id 들을 앞으로 세우고 나머지는 있던 차례 그대로 뒤에 붙이므로, 다른 두 묶음의 상대
+     순서가 흔들리지 않는다(그 함수의 JSDoc).
+
+     훅은 `FAV_GROUPS` 가 상수 튜플이라 **언제나 세 번, 같은 차례로** 불린다 — 목록 길이에 따라
+     호출 수가 달라지면 훅 규칙이 깨진다. */
+  const favOrders = {
+    'AI 소식': useCardReorder(favGroups['AI 소식'], isAdmin, reorderFavs),
+    'AI 서비스': useCardReorder(favGroups['AI 서비스'], isAdmin, reorderFavs),
+    '업무용 서비스': useCardReorder(favGroups['업무용 서비스'], isAdmin, reorderFavs),
+  };
   const operatingOrder = useCardReorder(operatingItems, isAdmin);
 
   // 섹션 간격은 프로토타입 sectionGap 그대로다 — narrow 20px · 데스크톱 26px (D5).
   return (
     <main className="flex flex-col gap-[20px] min-[820px]:gap-[26px]">
-      <section aria-label={FAVORITES_TITLE}>
-        <SectionHeader
-          title={FAVORITES_TITLE}
-          note={
-            favItems.length > 0
-              ? `핀으로 직접 담은 ${favItems.length}개 · 이 브라우저에만 저장됩니다`
-              : undefined
-          }
-          // 0개면 버튼 자체가 없다(DESIGN_SPEC 3장) — 그래서 여기서는 빈 목록 분기를 걱정하지 않는다.
-          openLabel={favItems.length > 0 ? `${favItems.length}개 한 번에 열기` : undefined}
-          onOpenAll={() => openMany(favItems, FAVORITES_TITLE)}
-        />
-
-        {favItems.length > 0 ? (
-          <CardGrid>
-            {/* favs 에서 뽑은 카드라 핀은 언제나 켜짐이고, 누르면 빼는 동작뿐이다
-                (빼는 순간 favItems 에서 사라져 카드도 함께 없어진다). */}
-            {favOrder.order.map((bookmark) => (
-              <LinkCard
-                key={bookmark.id}
-                bookmark={bookmark}
-                isFaved
-                onToggleFav={handleToggleFav}
-                onOpen={handleOpen}
-                isAdmin={isAdmin}
-                drag={favOrder.dragProps(bookmark.id)}
-                {...editing(bookmark)}
-                {...deleting(bookmark)}
-              />
-            ))}
-          </CardGrid>
-        ) : (
+      {/* 담긴 것이 하나도 없으면 묶음 셋 대신 안내 한 장만 (EMPTY_FAVS_TEXT 주석). */}
+      {favItems.length === 0 ? (
+        <section aria-label={FAVORITES_TITLE}>
+          <SectionHeader title={FAVORITES_TITLE} />
           <EmptyBox>{EMPTY_FAVS_TEXT}</EmptyBox>
-        )}
-      </section>
+        </section>
+      ) : (
+        /* 빈 묶음은 그리지 않는다 — 'AI 소식'만 담은 사람에게 빈 상자 둘을 보여 줄 이유가 없다.
+           차례는 `FAV_GROUPS` 가 정한다(그 배열을 바꾸면 홈도 함께 바뀐다). */
+        FAV_GROUPS.filter((group) => favGroups[group].length > 0).map((group) => {
+          const items = favGroups[group];
+          const order = favOrders[group];
 
-      <section aria-label={DAILY_TITLE}>
-        <SectionHeader
-          title={DAILY_TITLE}
-          note={dailyNote(daily.length, isAdmin)}
-          openLabel={`${daily.length}개 한 번에 열기`}
-          onOpenAll={() => openMany(daily, DAILY_TITLE)}
-        />
-
-        {/* 관리자가 정하는 자리라 핀을 노출하지 않는다(DESIGN_SPEC 3장).
-
-            '+ 링크 추가' 타일이 여기 서는 것은 **이 섹션의 타일만 고정까지 켜기 때문이다**
-            (`pinNew`). 그것이 없으면 여기서 만든 링크가 고른 분류로 들어가고 이 섹션에는
-            나타나지 않아, 방금 누른 자리와 결과가 어긋난다 — '+' 를 이 섹션에 두지 않았던
-            원래 이유가 그것이었다. */}
-        <CardGrid
-          lead={
-            isAdmin ? (
-              <QuickAddCard
-                categories={toQuickAddOptions(categories)}
-                defaultCategoryId={operating?.id ?? categories[0]?.id ?? ''}
-                pinNew
+          return (
+            <section key={group} aria-label={group}>
+              <SectionHeader
+                title={group}
+                note={`핀으로 담은 ${items.length}개 · 이 브라우저에만 저장됩니다`}
+                openLabel={`${items.length}개 한 번에 열기`}
+                onOpenAll={() => openMany(items, group)}
               />
-            ) : undefined
-          }
-        >
-          {dailyOrder.order.map((bookmark) => (
-            <LinkCard
-              key={bookmark.id}
-              bookmark={bookmark}
-              showPin={false}
-              onOpen={handleOpen}
-              isAdmin={isAdmin}
-              drag={dailyOrder.dragProps(bookmark.id)}
-              {...editing(bookmark)}
-              {...deleting(bookmark)}
-            />
-          ))}
-        </CardGrid>
-      </section>
+
+              <CardGrid>
+                {/* favs 에서 뽑은 카드라 핀은 언제나 켜짐이고, 누르면 빼는 동작뿐이다
+                    (빼는 순간 이 묶음에서 사라져 카드도 함께 없어진다). */}
+                {order.order.map((bookmark) => (
+                  <LinkCard
+                    key={bookmark.id}
+                    bookmark={bookmark}
+                    isFaved
+                    onToggleFav={handleToggleFav}
+                    onOpen={handleOpen}
+                    isAdmin={isAdmin}
+                    drag={order.dragProps(bookmark.id)}
+                    {...editing(bookmark)}
+                    {...deleting(bookmark)}
+                  />
+                ))}
+              </CardGrid>
+            </section>
+          );
+        })
+      )}
 
       {operating !== null && (
         <section aria-label={OPERATING_CATEGORY_NAME}>
@@ -294,11 +264,11 @@ export function HomeView({ data, isAdmin }: HomeViewProps) {
 
           {/* '+ 링크 추가' 타일 (K1) — **홈에서는 이 섹션에만** 둔다.
 
-              앞의 두 섹션은 **파생 목록**이라 추가가 의미와 어긋난다: 즐겨찾기는 이 브라우저의
-              localStorage 에서 오고(담는 일은 카드의 핀이 한다), '매일'은 `is_pinned` 로 걸러 낸
-              결과다 — 거기에 링크를 만들면 어느 분류에 들어가는지도, 왜 그 자리에 나타나지
-              않는지도 설명할 수 없다. 이 섹션만이 실제 분류('현재 운영 중인 사이트') 하나를
-              그대로 비추는 목록이라 새 카드가 곧바로 제자리에 선다.
+              앞의 즐겨찾기 묶음들은 **파생 목록**이라 추가가 의미와 어긋난다: 이 브라우저의
+              localStorage 에서 오고(담는 일은 카드의 핀이 한다) 어느 묶음에 들어갈지는 분류가
+              정한다 — 거기에 링크를 만들면 왜 그 자리에 나타나지 않는지 설명할 수 없다.
+              이 섹션만이 실제 분류('현재 운영 중인 사이트') 하나를 그대로 비추는 목록이라
+              새 카드가 곧바로 제자리에 선다.
 
               기본 분류가 이 섹션의 분류인 것도 같은 이유다 — 보고 있는 목록에 한 건 더 붙이는
               것이 가장 흔한 의도다. 다른 분류로 넣고 싶으면 폼의 분류 상자에서 고른다(그때는

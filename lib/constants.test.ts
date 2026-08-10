@@ -3,22 +3,18 @@ import { describe, expect, it } from 'vitest';
 import {
   BREAKPOINT_NARROW,
   CLICK_COOLDOWN_MS,
+  AI_TOOLS_CATEGORY_NAME,
   CLICK_DAILY_CAP,
-  DAILY_PIN_MAX,
-  DAILY_TITLE,
   EMPTY_LIST_MESSAGE,
   FAVORITES_TITLE,
   FAVS_KEY,
+  NEWS_CATEGORY_NAME,
   OPERATING_CATEGORY_NAME,
   REQUEST_FAILED,
   VISITOR_KEY,
 } from '@/lib/constants';
 
 describe('공유 상수', () => {
-  it('오늘의 고정 링크 최대 개수는 12개다', () => {
-    expect(DAILY_PIN_MAX).toBe(12);
-  });
-
   it('클릭 집계 쿨다운은 30초, 방문자별 일일 상한은 10회다', () => {
     expect(CLICK_COOLDOWN_MS).toBe(30_000);
     expect(CLICK_DAILY_CAP).toBe(10);
@@ -44,10 +40,16 @@ describe('공유 상수', () => {
     expect(REQUEST_FAILED).toBe('처리하지 못했습니다. 잠시 후 다시 시도해 주세요.');
   });
 
-  it('화면 이름 셋이 DESIGN_SPEC 3장 표 그대로다 (홈 섹션 = 목록 화면 = 탭 그룹 명칭)', () => {
+  it('화면 이름이 홈 섹션 = 목록 화면 = 탭 그룹 명칭으로 하나다', () => {
     expect(FAVORITES_TITLE).toBe('내 즐겨찾기');
-    expect(DAILY_TITLE).toBe('매일 사용하는 사이트');
-    // 세 번째는 카테고리 판정도 겸하는 위 상수가 그대로 맡는다.
+    // 두 번째는 카테고리 판정도 겸하는 위 상수가 그대로 맡는다.
     expect(OPERATING_CATEGORY_NAME).toBe('현재 운영 중인 사이트');
+  });
+
+  it('즐겨찾기 묶음 판정이 보는 상위 분류 이름이 실제 분류와 같다', () => {
+    // 이 두 값이 실제 분류 이름과 어긋나면 그 분류의 즐겨찾기가 조용히 '업무용 서비스'로
+    // 밀린다(lib/fav-groups.ts) — 분류를 개명하면 여기도 함께 고쳐야 한다.
+    expect(NEWS_CATEGORY_NAME).toBe('뉴스·인사이트');
+    expect(AI_TOOLS_CATEGORY_NAME).toBe('AI 도구 모음');
   });
 });
