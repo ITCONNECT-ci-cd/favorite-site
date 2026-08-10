@@ -328,26 +328,62 @@ describe('createCategory', () => {
 });
 
 describe('renameCategory', () => {
+  /** 개명 대상 조회(1번째 왕복)가 돌려줄 행. */
+  const named = (name: string) => ({ data: { id: 'cat-1', name }, error: null });
+
   it('상위 카테고리의 이름만 바꾼다', async () => {
-    const { ops } = signedIn([OK]);
+    const { ops } = signedIn([named('옛 이름'), OK]);
 
     await expect(renameCategory('cat-1', '  바뀐 이름 ')).resolves.toEqual({ ok: true });
 
-    expect(ops[0].table).toBe('categories');
-    expect(argsOf(ops[0], 'update')).toEqual([{ name: '바뀐 이름' }]);
-    expect(argsOf(ops[0], 'eq')).toEqual(['id', 'cat-1']);
-    expect(argsOf(ops[0], 'is')).toEqual(['parent_id', null]); // 하위를 이 액션으로 고치지 못한다
+    expect(ops[1].table).toBe('categories');
+    expect(argsOf(ops[1], 'update')).toEqual([{ name: '바뀐 이름' }]);
+    expect(argsOf(ops[1], 'eq')).toEqual(['id', 'cat-1']);
+    expect(argsOf(ops[1], 'is')).toEqual(['parent_id', null]); // 하위를 이 액션으로 고치지 못한다
     expect(revalidatePath).toHaveBeenCalledWith('/', 'layout');
   });
 
-  it('없는 id(또는 하위 id)면 바뀐 행이 없으므로 거부한다', async () => {
-    signedIn([NO_ROWS]);
+  it('없는 id(또는 하위 id)면 조회에서 걸러 거부한다', async () => {
+    const { ops } = signedIn([{ data: null, error: null }]);
 
     await expect(renameCategory('없음', '이름')).resolves.toEqual({
       ok: false,
       error: '카테고리를 찾을 수 없습니다.',
     });
+    expect(ops).toHaveLength(1); // 조회에서 끝났다 — update 는 나가지 않는다
     expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  /**
+   * 세 분류는 화면이 **id 가 아니라 이름**으로 찾는다(그 액션의 JSDoc). 이름이 어긋나면 오류 없이
+   * 홈 섹션이 사라지거나 즐겨찾기가 엉뚱한 묶음으로 밀리므로, 조용한 고장을 여기서 막는다.
+   */
+  it.each(['현재 운영 중인 사이트', '뉴스·인사이트', 'AI 도구 모음'])(
+    "화면이 이름으로 찾는 '%s' 는 개명을 거부한다",
+    async (protectedName) => {
+      const { ops } = signedIn([named(protectedName), OK]);
+
+      await expect(renameCategory('cat-1', '새 이름')).resolves.toEqual({
+        ok: false,
+        error:
+          '홈 화면이 이 분류를 이름으로 찾습니다. 이름을 바꾸면 홈에서 사라지므로 개발자와 함께 바꿔야 합니다.',
+      });
+      expect(ops).toHaveLength(1); // 조회만 하고 쓰지 않았다
+      expect(revalidatePath).not.toHaveBeenCalled();
+    },
+  );
+
+  it('같은 이름으로 다시 저장하는 것은 막지 않는다 — 바뀌는 것이 없다', async () => {
+    const { ops } = signedIn([named('AI 도구 모음'), OK]);
+
+    await expect(renameCategory('cat-1', 'AI 도구 모음')).resolves.toEqual({ ok: true });
+    expect(ops).toHaveLength(2);
+  });
+
+  it('보호 대상이 아닌 분류는 그대로 바뀐다', async () => {
+    signedIn([named('마케팅'), OK]);
+
+    await expect(renameCategory('cat-1', '마케팅·광고')).resolves.toEqual({ ok: true });
   });
 
   it('빈 이름은 거부한다', async () => {

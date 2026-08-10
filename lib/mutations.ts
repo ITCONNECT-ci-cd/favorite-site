@@ -52,6 +52,11 @@
 
 import { revalidatePath } from 'next/cache';
 
+import {
+  AI_TOOLS_CATEGORY_NAME,
+  NEWS_CATEGORY_NAME,
+  OPERATING_CATEGORY_NAME,
+} from '@/lib/constants';
 import { createServerSupabaseClient, getAdminSession } from '@/lib/supabase/server';
 import { hostOf } from '@/lib/url';
 
@@ -106,6 +111,9 @@ type WriteClient = Awaited<ReturnType<typeof createServerSupabaseClient>>;
 /** 카테고리 행에서 우리가 보는 부분 — 상위/하위 판정은 `parent_id` 하나로 끝난다. */
 type CategoryRow = { id: string; parent_id: string | null };
 
+/** 이름을 바꾸려는 상위 카테고리에서 `renameCategory` 가 보는 부분. */
+type NameRow = { id: string; name: string };
+
 /** 링크 행에서 `reorderBookmarks` 가 보는 부분 — 지금 쥐고 있는 자리를 읽는다. */
 type OrderRow = { id: string; sort_order: number };
 
@@ -123,6 +131,15 @@ type OrderRow = { id: string; sort_order: number };
 const DENIED: ActionResult = { ok: false, error: '로그인이 필요합니다.' };
 
 const INVALID_REQUEST = '요청이 올바르지 않습니다.';
+/**
+ * 화면이 **이름으로 찾는** 분류의 개명을 막을 때 쓰는 문구.
+ *
+ * 파일 이름이나 상수 이름을 적지 않는다 — 관리 화면을 보는 사람이 할 수 있는 일은 "개발자와
+ * 함께 바꾸기" 하나이고, 나머지는 서버 구조를 알려 주는 단서일 뿐이다(이 파일의 다른 문구와
+ * 같은 방침).
+ */
+const NAME_IS_LOAD_BEARING =
+  '홈 화면이 이 분류를 이름으로 찾습니다. 이름을 바꾸면 홈에서 사라지므로 개발자와 함께 바꿔야 합니다.';
 const NAME_REQUIRED = '이름을 입력하세요.';
 const NAME_TAKEN = '같은 이름의 카테고리가 이미 있습니다.';
 const URL_REQUIRED = '주소 형식이 올바르지 않습니다. http:// 또는 https:// 로 시작하는 주소를 입력하세요.';
@@ -160,6 +177,16 @@ const RETRY_LATER = '처리하지 못했습니다. 잠시 후 다시 시도해 �
  */
 const DELETE_BATCH_SIZE = 100;
 
+/**
+ * 화면이 **이름으로 찾는** 상위 분류들 — `renameCategory` 가 개명을 거부하는 대상이다.
+ * 근거와 각 이름이 무엇을 떠받치는지는 그 액션의 JSDoc 에 있다.
+ */
+const NAME_LOOKED_UP_BY_SCREENS: ReadonlySet<string> = new Set([
+  OPERATING_CATEGORY_NAME,
+  NEWS_CATEGORY_NAME,
+  AI_TOOLS_CATEGORY_NAME,
+]);
+
 // ───────────────────────────────────────────────────────── 상위 카테고리
 
 /**
@@ -196,6 +223,23 @@ export async function createCategory(name: string): Promise<ActionResult> {
 /**
  * 상위 카테고리의 이름을 바꾼다. **하위는 이 액션으로 바꿀 수 없다**(`renameSubCategory` 를 써라) —
  * 쿼리에 `parent_id is null` 을 함께 걸어 두었으므로 하위 id 를 주면 "찾을 수 없다"로 돌아온다.
+ *
+ * ## 화면이 이름으로 찾는 분류 셋은 개명을 거부한다
+ *
+ * 세 화면 요소가 분류를 **id 가 아니라 이름**으로 찾는다. id 는 uuid 라 DB 마다 다르고 재시드하면
+ * 바뀌어서 코드에 못 박을 수 없기 때문이다.
+ *
+ * - `현재 운영 중인 사이트` — 홈의 마지막 섹션 · 사이드바 빠른 접근 · 모바일 칩 · 그 섹션에만
+ *   서는 '+ 링크 추가' 타일 (`findOperatingCategoryId`)
+ * - `뉴스·인사이트` · `AI 도구 모음` — 홈의 즐겨찾기 묶음 판정 (`lib/fav-groups.ts`)
+ *
+ * 이름이 어긋나면 **아무 오류 없이** 그 섹션이 사라지거나 즐겨찾기가 '업무용 서비스'로 밀린다.
+ * 조용한 고장을 문서로만 막아 두면 언젠가 눌린다 — 그래서 여기서 거부한다. 정말 바꿔야 하면
+ * 코드의 상수(`lib/constants.ts`)와 함께 고쳐야 하고, 그때는 이 목록도 따라 바뀐다.
+ *
+ * **지금 이름을 보고 판정한다**(바꾸려는 새 이름이 아니다) — 보호 대상은 "그 자리에 있는 분류"지
+ * 특정 낱말이 아니다. 그래서 다른 분류를 `AI 도구 모음` 으로 **바꾸는 것**은 막지 않는다(그건
+ * 이름 중복이라 DB 의 unique 제약이 따로 거른다).
  */
 export async function renameCategory(id: string, name: string): Promise<ActionResult> {
   const supabase = await writeClient();
@@ -206,6 +250,21 @@ export async function renameCategory(id: string, name: string): Promise<ActionRe
 
   const cleanName = asText(name);
   if (cleanName === null) return fail(NAME_REQUIRED);
+
+  const found = await supabase
+    .from('categories')
+    .select('id, name')
+    .eq('id', targetId)
+    .is('parent_id', null)
+    .maybeSingle();
+  if (found.error !== null) return describeFailure('상위 카테고리 조회', found.error);
+
+  const current = found.data as NameRow | null;
+  if (current === null) return fail(CATEGORY_NOT_FOUND);
+  // 같은 이름으로 다시 저장하는 것은 막지 않는다 — 바뀌는 것이 없으므로 깨질 것도 없다.
+  if (current.name !== cleanName && NAME_LOOKED_UP_BY_SCREENS.has(current.name)) {
+    return fail(NAME_IS_LOAD_BEARING);
+  }
 
   const { data, error } = await supabase
     .from('categories')
