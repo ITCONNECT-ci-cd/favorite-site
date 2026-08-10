@@ -1,6 +1,6 @@
 'use client';
 
-import { startTransition, useEffect, useRef, useState } from 'react';
+import { startTransition, useEffect, useId, useRef, useState } from 'react';
 
 import { toast } from '@/components/Toast';
 import { REQUEST_FAILED } from '@/lib/constants';
@@ -56,9 +56,13 @@ export type CleanupItemGroup = {
  */
 type Tone = 'strong' | 'soft';
 
-/** 구분선 있는 행 공통 — `components/admin/CleanupView.tsx` 의 `ROW` 와 같은 값이다(프로토타입 원문). */
+/**
+ * 구분선 있는 행 공통(프로토타입 줄 모양 그대로). **짝이 되는 상수는 다른 파일에 없다** —
+ * 목록을 통째로 이 파일이 그리게 되면서 `components/admin/CleanupView.tsx` 에 있던 같은 값은
+ * 함께 사라졌다. 없는 쌍둥이를 찾거나 '동기화'하려 들지 말 것.
+ */
 const ROW = 'flex items-center gap-[12px] border-b border-line px-[16px]';
-/** 개수 배지 — 같은 이유로 CleanupView 와 같은 값을 한 벌 더 적는다(서버·클라이언트 경계를 넘지 않으려고). */
+/** 개수 배지 — 위와 같다. 이 파일에서만 쓴다. */
 const COUNT = 'flex-none rounded-[4px] border border-select-hover bg-side px-[7px] py-[2px] text-[11px]';
 
 const TONES: Record<Tone, { pad: string; label: string; preview: string; count: string }> = {
@@ -95,15 +99,28 @@ const BUTTON =
 const DANGER = `${BUTTON} bg-danger font-semibold text-white`;
 const PLAIN = `${BUTTON} border border-border-strong bg-card`;
 
+/**
+ * 확인이 열린 뒤 `삭제` 가 풀릴 때까지 두는 시간(ms). 근거는 `BulkBar` JSDoc "확인을 연 클릭이
+ * 그대로 삭제를 누르지 못하게 한다".
+ *
+ * 테스트가 이 값을 그대로 흘려보내므로 export 한다(`components/Toast.tsx` 의 `TOAST_DURATION_MS`
+ * 와 같은 이유) — 두 곳에 숫자를 따로 적으면 값을 바꿀 때 테스트만 조용히 통과한다.
+ */
+export const CONFIRM_ARM_MS = 300;
+
 /** 매 렌더 새 Set 을 만들지 않기 위한 빈 선택. */
 const NOTHING: ReadonlySet<string> = new Set();
 
 /**
  * ①② — 그룹 목록. **모든 그룹이 접힌 채로 시작한다.**
  *
- * 원래 이 자리는 그룹마다 항목을 전부 펼쳐 두었는데, 도메인이 열 개를 넘으면 화면을 통째로
- * 잡아먹어 "무엇을 지울지 고르는" 일이 되지 않았다(사용자 보고). 그래서 머리 줄만 남기고 항목은
- * 편 그룹에서만 그린다 — 접힌 채로도 이름·미리보기·건수는 보이므로 어느 그룹을 열지 고를 수 있다.
+ * 접힘은 목록을 **압축한 장치가 아니라 길이를 지킨 장치다.** 직전 판(이 파일이 생기기 전의
+ * CleanupView)도 그룹 하나를 한 줄(host + 제목들 truncate + 건수)로만 그렸으므로, 접힌 줄과
+ * 그때의 줄은 같은 길이다. 이 자리에 줄마다 체크박스를 넣으면서 항목을 전부 펼쳤다면 도메인
+ * 열 몇 개가 화면을 통째로 잡아먹어 "무엇을 지울지 고르는" 일이 되지 않았을 것이다 — 그래서
+ * 머리 줄만 남기고 항목은 편 그룹에서만 그린다. 접힌 채로도 이름·미리보기·건수는 보이므로
+ * 어느 그룹을 열지 고를 수 있다. (구역마다 일괄 삭제 바가 한 줄씩 늘었으므로 화면 전체는
+ * 오히려 조금 길어졌다. "줄이 너무 많다"는 불만이 남는다면 그건 별개의 처방이 필요하다.)
  *
  * 한 번에 하나만 열리게 하지 않는다. 두 도메인을 견줘 가며 고르는 일이 흔한데 아코디언이면
  * 다른 쪽이 닫히면서 그쪽 체크가 눈앞에서 사라진다(체크는 남지만 보이지 않는 것이 더 나쁘다).
@@ -148,7 +165,10 @@ export function CleanupGroupList({
               <div className={`${ROW} ${style.pad}`}>
                 <PickBox
                   label={`${group.label} 전체 선택`}
-                  checked={picked === ids.length}
+                  /* 빈 그룹을 '전부 골랐다'로 보이지 않게 길이를 함께 본다 — 아래 `BulkBar` 의
+                     구역 전체 선택과 같은 규칙이다(`lib/cleanup.ts` 판정상 빈 그룹은 나오지
+                     않지만, 한 파일 안에서 같은 판정이 두 규칙이면 나중에 갈라진다). */
+                  checked={ids.length > 0 && picked === ids.length}
                   indeterminate={picked > 0 && picked < ids.length}
                   disabled={bulk.locked}
                   onChange={(on) => {
@@ -198,8 +218,13 @@ export function CleanupGroupList({
  * ③ — 평면 목록(오래 손대지 않은 링크). 그룹이 없으므로 접을 것도 없고, 대신 **구역 전체 선택**을
  * 둔다: 여기 있는 줄은 전부 화면에 보이므로 한 번에 골라도 무엇을 고르는지 보인다.
  *
- * ①②에는 구역 전체 선택을 두지 않는다 — 접힌 그룹까지 통째로 고르게 되고, 특히 ①에서는
- * "남길 하나"까지 함께 골라 같은 주소를 한 건도 남기지 않는 길이 열린다.
+ * ①②에는 구역 전체 선택을 두지 않는다 — 여러 그룹을, 그것도 **접힌 채로** 통째로 고르게 되어
+ * 화면에 보이지 않는 선택이 만들어진다.
+ *
+ * "①에서 남길 하나까지 골라 버린다"는 이유가 아니다. ①의 그룹은 정의상 같은 주소의 사본들이라
+ * 그룹 전체 선택 한 번이 곧 "그 주소를 통째로 없앤다"이고, 그 길은 이미 열려 있으며 막지 않는다 —
+ * 그 선택은 그룹이 함께 펴지면서 눈에 드러나고(`toggleOpen(group.key, true)`) 확인을 한 번 더
+ * 거친다. 여기서 막는 것은 **보이지 않는 것을 고르는 일**이지 전부 고르는 일이 아니다.
  */
 export function CleanupLinkList({ label, items }: { label: string; items: readonly CleanupItem[] }) {
   const bulk = useCleanupSelection(items.map((item) => item.id));
@@ -355,6 +380,22 @@ function useCleanupSelection(visibleIds: readonly string[]) {
  * 확인은 모달이 아니라 **제자리 교체**다(모달 금지 — DESIGN_SPEC). 버튼이 있던 자리에 문구와 두
  * 버튼이 대신 선다.
  *
+ * ## 확인을 연 클릭이 그대로 `삭제` 를 누르지 못하게 한다
+ *
+ * 제자리 교체라서 확인 줄은 **트리거가 있던 자리를 그대로 차지한다**(BAR 가 flex 이고 안내 줄이
+ * `flex-1` 이라 마지막 자식이 오른쪽 끝에 붙는다). 트리거(`선택한 N개 삭제`)는 언제나 `취소` 보다
+ * 넓으므로 그 발자국의 왼쪽 절반은 새로 선 `삭제` 위에 온다 — 상태 전환은 로컬이라 즉시 일어나고,
+ * 통상적인 더블클릭 간격이면 **두 번째 클릭이 `삭제` 에 떨어져** 확인 없이 최대 수백 건이 날아간다.
+ * 카드 삭제는 오버레이 한가운데 버튼이라, 카테고리 삭제는 서버가 '비어 있는 것만' 허용해 완충이
+ * 있지만 여기는 완충이 없고 되돌릴 길도 없다.
+ *
+ * 그래서 `삭제` 는 **잠긴 채로 서고** `CONFIRM_ARM_MS` 뒤에 풀린다. 클릭을 조용히 무시하는 대신
+ * `disabled` 를 쓰는 것은, 눌러도 아무 일도 없는 활성 버튼은 이 화면에서 고장과 구분되지 않기
+ * 때문이다 — 잠긴 모습은 눈에 보이고 보조 기술도 그렇게 읽는다. 버튼 자리를 옮기는 길
+ * (`삭제` 를 문구 왼쪽으로)을 고르지 않은 이유는 겹침이 **글자 폭에 달려 있어서다**: 개수가 세
+ * 자리가 되거나 글꼴·확대율이 바뀌면 다시 겹치는데, 그 조건은 테스트가 볼 수 없다(jsdom 에는
+ * 레이아웃이 없다).
+ *
  * ## 이중 제출은 ref 빗장이 막는다
  *
  * `deleting` 상태만으로는 **같은 틱의 두 번째 클릭**을 못 막는다 — 둘 다 같은 렌더의 클로저를 보고
@@ -385,11 +426,15 @@ function BulkBar({
 }) {
   /** 서버 왕복 중 — 두 버튼을 잠그는 **보이는** 상태다. 빗장은 아래 ref 가 따로 진다. */
   const [deleting, setDeleting] = useState(false);
+  /** `삭제` 가 풀렸는가 — 확인이 열린 뒤 `CONFIRM_ARM_MS` 동안은 서지 않는다(위 JSDoc). */
+  const [armed, setArmed] = useState(false);
   const sending = useRef(false);
 
   const triggerRef = useRef<HTMLButtonElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
   const statusRef = useRef<HTMLParagraphElement>(null);
+  /** 묻는 문장의 id — 두 버튼이 `aria-describedby` 로 문다(아래 확인 갈래). */
+  const messageId = useId();
   /**
    * 확인이 닫힐 때 **누른 버튼으로 돌려줄지**. 취소에서만 선다.
    *
@@ -417,6 +462,21 @@ function BulkBar({
     focusBack(triggerRef.current);
   }, [confirming, deleting]);
 
+  /**
+   * `삭제` 의 빗장을 여는 타이머(위 JSDoc "확인을 연 클릭이…"). 닫힐 때 **반드시 되잠근다** —
+   * 안 그러면 다음에 여는 확인은 처음부터 풀린 채로 서서 같은 구멍이 그대로 돌아온다.
+   */
+  useEffect(() => {
+    if (!confirming) return;
+
+    const timer = setTimeout(() => setArmed(true), CONFIRM_ARM_MS);
+
+    return () => {
+      clearTimeout(timer);
+      setArmed(false);
+    };
+  }, [confirming]);
+
   function cancel(): void {
     restoreTrigger.current = true;
     bulk.close();
@@ -427,6 +487,8 @@ function BulkBar({
 
     // 확인하는 동안 선택은 잠겨 있으므로, 이 목록은 확인 문구가 말한 개수와 정확히 같다.
     const ids = [...bulk.selected];
+    // 0건은 버튼이 이미 잠겨 여기까지 오지 않는다(아래 `disabled`). 남겨 두는 것은 빈 배열이
+    // 액션까지 나가 "요청이 올바르지 않습니다."로 돌아오는 일을 화면에서 한 번 더 막기 위해서다.
     if (ids.length === 0) return;
 
     sending.current = true;
@@ -487,18 +549,42 @@ function BulkBar({
 
       {confirming ? (
         <span className="flex items-center gap-[6px]">
-          <span className="text-[11.5px] font-semibold text-ink">선택한 {count}개를 삭제할까요</span>
-          {/* `aria-busy` 는 '눌렀고 지금 처리 중'을 보조 기술에도 알린다(확인창과 같은 짝). */}
+          {/* 누른 뒤에 나타나는 안내라 스크린 리더가 그 자리에서 읽어야 한다(CategoryHeader 의
+              카테고리 삭제 확인 · SubCategoryRow 의 하위 삭제 확인 · LoginForm 과 같은 짝).
+              포커스는 `취소` 로 가므로 이것이 없으면 들리는 것은 "취소, 버튼"뿐이고, 무엇을 몇 개
+              지우려는지는 끝내 낭독되지 않는다 — 되돌릴 수 없는 일괄 삭제에서 그것은 확인 단계가
+              없는 것과 같다. 두 버튼이 같은 문장을 `aria-describedby` 로 물고 있어, 포커스가 어느
+              쪽에 있어도 묻는 문장이 함께 읽힌다(확인창 DeleteConfirm 과 같은 배선). */}
+          <span id={messageId} role="alert" className="text-[11.5px] font-semibold text-ink">
+            선택한 {count}개를 삭제할까요
+          </span>
+          {/* 이름을 구역으로 갈라 둔다 — 세 구역의 바가 한 화면에 서므로 글자만 보면 `삭제`·`취소`
+              가 셋씩이고, `선택한 N개 삭제` 는 개수가 겹치면 완전히 같아진다. 이름만 듣는 사람에게
+              같은 버튼이 여럿이 되지 않게 SubCategoryRow 의 `${sub.name} 삭제 확인` 규칙을 따른다.
+              `aria-busy` 는 '눌렀고 지금 처리 중'을 보조 기술에도 알린다(확인창과 같은 짝). */}
           <button
             type="button"
-            disabled={deleting}
+            aria-label={`${label} 삭제 확인`}
+            aria-describedby={messageId}
+            /* 확인이 열려 있는 동안 revalidate 로 고른 줄이 전부 사라지면 `count` 가 0이 된다.
+               그때 이 버튼이 활성인 채로 남으면 눌러도 `confirm()` 이 조용히 돌아 나가 고장처럼
+               보인다 — 잠가서 '지금은 지울 것이 없다'를 눈에도 보조 기술에도 드러낸다. */
+            disabled={deleting || !armed || count === 0}
             aria-busy={deleting}
             onClick={() => void confirm()}
             className={DANGER}
           >
             삭제
           </button>
-          <button ref={cancelRef} type="button" disabled={deleting} onClick={cancel} className={PLAIN}>
+          <button
+            ref={cancelRef}
+            type="button"
+            aria-label={`${label} 삭제 취소`}
+            aria-describedby={messageId}
+            disabled={deleting}
+            onClick={cancel}
+            className={PLAIN}
+          >
             취소
           </button>
         </span>
@@ -506,6 +592,9 @@ function BulkBar({
         <button
           ref={triggerRef}
           type="button"
+          /* 보이는 글자를 그대로 품은 채 구역 이름을 앞에 단다(위 확인 버튼과 같은 규칙) —
+             음성 입력이 보이는 글자로 이 버튼을 부를 수 있어야 한다. */
+          aria-label={`${label}에서 선택한 ${count}개 삭제`}
           disabled={count === 0}
           onClick={bulk.ask}
           className={PLAIN}

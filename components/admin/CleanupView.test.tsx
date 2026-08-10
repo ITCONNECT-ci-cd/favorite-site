@@ -146,6 +146,19 @@ describe('CleanupView — ② 같은 도메인 · 서로 다른 페이지', () =
     }
   });
 
+  /**
+   * 같은 구역에 일괄 삭제 바가 서므로, 안내가 "정리 대상이 아닙니다"에서 끝나면 한 화면이 서로
+   * 반대되는 말을 한다. 판정이 지우라고 하지 않을 뿐 사람이 골라 지우는 길은 열려 있다는 것을
+   * 화면 문구가 함께 말해야 한다.
+   */
+  it('그 명시가 삭제 수단과 모순으로 읽히지 않게 한 줄에서 함께 말한다', () => {
+    renderView();
+
+    expect(
+      within(domainRegion()).getByText('서로 다른 서비스라 정리 대상이 아닙니다 · 직접 고른 것만 지웁니다'),
+    ).toBeInTheDocument();
+  });
+
   it('0건이면 안내문을 낸다', () => {
     renderView({ domainGroups: [] });
 
@@ -240,8 +253,9 @@ describe('CleanupView — 기준 탭 (30·90·180·365, URL ?days=)', () => {
 describe('CleanupView — 고르고 지우기 (구역마다 따로)', () => {
   const groupToggle = (region: HTMLElement, label: string) =>
     within(region).getByRole('button', { name: new RegExp(`^${label}`) });
+  /* 이름은 `${구역}에서 선택한 N개 삭제` 다 — 세 구역의 버튼이 이름으로 갈린다(아래 전용 테스트). */
   const deleteButton = (region: HTMLElement) =>
-    within(region).getByRole('button', { name: /^선택한 \d+개 삭제$/ });
+    within(region).getByRole('button', { name: /선택한 \d+개 삭제$/ });
 
   it('세 구역이 모두 자기 삭제 버튼을 갖고, 아무것도 안 골랐으면 잠겨 있다', () => {
     renderView();
@@ -249,6 +263,24 @@ describe('CleanupView — 고르고 지우기 (구역마다 따로)', () => {
     for (const region of [dupRegion(), domainRegion(), staleRegion()]) {
       expect(deleteButton(region)).toBeDisabled();
       expect(deleteButton(region)).toHaveTextContent('선택한 0개 삭제');
+    }
+  });
+
+  /**
+   * 세 바가 한 화면에 서므로 글자만 보면 세 버튼이 전부 `선택한 0개 삭제` 로 같다 — 이름만 듣는
+   * 사람에게는 같은 버튼이 셋이다. 이름 앞에 구역을 달아 갈라 둔다(SubCategoryRow 규칙).
+   */
+  it('세 구역의 삭제 버튼은 이름으로 갈린다 — 글자가 같아도 이름이 다르다', () => {
+    renderView();
+
+    for (const label of [
+      '같은 주소를 두 번 등록',
+      '같은 도메인 · 서로 다른 페이지',
+      '오래 손대지 않은 링크',
+    ]) {
+      expect(
+        screen.getByRole('button', { name: `${label}에서 선택한 0개 삭제` }),
+      ).toBeInTheDocument();
     }
   });
 

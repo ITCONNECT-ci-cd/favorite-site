@@ -14,6 +14,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CleanupGroupList,
   CleanupLinkList,
+  CONFIRM_ARM_MS,
   type CleanupItem,
   type CleanupItemGroup,
 } from '@/components/admin/CleanupSelection';
@@ -69,13 +70,29 @@ function renderItems(items: CleanupItem[] = ITEMS) {
 
 const groupToggle = (label: string) => screen.getByRole('button', { name: new RegExp(`^${label}`) });
 const checkbox = (name: string) => screen.getByRole('checkbox', { name });
-const deleteTrigger = () => screen.getByRole('button', { name: /^선택한 \d+개 삭제$/ });
-const confirmDeleteButton = () => screen.getByRole('button', { name: '삭제' });
-const cancelButton = () => screen.getByRole('button', { name: '취소' });
+/* 세 구역이 한 화면에 서므로 버튼 이름은 구역으로 갈라져 있다(`${구역} 삭제 확인` — SubCategoryRow
+   규칙). 여기서는 한 구역만 그리므로 꼬리로 찾는다. */
+const deleteTrigger = () => screen.getByRole('button', { name: /선택한 \d+개 삭제$/ });
+const confirmDeleteButton = () => screen.getByRole('button', { name: /삭제 확인$/ });
+const cancelButton = () => screen.getByRole('button', { name: /삭제 취소$/ });
 
 /** 체크박스 하나를 누른다 — 제어 컴포넌트라 click 이 change 까지 함께 일으킨다. */
 function check(name: string): void {
   fireEvent.click(checkbox(name));
+}
+
+/**
+ * 확인을 열고 `삭제` 의 빗장이 풀릴 때까지 흘려보낸다.
+ *
+ * 확인 줄은 트리거가 있던 자리를 그대로 차지하므로 `삭제` 는 잠긴 채로 서고 `CONFIRM_ARM_MS`
+ * 뒤에 풀린다(트리거 더블클릭의 두 번째 클릭을 받지 않기 위해서다). 그 잠금 자체는 아래
+ * "확인을 연 클릭의 잔상" 테스트가 보고, 나머지 테스트는 열린 뒤의 일을 보므로 여기로 묶는다.
+ */
+function openConfirm(): void {
+  fireEvent.click(deleteTrigger());
+  act(() => {
+    vi.advanceTimersByTime(CONFIRM_ARM_MS);
+  });
 }
 
 /** 액션이 프라미스를 돌려주므로 확인 경로는 마이크로태스크까지 흘려보낸다. */
@@ -216,6 +233,18 @@ describe('CleanupGroupList — 체크박스', () => {
     expect((checkbox('github.com 전체 선택') as HTMLInputElement).indeterminate).toBe(false);
     expect(checkbox('github.com 전체 선택')).toBeChecked();
   });
+
+  /**
+   * `lib/cleanup.ts` 판정상 빈 그룹은 나오지 않지만, 개수만 견주면 `0 === 0` 이 "전부 골랐다"가
+   * 된다. 구역 전체 선택(`BulkBar`)은 같은 자리에서 길이를 함께 보므로, 한 파일 안에서 같은
+   * 판정이 두 규칙으로 갈라지지 않게 못박는다.
+   */
+  it('빈 그룹의 전체 선택은 "전부 골랐다"로 서지 않는다', () => {
+    renderGroups([{ key: 'empty.test', label: 'empty.test', preview: '', items: [] }]);
+
+    expect(checkbox('empty.test 전체 선택')).not.toBeChecked();
+    expect(deleteTrigger()).toBeDisabled();
+  });
 });
 
 describe('CleanupGroupList — 확인 없이는 지우지 않는다', () => {
@@ -223,7 +252,7 @@ describe('CleanupGroupList — 확인 없이는 지우지 않는다', () => {
     renderGroups();
     check('github.com 전체 선택');
 
-    fireEvent.click(deleteTrigger());
+    openConfirm();
 
     expect(deleteBookmarks).not.toHaveBeenCalled();
     expect(screen.getByText('선택한 2개를 삭제할까요')).toBeInTheDocument();
@@ -235,16 +264,84 @@ describe('CleanupGroupList — 확인 없이는 지우지 않는다', () => {
     renderGroups();
     check('github.com 전체 선택');
 
-    fireEvent.click(deleteTrigger());
+    openConfirm();
 
     expect(cancelButton()).toHaveFocus();
+  });
+
+  /**
+   * 포커스가 `취소` 로 가므로, 묻는 문장이 그 자리에서 낭독되지 않으면 화면을 볼 수 없는
+   * 사용자에게 들리는 것은 "취소, 버튼"뿐이다 — 무엇을 몇 개 지우는지 끝내 알 수 없다.
+   * 이 저장소가 카테고리 삭제·하위 삭제·로그인 실패에 세워 둔 `role="alert"` 와 같은 짝이고,
+   * `aria-describedby` 는 포커스가 어느 버튼에 있어도 문장이 함께 읽히게 한다.
+   */
+  it('묻는 문장이 role="alert" 로 서고, 두 버튼이 그 문장을 물고 있다', () => {
+    renderGroups();
+    check('github.com 전체 선택');
+
+    openConfirm();
+
+    expect(screen.getByRole('alert')).toHaveTextContent('선택한 2개를 삭제할까요');
+    expect(confirmDeleteButton()).toHaveAccessibleDescription('선택한 2개를 삭제할까요');
+    expect(cancelButton()).toHaveAccessibleDescription('선택한 2개를 삭제할까요');
+  });
+
+  /**
+   * 확인 줄은 트리거가 있던 자리를 그대로 차지한다(제자리 교체). 트리거는 `취소` 보다 넓으므로
+   * 그 발자국 왼쪽 절반이 새로 선 `삭제` 위에 오고, 더블클릭의 두 번째 클릭이 거기 떨어진다 —
+   * 되돌릴 수 없는 일괄 삭제가 확인 없이 나가는 길이다. 열린 직후에는 잠가서 그 잔상을 받지 않는다.
+   */
+  it('확인을 연 클릭의 잔상이 삭제를 누르지 않는다 — 열린 직후의 삭제는 잠겨 있다', async () => {
+    renderGroups();
+    check('github.com 전체 선택');
+
+    fireEvent.click(deleteTrigger());
+
+    expect(confirmDeleteButton()).toBeDisabled();
+    await pressDelete();
+    expect(deleteBookmarks).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(CONFIRM_ARM_MS);
+    });
+
+    expect(confirmDeleteButton()).toBeEnabled();
+    await pressDelete();
+    expect(deleteBookmarks).toHaveBeenCalledOnce();
+  });
+
+  it('취소하고 다시 열어도 삭제는 또 잠긴 채로 선다 — 빗장은 열 때마다 새로 걸린다', () => {
+    renderGroups();
+    check('github.com 전체 선택');
+
+    openConfirm();
+    fireEvent.click(cancelButton());
+    fireEvent.click(deleteTrigger());
+
+    expect(confirmDeleteButton()).toBeDisabled();
+  });
+
+  /**
+   * 세 구역의 바가 한 화면에 서므로 글자만 보면 `삭제`·`취소` 가 셋씩이고, `선택한 N개 삭제` 는
+   * 개수가 겹치는 순간 완전히 같아진다(SubCategoryRow 가 문서화한 규칙 — 이름을 구역으로 가른다).
+   */
+  it('버튼 이름 앞에 구역이 선다 — 이름만 듣는 사람에게 같은 버튼이 여럿이 되지 않는다', () => {
+    renderGroups();
+    check('github.com 전체 선택');
+
+    expect(deleteTrigger()).toHaveAccessibleName('같은 도메인에서 선택한 2개 삭제');
+
+    openConfirm();
+
+    expect(confirmDeleteButton()).toHaveAccessibleName('같은 도메인 삭제 확인');
+    expect(cancelButton()).toHaveAccessibleName('같은 도메인 삭제 취소');
   });
 
   it('확인하는 동안에는 선택을 바꿀 수 없다 — 묻는 개수와 지우는 개수가 갈리면 안 된다', () => {
     renderGroups();
     check('github.com 전체 선택');
 
-    fireEvent.click(deleteTrigger());
+    openConfirm();
 
     expect(checkbox('깃헙 A 선택')).toBeDisabled();
     expect(checkbox('github.com 전체 선택')).toBeDisabled();
@@ -254,7 +351,7 @@ describe('CleanupGroupList — 확인 없이는 지우지 않는다', () => {
     renderGroups();
     check('github.com 전체 선택');
 
-    fireEvent.click(deleteTrigger());
+    openConfirm();
     fireEvent.click(cancelButton());
 
     expect(deleteBookmarks).not.toHaveBeenCalled();
@@ -268,7 +365,7 @@ describe('CleanupGroupList — 확인 없이는 지우지 않는다', () => {
     check('깃헙 B 선택');
     check('labs.google 전체 선택');
 
-    fireEvent.click(deleteTrigger());
+    openConfirm();
     await pressDelete();
 
     expect(deleteBookmarks).toHaveBeenCalledExactlyOnceWith(['g2', 'l1']);
@@ -277,7 +374,7 @@ describe('CleanupGroupList — 확인 없이는 지우지 않는다', () => {
   it('같은 틱에 두 번 눌러도 한 번만 보낸다 — 화면이 다시 그려지기 전의 두 번째 클릭', async () => {
     renderGroups();
     check('github.com 전체 선택');
-    fireEvent.click(deleteTrigger());
+    openConfirm();
 
     const finish = pending();
     await act(async () => {
@@ -292,7 +389,7 @@ describe('CleanupGroupList — 확인 없이는 지우지 않는다', () => {
   it('보내는 동안 두 버튼을 잠그고 왕복 중임을 알린다', async () => {
     renderGroups();
     check('github.com 전체 선택');
-    fireEvent.click(deleteTrigger());
+    openConfirm();
 
     const finish = pending();
     await act(async () => {
@@ -311,7 +408,7 @@ describe('CleanupGroupList — 결과 처리', () => {
   it('성공하면 선택을 비우고 알린다', async () => {
     renderGroups();
     check('github.com 전체 선택');
-    fireEvent.click(deleteTrigger());
+    openConfirm();
 
     await pressDelete();
 
@@ -324,11 +421,10 @@ describe('CleanupGroupList — 결과 처리', () => {
   it('성공 뒤 포커스를 잃지 않는다 — 잠긴 버튼 대신 선택 안내가 받는다', async () => {
     renderGroups();
     check('github.com 전체 선택');
-    fireEvent.click(deleteTrigger());
+    openConfirm();
 
     await pressDelete();
 
-    expect(document.body).not.toHaveFocus();
     expect(screen.getByText('선택한 링크가 없습니다')).toHaveFocus();
   });
 
@@ -336,7 +432,7 @@ describe('CleanupGroupList — 결과 처리', () => {
     vi.mocked(deleteBookmarks).mockResolvedValue({ ok: false, error: '링크를 찾을 수 없습니다.' });
     renderGroups();
     check('github.com 전체 선택');
-    fireEvent.click(deleteTrigger());
+    openConfirm();
 
     await pressDelete();
 
@@ -352,7 +448,7 @@ describe('CleanupGroupList — 결과 처리', () => {
     vi.mocked(deleteBookmarks).mockRejectedValue(new TypeError('fetch failed'));
     renderGroups();
     check('github.com 전체 선택');
-    fireEvent.click(deleteTrigger());
+    openConfirm();
 
     await pressDelete();
 
@@ -394,7 +490,7 @@ describe('CleanupLinkList — 평면 목록(방치)', () => {
     renderItems();
 
     check('방치 둘 선택');
-    fireEvent.click(deleteTrigger());
+    openConfirm();
     await pressDelete();
 
     expect(deleteBookmarks).toHaveBeenCalledExactlyOnceWith(['s2']);
@@ -405,7 +501,7 @@ describe('CleanupLinkList — 평면 목록(방치)', () => {
 
     check('방치 셋 선택');
     check('방치 하나 선택');
-    fireEvent.click(deleteTrigger());
+    openConfirm();
     await pressDelete();
 
     expect(deleteBookmarks).toHaveBeenCalledExactlyOnceWith(['s1', 's3']);
@@ -431,10 +527,33 @@ describe('CleanupLinkList — 평면 목록(방치)', () => {
     );
 
     expect(deleteTrigger()).toHaveTextContent('선택한 1개 삭제');
-    fireEvent.click(deleteTrigger());
+    openConfirm();
     await pressDelete();
 
     expect(deleteBookmarks).toHaveBeenCalledExactlyOnceWith(['s3']);
+  });
+
+  /**
+   * 확인이 열려 있는 동안 revalidate 로 고른 줄이 사라질 수 있다(선택은 잠겨 있어도 목록은
+   * 바깥에서 바뀐다). 그때 `삭제` 가 활성인 채로 남으면 눌러도 조용히 아무 일도 일어나지 않아
+   * 고장처럼 보인다 — 잠가서 지울 것이 없다는 사실을 드러낸다.
+   */
+  it('확인 중에 고른 줄이 사라지면 삭제를 잠근다 — 눌러도 아무 일 없는 버튼을 남기지 않는다', () => {
+    const { rerender } = renderItems();
+
+    check('방치 둘 선택');
+    openConfirm();
+    expect(confirmDeleteButton()).toBeEnabled();
+
+    rerender(
+      <>
+        <CleanupLinkList label="오래 손대지 않은 링크" items={[ITEMS[0], ITEMS[2]]} />
+        <Toaster />
+      </>,
+    );
+
+    expect(screen.getByRole('alert')).toHaveTextContent('선택한 0개를 삭제할까요');
+    expect(confirmDeleteButton()).toBeDisabled();
   });
 
   it('항목이 없으면 아무것도 그리지 않는다 — 0건 안내는 바깥 화면의 몫이다', () => {

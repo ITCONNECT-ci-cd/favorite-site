@@ -154,9 +154,11 @@ export function CleanupView({
           {/* 프로토타입 563행: 상단 구분선 + 보조 툴바 배경으로 앞 구역과 나눈다. */}
           <div className="border-t border-line bg-toolbar px-[16px] py-[12px]">
             <div className="text-[12px] font-bold text-ink">같은 도메인 · 서로 다른 페이지</div>
-            {/* 정리 대상이 아니라고 **항상** 명시한다(DESIGN_SPEC 6장) — 완전 중복(①)과 헷갈리지 않게. */}
+            {/* 정리 대상이 아니라고 **항상** 명시한다(DESIGN_SPEC 6장) — 완전 중복(①)과 헷갈리지 않게.
+                뒤 절은 그 문장과 아래 삭제 수단이 한 화면에서 반대되는 말로 읽히지 않게 붙였다:
+                판정이 지우라고 하지 않을 뿐, 사람이 골라 지우는 길은 열려 있다(아래 주석). */}
             <div className="mt-[2px] text-[11.5px] text-fainter">
-              서로 다른 서비스라 정리 대상이 아닙니다
+              서로 다른 서비스라 정리 대상이 아닙니다 · 직접 고른 것만 지웁니다
             </div>
           </div>
 

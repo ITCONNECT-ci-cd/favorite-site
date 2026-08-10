@@ -1066,6 +1066,8 @@ describe('deleteBookmarks', () => {
       error: '요청이 올바르지 않습니다.',
     });
     expect(ops).toHaveLength(0);
+    // 같은 describe 의 다른 실패 경로와 같은 짝 — 아무것도 지우지 않았으면 화면도 다시 그리지 않는다.
+    expect(revalidatePath).not.toHaveBeenCalled();
   });
 
   it('한 건도 지워지지 않으면 지웠다고 하지 않는다 (화면도 다시 그리지 않는다)', async () => {
