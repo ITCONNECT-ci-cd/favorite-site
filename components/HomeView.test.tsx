@@ -7,13 +7,14 @@ import { Toaster } from '@/components/Toast';
 import { recordClick } from '@/lib/clicks';
 import { OPERATING_CATEGORY_NAME } from '@/lib/constants';
 import { useFavorites } from '@/lib/favorites';
-import { deleteBookmark, updateBookmark } from '@/lib/mutations';
+import { deleteBookmark, reorderBookmarks, updateBookmark } from '@/lib/mutations';
 import { rollupCounts } from '@/lib/queries';
 import type { BookmarkWithCount, Category, SiteData } from '@/lib/types';
 import { middleClick } from '@/test/events';
 import { setFavs, storedFavs } from '@/test/favs';
 import { BOOKMARKS, CATEGORIES, siteData } from '@/test/fixtures/seed';
 import { openedTab, openedTabs, setupWindowOpen } from '@/test/open';
+import { pendingResult } from '@/test/pending';
 import { setupToastTimers } from '@/test/toast';
 
 /**
@@ -37,6 +38,7 @@ vi.mock('@/lib/mutations', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/mutations')>()),
   updateBookmark: vi.fn(),
   deleteBookmark: vi.fn(),
+  reorderBookmarks: vi.fn(),
 }));
 
 /**
@@ -227,17 +229,33 @@ describe('HomeView — 매일 사용하는 사이트 섹션', () => {
     expectCards('매일 사용하는 사이트', pinned);
   });
 
-  it('보조문과 열기 버튼을 스펙 문구 그대로 적는다', () => {
+  it('보조문은 **사실**을 적는다 — 고정은 관리 화면에서 하고, 자리는 바뀐다', () => {
     render(<HomeView data={DATA} isAdmin={false} />);
 
     const header = section('매일 사용하는 사이트');
 
     expect(
-      within(header).getByText('직접 고정한 12개 · 자리가 바뀌지 않습니다'),
+      within(header).getByText('관리자가 고정한 12개 · 회사가 함께 쓰는 목록입니다'),
     ).toBeInTheDocument();
     expect(
       within(header).getByRole('button', { name: '12개 한 번에 열기' }),
     ).toBeInTheDocument();
+  });
+
+  it('관리자에게는 여기서 할 수 있는 일(드래그·추가)을 알린다', () => {
+    render(<HomeView data={DATA} isAdmin />);
+
+    expect(
+      within(section('매일 사용하는 사이트')).getByText(
+        '관리자가 고정한 12개 · 끌어서 순서를 바꾸고 왼쪽 타일로 추가합니다',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('할 수 없는 일을 안내하지 않는다 — 비관리자에게 드래그를 말하지 않는다', () => {
+    render(<HomeView data={DATA} isAdmin={false} />);
+
+    expect(within(section('매일 사용하는 사이트')).queryByText(/끌어서/)).toBeNull();
   });
 
   it('카드에 핀을 노출하지 않는다 (관리자 영역)', () => {
@@ -706,15 +724,25 @@ describe('HomeView — 링크 추가 타일 (K1)', () => {
     );
   });
 
-  it('파생 목록(즐겨찾기·매일)에는 두지 않는다', () => {
-    // 즐겨찾기는 이 브라우저의 localStorage 에서, '매일'은 is_pinned 에서 나온 목록이다 —
-    // 거기서 만든 링크는 어느 분류에 들어가는지도, 왜 그 자리에 안 보이는지도 설명할 수 없다.
+  it("'매일' 섹션에도 선다 — 그 타일은 고정까지 켜서 결과가 그 자리에 보인다", () => {
+    render(<HomeView data={DATA} isAdmin />);
+
+    const grid = body('매일 사용하는 사이트');
+
+    expect(grid.firstElementChild).toBe(quickAddTile('매일 사용하는 사이트'));
+    expect(cards('매일 사용하는 사이트')).toHaveLength(
+      BOOKMARKS.filter((bookmark) => bookmark.is_pinned).length,
+    );
+  });
+
+  it('즐겨찾기에는 두지 않는다 — 담는 일은 카드의 핀이 한다', () => {
+    // 이 브라우저의 localStorage 에서 나온 목록이라, 거기서 만든 링크가 왜 그 자리에 안 보이는지
+    // 설명할 수 없다. 고정으로 맞출 수 있는 '매일'과 다른 점이 그것이다.
     setFavs(FAV_IDS);
     render(<HomeView data={DATA} isAdmin />);
 
     expect(quickAddTile('내 즐겨찾기')).toBeNull();
-    expect(quickAddTile('매일 사용하는 사이트')).toBeNull();
-    expect(screen.getAllByRole('button', { name: '링크 추가' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: '링크 추가' })).toHaveLength(2);
   });
 
   it('기본 분류는 그 섹션의 분류다 — 보고 있는 목록에 한 건 더 붙인다', () => {
@@ -734,8 +762,8 @@ describe('HomeView — 링크 추가 타일 (K1)', () => {
     expect(screen.getAllByRole('option')).toHaveLength(CATEGORIES.length);
   });
 
-  it('운영 중 분류가 없어 섹션이 접히면 타일도 없다', () => {
-    // 홈에 실제 분류 목록이 하나도 없는 데이터다 — 그때는 분류 화면의 타일로 추가한다.
+  it('운영 중 분류가 없어 그 섹션이 접혀도 매일 섹션의 타일은 남는다', () => {
+    // 운영 중 섹션은 통째로 사라지지만 '매일'은 분류가 아니라 is_pinned 로 모은 목록이라 남는다.
     render(
       <HomeView
         data={{
@@ -745,6 +773,17 @@ describe('HomeView — 링크 추가 타일 (K1)', () => {
         isAdmin
       />,
     );
+
+    // 섹션 자체가 없으므로 그 안의 타일도 없다 — 남은 하나는 '매일' 것이다.
+    expect(screen.queryByRole('region', { name: OPERATING_CATEGORY_NAME })).toBeNull();
+    expect(screen.getAllByRole('button', { name: '링크 추가' })).toHaveLength(1);
+    expect(quickAddTile('매일 사용하는 사이트')).toBeInTheDocument();
+  });
+
+  it('넣을 분류가 하나도 없으면 타일이 통째로 사라진다 — QuickAddCard 자신의 판단', () => {
+    // QuickAddCard 자신의 판단이다(분류 0개면 아무것도 그리지 않는다). 여기서 보는 것은
+    // 매일 섹션의 타일이 그 판단에 걸리도록 **빈 분류 목록**을 넘긴다는 점이다.
+    render(<HomeView data={{ categories: [], bookmarks: DATA.bookmarks }} isAdmin />);
 
     expect(screen.queryByRole('button', { name: '링크 추가' })).toBeNull();
   });
@@ -1100,5 +1139,126 @@ describe('HomeView — 카드 삭제 확인 (J3)', () => {
 
     expect(screen.queryAllByRole('button', { name: /.+ 삭제$/ })).toHaveLength(0);
     expect(overlays()).toHaveLength(0);
+  });
+});
+
+/**
+ * J5. 관리자가 **공개 화면에서** 카드를 끌어 순서를 바꾼다.
+ *
+ * 저장이 어떻게 일어나는지(자리 맞바꾸기)는 `lib/mutations.test.ts` 가, 옮김 계산은
+ * `lib/reorder.test.ts` 가 못박는다. 여기서 보는 것은 **홈이 어느 목록을 어디로 보내는가**다 —
+ * 섹션 셋이 저장소가 다르므로(서버 둘 · localStorage 하나) 그 갈래가 이 화면의 계약이다.
+ */
+describe('HomeView — 드래그 정렬 (J5)', () => {
+  /** 끌어서 놓기 한 번 — jsdom 에는 DragEvent 가 없어 dataTransfer 없이 흘려보낸다. */
+  async function drag(section: string, from: number, to: number) {
+    const list = cards(section);
+    fireEvent.dragStart(list[from]);
+    fireEvent.dragOver(list[to]);
+    await act(async () => {
+      fireEvent.drop(list[to]);
+    });
+  }
+
+  beforeEach(() => {
+    // 이 파일에는 전역 clearAllMocks 가 없다 — 호출 기록이 테스트 사이에 넘어오면
+    // `not.toHaveBeenCalled()` 가 앞 테스트의 드래그를 보고 실패한다.
+    vi.mocked(reorderBookmarks).mockClear();
+    vi.mocked(reorderBookmarks).mockResolvedValue({ ok: true });
+  });
+
+  it('비관리자 응답에는 드래그 속성이 한 조각도 실리지 않는다', () => {
+    setFavs(FAV_IDS);
+    render(<HomeView data={DATA} isAdmin={false} />);
+
+    for (const card of cards('매일 사용하는 사이트')) {
+      expect(card).not.toHaveAttribute('draggable');
+    }
+    // 앵커의 기본 드래그(주소 끌어다 놓기)도 그대로 살아 있다.
+    expect(openLink('매일 사용하는 사이트')).not.toHaveAttribute('draggable');
+  });
+
+  it('관리자 카드는 끌 수 있고, 그때만 앵커가 드래그 소스에서 빠진다', () => {
+    render(<HomeView data={DATA} isAdmin />);
+
+    expect(cards('매일 사용하는 사이트')[0]).toHaveAttribute('draggable', 'true');
+    // 앵커를 그대로 두면 본문을 집었을 때 순서 바꾸기가 아니라 주소 끌기가 일어난다.
+    expect(openLink('매일 사용하는 사이트')).toHaveAttribute('draggable', 'false');
+  });
+
+  it("'매일' 섹션 — 고정된 목록 전부를 넘긴다 (여러 분류가 섞여 있어도)", async () => {
+    render(<HomeView data={DATA} isAdmin />);
+    const pinned = DATA.bookmarks.filter((bookmark) => bookmark.is_pinned);
+
+    await drag('매일 사용하는 사이트', 2, 0);
+
+    const expected = [pinned[2], pinned[0], pinned[1], ...pinned.slice(3)].map((b) => b.id);
+    expect(reorderBookmarks).toHaveBeenCalledWith(expected);
+  });
+
+  it('옮긴 자리는 저장을 기다리지 않고 곧바로 보인다 (낙관적 순서)', async () => {
+    // 응답을 매달아 둔다 — React 는 액션이 열려 있는 동안에만 낙관값을 들고 있다(test/pending.ts).
+    const pending = pendingResult();
+    vi.mocked(reorderBookmarks).mockReturnValue(pending.promise);
+
+    render(<HomeView data={DATA} isAdmin />);
+    const pinned = DATA.bookmarks.filter((bookmark) => bookmark.is_pinned);
+
+    await drag('매일 사용하는 사이트', 2, 0);
+
+    expect(cards('매일 사용하는 사이트')[0]).toHaveTextContent(pinned[2].title);
+
+    await pending.finish();
+  });
+
+  it("'운영 중' 섹션 — 그 분류의 목록만 넘긴다", async () => {
+    render(<HomeView data={DATA} isAdmin />);
+    const items = DATA.bookmarks.filter((bookmark) => bookmark.category_id === OPERATING_ID);
+
+    await drag(OPERATING_CATEGORY_NAME, 1, 0);
+
+    expect(reorderBookmarks).toHaveBeenCalledWith(
+      [items[1], items[0], ...items.slice(2)].map((b) => b.id),
+    );
+  });
+
+  it('즐겨찾기 섹션은 서버로 보내지 않는다 — 순서를 이 브라우저가 든다', async () => {
+    setFavs(FAV_IDS);
+    render(<HomeView data={DATA} isAdmin />);
+
+    await drag('내 즐겨찾기', 2, 0);
+
+    expect(reorderBookmarks).not.toHaveBeenCalled();
+    expect(storedFavs()).toEqual([FAV_IDS[2], FAV_IDS[0], FAV_IDS[1]]);
+  });
+
+  it('끌기 시작이 없던 drop 은 무시한다 (바깥에서 끌어 온 것)', async () => {
+    render(<HomeView data={DATA} isAdmin />);
+
+    await act(async () => {
+      fireEvent.drop(cards('매일 사용하는 사이트')[0]);
+    });
+
+    expect(reorderBookmarks).not.toHaveBeenCalled();
+  });
+
+  it('저장이 거절되면 그 문구를 그대로 알린다', async () => {
+    setupToastTimers();
+    vi.mocked(reorderBookmarks).mockResolvedValue({
+      ok: false,
+      error: '순서를 저장하지 못했습니다. 새로고침 후 다시 시도해 주세요.',
+    });
+    render(
+      <>
+        <HomeView data={DATA} isAdmin />
+        <Toaster />
+      </>,
+    );
+
+    await drag('매일 사용하는 사이트', 1, 0);
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '순서를 저장하지 못했습니다. 새로고침 후 다시 시도해 주세요.',
+    );
   });
 });

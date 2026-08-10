@@ -12,6 +12,7 @@ import { InlineEdit } from '@/components/card/InlineEdit';
 import { QuickAddCard } from '@/components/card/QuickAddCard';
 import { toQuickAddOptions } from '@/components/card/quick-add-options';
 import { useCardHandlers } from '@/components/useCardHandlers';
+import { useCardReorder } from '@/components/useCardReorder';
 import { DAILY_TITLE, FAVORITES_TITLE, OPERATING_CATEGORY_NAME } from '@/lib/constants';
 import { pickFavorites } from '@/lib/favorites';
 import type { BookmarkWithCount, Category, SiteData } from '@/lib/types';
@@ -37,6 +38,26 @@ export type HomeViewProps = {
 /** 빈 즐겨찾기 안내 — DESIGN_SPEC 3장의 문구를 그대로 옮긴다. */
 const EMPTY_FAVS_TEXT =
   '다른 화면에서 카드 오른쪽 위의 핀을 누르면 이 자리에 모입니다. 매일 사용하는 사이트와 달리 내가 직접 담고 빼는 목록입니다.';
+
+/**
+ * '매일 사용하는 사이트' 섹션 보조문.
+ *
+ * 원래 문구(`직접 고정한 N개 · 자리가 바뀌지 않습니다`)는 **두 군데가 사실과 달랐다**
+ * (2026-08-10 사용자 지적).
+ *
+ * 1. "직접 고정한" — 이 섹션에는 핀이 아예 없다(`showPin={false}`). 고정을 켜고 끄는 곳은
+ *    관리 화면의 링크 표뿐이라, 홈에서 직접 고정한 적이 없는 사람에게는 거짓말이었다.
+ * 2. "자리가 바뀌지 않습니다" — 관리 화면의 드래그가 이미 `sort_order` 를 바꿨고, 이제
+ *    이 섹션에서 직접 끌어 옮길 수도 있다(J5). 정반대를 말하고 있었다.
+ *
+ * 관리자와 그 밖의 사람에게 다른 문장을 준다. 할 수 없는 일을 알려 주는 안내는 안내가 아니라
+ * 잡음이라, 드래그와 추가는 그것이 실제로 되는 화면에서만 말한다.
+ */
+function dailyNote(count: number, isAdmin: boolean): string {
+  return isAdmin
+    ? `관리자가 고정한 ${count}개 · 끌어서 순서를 바꾸고 왼쪽 타일로 추가합니다`
+    : `관리자가 고정한 ${count}개 · 회사가 함께 쓰는 목록입니다`;
+}
 
 /**
  * '현재 운영 중인 사이트' 상위 카테고리와 그 하위까지의 id 집합. 없으면 null(섹션을 접는다).
@@ -85,7 +106,7 @@ function findOperatingIds(categories: readonly Category[]): { id: string; ids: S
  */
 export function HomeView({ data, isAdmin }: HomeViewProps) {
   const { categories, bookmarks } = data;
-  const { favs, handleToggleFav, handleOpen, openMany } = useCardHandlers(bookmarks);
+  const { favs, handleToggleFav, handleOpen, openMany, reorderFavs } = useCardHandlers(bookmarks);
 
   /**
    * 지금 편집 중인 카드 (J2). **'동시에 한 장만'은 이 값이 하나뿐이라는 데서 그대로 나온다** —
@@ -164,6 +185,17 @@ export function HomeView({ data, isAdmin }: HomeViewProps) {
           (bookmark) => bookmark.category_id !== null && operating.ids.has(bookmark.category_id),
         );
 
+  /* 세 섹션의 드래그 정렬 (J5). **섹션마다 따로 든다** — 낙관적 순서도 '요청 중' 빗장도 목록
+     하나에 대한 것이라, 하나로 묶으면 '매일'을 끌던 도중의 빗장이 '운영 중'의 드롭까지 삼킨다.
+
+     즐겨찾기만 저장소가 다르다: 순서를 서버가 아니라 이 브라우저가 들고 있으므로
+     (`pickFavorites` 가 localStorage 의 담긴 차례를 그대로 따른다) `reorderBookmarks` 대신
+     `reorderFavs` 를 넘긴다. 관문은 셋 다 `isAdmin` 으로 같다 — 저장되는 곳이 다를 뿐
+     "관리자로 접속했을 때 공개 화면에서 끌어 순서를 바꾼다"가 이 기능의 범위다. */
+  const favOrder = useCardReorder(favItems, isAdmin, reorderFavs);
+  const dailyOrder = useCardReorder(daily, isAdmin);
+  const operatingOrder = useCardReorder(operatingItems, isAdmin);
+
   // 섹션 간격은 프로토타입 sectionGap 그대로다 — narrow 20px · 데스크톱 26px (D5).
   return (
     <main className="flex flex-col gap-[20px] min-[820px]:gap-[26px]">
@@ -184,7 +216,7 @@ export function HomeView({ data, isAdmin }: HomeViewProps) {
           <CardGrid>
             {/* favs 에서 뽑은 카드라 핀은 언제나 켜짐이고, 누르면 빼는 동작뿐이다
                 (빼는 순간 favItems 에서 사라져 카드도 함께 없어진다). */}
-            {favItems.map((bookmark) => (
+            {favOrder.order.map((bookmark) => (
               <LinkCard
                 key={bookmark.id}
                 bookmark={bookmark}
@@ -192,6 +224,7 @@ export function HomeView({ data, isAdmin }: HomeViewProps) {
                 onToggleFav={handleToggleFav}
                 onOpen={handleOpen}
                 isAdmin={isAdmin}
+                drag={favOrder.dragProps(bookmark.id)}
                 {...editing(bookmark)}
                 {...deleting(bookmark)}
               />
@@ -205,20 +238,36 @@ export function HomeView({ data, isAdmin }: HomeViewProps) {
       <section aria-label={DAILY_TITLE}>
         <SectionHeader
           title={DAILY_TITLE}
-          note={`직접 고정한 ${daily.length}개 · 자리가 바뀌지 않습니다`}
+          note={dailyNote(daily.length, isAdmin)}
           openLabel={`${daily.length}개 한 번에 열기`}
           onOpenAll={() => openMany(daily, DAILY_TITLE)}
         />
 
-        {/* 관리자가 정하는 자리라 핀을 노출하지 않는다(DESIGN_SPEC 3장). */}
-        <CardGrid>
-          {daily.map((bookmark) => (
+        {/* 관리자가 정하는 자리라 핀을 노출하지 않는다(DESIGN_SPEC 3장).
+
+            '+ 링크 추가' 타일이 여기 서는 것은 **이 섹션의 타일만 고정까지 켜기 때문이다**
+            (`pinNew`). 그것이 없으면 여기서 만든 링크가 고른 분류로 들어가고 이 섹션에는
+            나타나지 않아, 방금 누른 자리와 결과가 어긋난다 — '+' 를 이 섹션에 두지 않았던
+            원래 이유가 그것이었다. */}
+        <CardGrid
+          lead={
+            isAdmin ? (
+              <QuickAddCard
+                categories={toQuickAddOptions(categories)}
+                defaultCategoryId={operating?.id ?? categories[0]?.id ?? ''}
+                pinNew
+              />
+            ) : undefined
+          }
+        >
+          {dailyOrder.order.map((bookmark) => (
             <LinkCard
               key={bookmark.id}
               bookmark={bookmark}
               showPin={false}
               onOpen={handleOpen}
               isAdmin={isAdmin}
+              drag={dailyOrder.dragProps(bookmark.id)}
               {...editing(bookmark)}
               {...deleting(bookmark)}
             />
@@ -267,13 +316,14 @@ export function HomeView({ data, isAdmin }: HomeViewProps) {
               ) : undefined
             }
           >
-            {operatingItems.map((bookmark) => (
+            {operatingOrder.order.map((bookmark) => (
               <LinkCard
                 key={bookmark.id}
                 bookmark={bookmark}
                 showPin={false}
                 onOpen={handleOpen}
                 isAdmin={isAdmin}
+                drag={operatingOrder.dragProps(bookmark.id)}
                 {...editing(bookmark)}
                 {...deleting(bookmark)}
               />

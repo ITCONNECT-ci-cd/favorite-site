@@ -10,6 +10,7 @@ import {
 } from 'react';
 
 import { toast } from '@/components/Toast';
+import { CARD_HEIGHT, CARD_HEIGHT_MIN, CARD_PADDING } from '@/components/card/geometry';
 import type { QuickAddCategory } from '@/components/card/quick-add-options';
 import { REQUEST_FAILED } from '@/lib/constants';
 import { collectFavicon, type FaviconResult } from '@/lib/favicon-collect';
@@ -18,11 +19,10 @@ import { createBookmark, type ActionResult } from '@/lib/mutations';
 import { hostOf } from '@/lib/url';
 
 /**
- * 카드 한 장 자리 — 라운드·최소 높이·패딩은 전부 LinkCard 의 값이다(C2). 이 셋이 어긋나면
- * 타일만 격자에서 튀어 보인다. `flex flex-col` 도 카드와 같다.
+ * 카드 한 장 자리 — 라운드·높이·패딩은 전부 LinkCard 의 값이다(C2, `components/card/geometry.ts`).
+ * 이 셋이 어긋나면 타일만 격자에서 튀어 보인다. `flex flex-col` 도 카드와 같다.
  */
-const CELL =
-  'flex min-h-[104px] flex-col rounded-[10px] p-[10px] min-[820px]:min-h-[126px] min-[820px]:p-[12px]';
+const CELL = `flex flex-col rounded-[10px] ${CARD_PADDING}`;
 
 /**
  * 접힌 타일 — 점선 상자(EmptyBox 와 같은 `border-dash` 토큰). 호버에서 테두리·글자가 잉크로
@@ -31,10 +31,15 @@ const CELL =
  * `cursor-pointer` 는 Tailwind v4 preflight 에 버튼 커서 규칙이 없어서다 — 적지 않으면 눌리는
  * 곳 위에서 화살표로 남는다(J2 InlineEdit · I3 LinkAddRow 와 같은 관례).
  */
-const TILE = `${CELL} cursor-pointer items-center justify-center gap-[4px] border border-dashed border-dash bg-side text-[12.5px] font-semibold text-desc hover:border-ink hover:text-ink`;
+const TILE = `${CELL} ${CARD_HEIGHT} cursor-pointer items-center justify-center gap-[4px] border border-dashed border-dash bg-side text-[12.5px] font-semibold text-desc hover:border-ink hover:text-ink`;
 
-/** 펼친 폼 — 같은 자리에 앉는 흰 상자. 카드와 같은 테두리 두께라 격자가 흔들리지 않는다. */
-const FORM = `${CELL} gap-[5px] border border-border-strong bg-card`;
+/**
+ * 펼친 폼 — 같은 자리에 앉는 흰 상자. 카드와 같은 테두리 두께라 격자가 흔들리지 않는다.
+ *
+ * 여기만 **하한**(`CARD_HEIGHT_MIN`)을 쓴다 — 입력 넷 + 버튼 줄이 카드 한 장보다 키가 커서
+ * 고정으로 두면 취소 버튼이 잘려 나간다(geometry.ts `CARD_HEIGHT_MIN` 참조).
+ */
+const FORM = `${CELL} ${CARD_HEIGHT_MIN} gap-[5px] border border-border-strong bg-card`;
 
 /** 네 입력의 공통 몸통 — 높이 30px, 라운드 6px, 좌우 8px (J2 InlineEdit 의 값 그대로). */
 const FIELD = 'h-[30px] w-full rounded-[6px] bg-card px-[8px]';
@@ -69,6 +74,16 @@ export type QuickAddCardProps = {
    * 등록되면 엉뚱한 분류에 들어간다.
    */
   defaultCategoryId: string;
+  /**
+   * 만든 링크를 곧바로 '매일 사용하는 사이트'에 고정한다 — **홈의 '매일' 섹션 타일만** 켠다(J5).
+   *
+   * 그 섹션은 분류가 아니라 `is_pinned` 로 걸러 낸 목록이라, 고정을 켜지 않으면 여기서 만든
+   * 링크가 이 섹션에 나타나지 않는다. 눌린 자리와 결과를 맞추는 것이 이 플래그의 전부다.
+   *
+   * 분류는 그대로 폼에서 고른다 — 고정은 '어디에 속하는가'가 아니라 '어디에 함께 보이는가'라,
+   * 켠다고 해서 분류가 사라지지 않는다.
+   */
+  pinNew?: boolean;
 };
 
 /**
@@ -93,7 +108,7 @@ export type QuickAddCardProps = {
  * (분류 화면에서 하위 탭을 옮겼다) 다음에 열 때 새 기본값을 읽는다. 값을 이 바깥 컴포넌트가
  * 들면 그 둘을 손으로 되돌려야 하고, 한쪽을 빠뜨리는 순간 '지난번에 적다 만 값이 남은 폼'이 된다.
  */
-export function QuickAddCard({ categories, defaultCategoryId }: QuickAddCardProps) {
+export function QuickAddCard({ categories, defaultCategoryId, pinNew = false }: QuickAddCardProps) {
   const [open, setOpen] = useState(false);
   /**
    * 폼을 연 타일 — 닫힐 때 포커스를 돌려줄 자리다.
@@ -131,6 +146,7 @@ export function QuickAddCard({ categories, defaultCategoryId }: QuickAddCardProp
       <QuickAddForm
         categories={categories}
         defaultCategoryId={defaultCategoryId}
+        pinNew={pinNew}
         onDone={() => setOpen(false)}
       />
     );
@@ -165,7 +181,7 @@ type QuickAddFormProps = QuickAddCardProps & {
 };
 
 /** 타일이 펼쳐진 모습 — 주소·이름·설명·분류 넷을 받아 링크 한 건을 만든다. */
-function QuickAddForm({ categories, defaultCategoryId, onDone }: QuickAddFormProps) {
+function QuickAddForm({ categories, defaultCategoryId, pinNew = false, onDone }: QuickAddFormProps) {
   const [url, setUrl] = useState('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -248,6 +264,7 @@ function QuickAddForm({ categories, defaultCategoryId, onDone }: QuickAddFormPro
         description: cleanDescription === '' ? undefined : cleanDescription,
         categoryId: category.id,
         faviconUrl: favicon !== null && favicon.ok ? favicon.faviconUrl : undefined,
+        pinned: pinNew,
       });
     } catch (error) {
       // 액션이 **거부로 끝난** 경우다(네트워크 단절 · 배포로 액션 id 가 바뀜). 잡지 않으면 빗장이
@@ -274,10 +291,12 @@ function QuickAddForm({ categories, defaultCategoryId, onDone }: QuickAddFormPro
     const shownTitle = cleanTitle === '' ? hostOf(cleanUrl) : cleanTitle;
     // 파비콘을 못 구했으면 그 한 마디를 덧붙인다 — 토스트는 한 번에 하나뿐이라 두 번 띄우면
     // 앞엣것이 지워진다(components/Toast.tsx).
+    // 고정까지 켰으면 그 사실을 알린다 — 분류만 말하면 "왜 이 섹션에 떴는지"를 설명하지 못한다.
+    const where = pinNew ? `${category.name} · 매일 고정` : category.name;
     toast(
       favicon === null || favicon.ok
-        ? `${shownTitle} 추가됨 · ${category.name}`
-        : `${shownTitle} 추가됨 · ${category.name} — ${favicon.error}`,
+        ? `${shownTitle} 추가됨 · ${where}`
+        : `${shownTitle} 추가됨 · ${where} — ${favicon.error}`,
     );
 
     // 폼이 닫히는 것과 새 카드가 그려지는 것을 **한 커밋으로 묶는다.** `await` 뒤의 상태 갱신은

@@ -89,8 +89,10 @@ describe('매일 사용하는 사이트 — 머리말 (DESIGN_SPEC 4장)', () =>
 
     expect(screen.getByRole('heading', { name: '매일 사용하는 사이트' })).toBeInTheDocument();
     expect(screen.getByText('12개')).toBeInTheDocument();
+    // 원문("직접 고정한 …순서가 바뀌지 않습니다")은 두 군데가 사실과 달랐다 — 근거는
+    // `components/HomeView.tsx` 의 `dailyNote` JSDoc.
     expect(
-      screen.getByText('직접 고정한 링크만 모입니다. 순서가 바뀌지 않습니다.'),
+      screen.getByText('관리자가 고정해 전사가 함께 쓰는 목록입니다. 분류와 상관없이 여기 모입니다.'),
     ).toBeInTheDocument();
   });
 
