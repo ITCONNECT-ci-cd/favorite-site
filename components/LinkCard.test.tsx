@@ -693,10 +693,13 @@ describe('LinkCard 수치 (DESIGN_SPEC 2-1)', () => {
       'gap-[6px]',
       'p-[10px]',
       'min-[820px]:p-[12px]',
-      'min-h-[104px]',
-      'min-[820px]:min-h-[126px]',
+      // 고정 높이 — min-height 가 아니다. 하한이면 제목 줄 수에 따라 카드가 커져 격자 행마다
+      // 높이가 달라진다(components/card/geometry.ts).
+      'h-[176px]',
+      'min-[820px]:h-[180px]',
       'shadow-[0_1px_2px_rgba(20,21,22,.04)]',
     );
+    expect(card.className).not.toMatch(/min-h-\[/);
   });
 
   it('컨테이너 호버: 테두리 ink + scale(1.05) + 그림자 + z-index 5, transition 0.22s', () => {
@@ -784,7 +787,7 @@ describe('LinkCard 수치 (DESIGN_SPEC 2-1)', () => {
     }
   });
 
-  it('본문 블록: margin-top auto, 이름 13.5px/600 2줄, 설명 12px 2줄', () => {
+  it('본문 블록: margin-top auto, 이름 13.5px/600 2줄, 설명 12px 3줄', () => {
     renderCard();
 
     expect(bodyLink()).toHaveClass('mt-auto', 'block', 'w-full', 'cursor-pointer');
@@ -803,7 +806,8 @@ describe('LinkCard 수치 (DESIGN_SPEC 2-1)', () => {
       'text-[12px]',
       'text-desc',
       'leading-[1.4]',
-      'max-h-[2.8em]',
+      // 3줄 — 설명을 "이 서비스가 무엇인가" 한 문장으로 다시 쓰면서 2줄에서 늘렸다.
+      'max-h-[4.2em]',
       'overflow-hidden',
       'mt-[4px]',
     );

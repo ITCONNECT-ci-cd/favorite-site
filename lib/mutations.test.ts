@@ -549,22 +549,29 @@ describe('reorderCategories', () => {
 });
 
 describe('순서 저장의 부분 성공 — 화면과 DB 를 어긋난 채로 두지 않는다', () => {
-  it('일부가 저장된 뒤 실패하면 실패를 알리면서도 화면은 다시 그리게 한다', async () => {
-    signedIn([OK, { data: null, error: { message: 'boom', code: '08006' } }]);
+  /** 자리를 서로 바꾸는 요청 하나 — 두 행 모두 update 대상이 된다. */
+  const SWAP = [{ id: 'a', sort_order: 0 }, { id: 'b', sort_order: 1 }];
 
-    const result = await reorderBookmarks(['a', 'b']);
+  it('일부가 저장된 뒤 실패하면 실패를 알리면서도 화면은 다시 그리게 한다', async () => {
+    signedIn([
+      { data: SWAP, error: null },
+      OK,
+      { data: null, error: { message: 'boom', code: '08006' } },
+    ]);
+
+    const result = await reorderBookmarks(['b', 'a']);
 
     expect(result.ok).toBe(false);
-    // 'a' 의 sort_order 는 이미 바뀌었다. 화면이 옛 순서를 들고 있으면 다음 드래그의 기준이 어긋난다.
+    // 'b' 의 sort_order 는 이미 바뀌었다. 화면이 옛 순서를 들고 있으면 다음 드래그의 기준이 어긋난다.
     expect(revalidatePath).toHaveBeenCalledWith('/', 'layout');
   });
 
   it('fetch 가 거부돼도 던지지 않고 실패를 돌려준다 (Promise.allSettled)', async () => {
     // Promise.all 이면 이 거부가 그대로 액션 밖으로 나가 Next 오류 경계가 뜬다.
     // 화면은 { ok:false } 를 기다리고 있으므로 토스트 대신 오류 화면을 보게 된다.
-    signedIn([OK, { rejectWith: new TypeError('fetch failed') }]);
+    signedIn([{ data: SWAP, error: null }, OK, { rejectWith: new TypeError('fetch failed') }]);
 
-    await expect(reorderBookmarks(['a', 'b'])).resolves.toEqual({
+    await expect(reorderBookmarks(['b', 'a'])).resolves.toEqual({
       ok: false,
       error: '순서를 저장하지 못했습니다. 새로고침 후 다시 시도해 주세요.',
     });
@@ -572,13 +579,13 @@ describe('순서 저장의 부분 성공 — 화면과 DB 를 어긋난 채로 �
       expect.stringContaining('[mutations]'),
       expect.any(TypeError),
     );
-    expect(revalidatePath).toHaveBeenCalledWith('/', 'layout'); // 'a' 는 이미 바뀌었다
+    expect(revalidatePath).toHaveBeenCalledWith('/', 'layout'); // 'b' 는 이미 바뀌었다
   });
 
   it('아무것도 바뀌지 않은 채 거부되면 화면을 다시 그리지 않는다', async () => {
-    signedIn([NO_ROWS, { rejectWith: new TypeError('fetch failed') }]);
+    signedIn([{ data: SWAP, error: null }, NO_ROWS, { rejectWith: new TypeError('fetch failed') }]);
 
-    const result = await reorderBookmarks(['a', 'b']);
+    const result = await reorderBookmarks(['b', 'a']);
 
     expect(result.ok).toBe(false);
     expect(revalidatePath).not.toHaveBeenCalled();
@@ -763,8 +770,26 @@ describe('createBookmark', () => {
         description: null,
         favicon_url: null,
         sort_order: 0,
+        // 안 주면 고정은 꺼진 채로 들어간다 — 홈 '매일' 섹션 타일만 참을 준다.
+        is_pinned: false,
       },
     ]);
+  });
+
+  it('pinned 를 주면 만들면서 매일 고정까지 켠다 (홈 매일 섹션 타일)', async () => {
+    const { ops } = signedIn([NO_ROWS, OK]);
+
+    await createBookmark({ url: 'https://a.b/', categoryId: 'cat-1', pinned: true });
+
+    expect(insertPayload(ops[1]).is_pinned).toBe(true);
+  });
+
+  it("참 같은 값으로는 고정이 켜지지 않는다 — 'true' 문자열도 거짓이다", async () => {
+    const { ops } = signedIn([NO_ROWS, OK]);
+
+    await createBookmark({ url: 'https://a.b/', categoryId: 'cat-1', pinned: 'true' as never });
+
+    expect(insertPayload(ops[1]).is_pinned).toBe(false);
   });
 
   it('공백만 있는 이름도 host 로 대체한다', async () => {
@@ -793,6 +818,7 @@ describe('createBookmark', () => {
         description: '설명',
         favicon_url: null,
         sort_order: 8, // 같은 카테고리 안에서 맨 뒤
+        is_pinned: false,
       },
     ]);
     expect(argsOf(ops[0], 'eq')).toEqual(['category_id', 'cat-1']);
@@ -1156,25 +1182,106 @@ describe('deleteBookmarks', () => {
   });
 });
 
-describe('reorderBookmarks', () => {
-  it('받은 순서대로 sort_order 를 다시 매긴다', async () => {
-    const { ops } = signedIn([OK, OK]);
+/** 지금 자리를 알려 주는 조회 결과 — `reorderBookmarks` 의 첫 왕복이다. */
+function slots(rows: { id: string; sort_order: number }[]) {
+  return { data: rows, error: null };
+}
+
+describe('reorderBookmarks — 목록이 쥔 자리를 서로 맞바꾼다', () => {
+  it('0..n 으로 다시 매기지 않는다 — 지금 자리를 읽어 그 값들만 나눠 준다', async () => {
+    const { ops } = signedIn([
+      slots([
+        { id: 'a', sort_order: 40 },
+        { id: 'b', sort_order: 41 },
+      ]),
+      OK,
+      OK,
+    ]);
 
     await expect(reorderBookmarks(['b', 'a'])).resolves.toEqual({ ok: true });
 
     expect(ops.every((op) => op.table === 'bookmarks')).toBe(true);
-    expect(ops.map((op) => [argsOf(op, 'eq'), argsOf(op, 'update')])).toEqual([
-      [['id', 'b'], [{ sort_order: 0 }]],
-      [['id', 'a'], [{ sort_order: 1 }]],
+    // 첫 왕복은 조회다 — 자리는 화면이 아니라 서버가 읽는다.
+    expect(argsOf(ops[0], 'in')).toEqual(['id', ['b', 'a']]);
+    // 40·41 이라는 **원래 자리**가 유지된다. 0·1 이 되면 이 둘이 테이블 맨 앞으로 튀어나온다.
+    expect(ops.slice(1).map((op) => [argsOf(op, 'eq'), argsOf(op, 'update')])).toEqual([
+      [['id', 'b'], [{ sort_order: 40 }]],
+      [['id', 'a'], [{ sort_order: 41 }]],
     ]);
   });
 
+  it('자리가 실제로 달라지는 행만 쓴다 — 셋 중 둘을 바꾸면 update 는 2건이다', async () => {
+    const { ops } = signedIn([
+      slots([
+        { id: 'a', sort_order: 10 },
+        { id: 'b', sort_order: 20 },
+        { id: 'c', sort_order: 30 },
+      ]),
+      OK,
+      OK,
+    ]);
+
+    await expect(reorderBookmarks(['b', 'a', 'c'])).resolves.toEqual({ ok: true });
+
+    expect(ops).toHaveLength(3); // 조회 1 + update 2 ('c' 는 30 그대로라 빠진다)
+    expect(ops.slice(1).map((op) => [argsOf(op, 'eq'), argsOf(op, 'update')])).toEqual([
+      [['id', 'b'], [{ sort_order: 10 }]],
+      [['id', 'a'], [{ sort_order: 20 }]],
+    ]);
+  });
+
+  it('제자리에 놓으면 아무것도 쓰지 않고 화면도 다시 그리지 않는다', async () => {
+    const { ops } = signedIn([slots([{ id: 'a', sort_order: 7 }])]);
+
+    await expect(reorderBookmarks(['a'])).resolves.toEqual({ ok: true });
+
+    expect(ops).toHaveLength(1);
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it('그 사이 지워진 id 는 조용히 빠지고 남은 것들끼리 자리를 맞바꾼다', async () => {
+    const { ops } = signedIn([
+      slots([
+        { id: 'a', sort_order: 5 },
+        { id: 'c', sort_order: 9 },
+      ]),
+      OK,
+      OK,
+    ]);
+
+    await expect(reorderBookmarks(['c', 'b', 'a'])).resolves.toEqual({ ok: true });
+
+    expect(ops.slice(1).map((op) => [argsOf(op, 'eq'), argsOf(op, 'update')])).toEqual([
+      [['id', 'c'], [{ sort_order: 5 }]],
+      [['id', 'a'], [{ sort_order: 9 }]],
+    ]);
+  });
+
+  it('하나도 못 찾으면 실패다 — 목록이 통째로 낡았다', async () => {
+    signedIn([slots([])]);
+
+    await expect(reorderBookmarks(['a', 'b'])).resolves.toEqual({
+      ok: false,
+      error: '링크를 찾을 수 없습니다.',
+    });
+  });
+
+  it('자리 조회가 실패하면 그대로 실패다 — 아무것도 쓰지 않는다', async () => {
+    const { ops } = signedIn([{ data: null, error: { message: 'boom', code: '08006' } }]);
+
+    await expect(reorderBookmarks(['a'])).resolves.toEqual({
+      ok: false,
+      error: '처리하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+    });
+    expect(ops).toHaveLength(1);
+  });
+
   it('링크에는 parent_id 조건을 걸지 않는다 (bookmarks 에 없는 컬럼이다)', async () => {
-    const { ops } = signedIn([OK]);
+    const { ops } = signedIn([slots([{ id: 'a', sort_order: 3 }, { id: 'b', sort_order: 1 }]), OK, OK]);
 
-    await reorderBookmarks(['a']);
+    await reorderBookmarks(['a', 'b']);
 
-    expect(argsOf(ops[0], 'is')).toBeUndefined();
+    expect(argsOf(ops[1], 'is')).toBeUndefined();
   });
 
   it('id 가 아닌 값이 섞이면 거부한다', async () => {

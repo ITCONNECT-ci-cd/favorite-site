@@ -15,6 +15,7 @@ import {
   CleanupGroupList,
   CleanupLinkList,
   CONFIRM_ARM_MS,
+  LINKS_PER_PAGE,
   type CleanupItem,
   type CleanupItemGroup,
 } from '@/components/admin/CleanupSelection';
@@ -50,6 +51,16 @@ const ITEMS: CleanupItem[] = [
   item('s3', '방치 셋', 'stale.test'),
 ];
 
+/**
+ * 방치 링크 N건 — 쪽 넘김을 보는 묶음이 쓴다. 번호를 제목과 id 에 함께 달아 **몇 번째 줄이
+ * 지금 화면에 있는지**를 이름만으로 확인할 수 있게 한다(쪽이 바뀌면 이름이 통째로 갈린다).
+ */
+function manyItems(count: number): CleanupItem[] {
+  return Array.from({ length: count }, (_, index) =>
+    item(`p${index + 1}`, `방치 ${index + 1}`, 'stale.test'),
+  );
+}
+
 function renderGroups(groups: CleanupItemGroup[] = GROUPS) {
   return render(
     <>
@@ -75,6 +86,16 @@ const checkbox = (name: string) => screen.getByRole('checkbox', { name });
 const deleteTrigger = () => screen.getByRole('button', { name: /선택한 \d+개 삭제$/ });
 const confirmDeleteButton = () => screen.getByRole('button', { name: /삭제 확인$/ });
 const cancelButton = () => screen.getByRole('button', { name: /삭제 취소$/ });
+
+/* 쪽 넘김도 같은 규칙으로 구역 이름을 앞에 단다(위 삭제 버튼과 짝) — 꼬리로 찾는다. */
+const prevPage = () => screen.getByRole('button', { name: /이전 쪽$/ });
+const nextPage = () => screen.getByRole('button', { name: /다음 쪽$/ });
+const pagePosition = () => screen.getByText(/^\d+ \/ \d+ 쪽$/);
+/** 지금 그려진 줄의 번호들 — 쪽이 바뀌면 통째로 갈린다(구역 전체 선택은 세지 않는다). */
+const shownNumbers = () =>
+  screen
+    .getAllByRole('checkbox', { name: /^방치 \d+ 선택$/ })
+    .map((box) => Number(box.getAttribute('aria-label')?.split(' ')[1]));
 
 /** 체크박스 하나를 누른다 — 제어 컴포넌트라 click 이 change 까지 함께 일으킨다. */
 function check(name: string): void {
@@ -560,5 +581,252 @@ describe('CleanupLinkList — 평면 목록(방치)', () => {
     const { container } = render(<CleanupLinkList label="오래 손대지 않은 링크" items={[]} />);
 
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+/**
+ * ③ 방치 목록의 **쪽 넘김**. 기본 기준(180일)에서 211건이 한꺼번에 서던 화면을 자른 장치다
+ * (사용자 요구: "20개까지 보이게 하고 페이지네이션 처리… 너무 길어").
+ *
+ * 이 묶음이 못박는 것은 두 가지다. 하나는 **자르는 규칙**(20개씩, 한 쪽뿐이면 컨트롤을 그리지
+ * 않는다), 다른 하나는 **선택의 의미가 쪽 단위로 유지되는가**다: `useCleanupSelection` 의
+ * "고른 것은 지금 화면에 있는 것뿐" 이 이제 목록 전체가 아니라 이 쪽을 뜻하므로, 전체 선택도
+ * 개수도 삭제 요청도 현재 쪽에서만 나오고 쪽을 넘기면 체크가 비워져야 한다.
+ *
+ * 서버 왕복(`?page=`)이 아니라 클라이언트에서 자르는 이유는 기준 탭과 다르다 — 기준 탭은
+ * `cleanup_abandoned` rpc 를 다시 쳐야 해서 URL 이지만(CleanupView JSDoc), 쪽 넘김은 이미 받아
+ * 둔 배열을 자를 뿐이라 서버에 물을 것이 없다(통계 기간 탭과 같은 선례).
+ */
+describe('CleanupLinkList — 쪽 넘김 (한 쪽에 20개)', () => {
+  it('한 쪽에 딱 차는 만큼이면 쪽 넘김 줄을 아예 그리지 않는다 — 쪽이 하나뿐인데 컨트롤은 군더더기다', () => {
+    renderItems(manyItems(LINKS_PER_PAGE));
+
+    expect(shownNumbers()).toHaveLength(LINKS_PER_PAGE);
+    expect(screen.queryByRole('button', { name: /이전 쪽$/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /다음 쪽$/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(/쪽$/)).not.toBeInTheDocument();
+  });
+
+  it('한 줄만 넘쳐도 두 쪽으로 갈린다 — 첫 쪽은 앞의 20개뿐이다', () => {
+    renderItems(manyItems(LINKS_PER_PAGE + 1));
+
+    expect(shownNumbers()).toEqual(Array.from({ length: LINKS_PER_PAGE }, (_, i) => i + 1));
+    expect(screen.queryByRole('checkbox', { name: '방치 21 선택' })).not.toBeInTheDocument();
+    expect(pagePosition()).toHaveTextContent('1 / 2 쪽');
+  });
+
+  it('다음·이전이 목록 내용을 바꾼다 — 마지막 쪽은 남은 만큼만 그린다', () => {
+    renderItems(manyItems(LINKS_PER_PAGE + 1));
+
+    fireEvent.click(nextPage());
+
+    expect(shownNumbers()).toEqual([21]);
+    expect(screen.queryByRole('checkbox', { name: '방치 1 선택' })).not.toBeInTheDocument();
+    expect(pagePosition()).toHaveTextContent('2 / 2 쪽');
+
+    fireEvent.click(prevPage());
+
+    expect(shownNumbers()).toEqual(Array.from({ length: LINKS_PER_PAGE }, (_, i) => i + 1));
+    expect(pagePosition()).toHaveTextContent('1 / 2 쪽');
+  });
+
+  it('끝에 닿은 쪽 넘김 버튼은 잠긴다 — 첫 쪽의 `이전`, 마지막 쪽의 `다음`', () => {
+    renderItems(manyItems(LINKS_PER_PAGE * 2 + 1));
+
+    expect(prevPage()).toBeDisabled();
+    expect(nextPage()).toBeEnabled();
+
+    fireEvent.click(nextPage());
+    expect(prevPage()).toBeEnabled();
+    expect(nextPage()).toBeEnabled();
+
+    fireEvent.click(nextPage());
+    expect(pagePosition()).toHaveTextContent('3 / 3 쪽');
+    expect(nextPage()).toBeDisabled();
+  });
+
+  /**
+   * 체크를 비우지 않으면 `checked` 에 남은 이전 쪽 선택이 그 쪽으로 돌아왔을 때 되살아나, 사용자가
+   * 고른 적 없다고 생각하는 것이 체크된 채로 선다. 되돌릴 수 없는 삭제 화면에서 그것은 확인 단계를
+   * 무력화한다(같은 이유로 이 화면은 `CONFIRM_ARM_MS` 무장 지연을 둔다).
+   */
+  it('쪽을 넘기면 체크를 비운다 — 되돌아와도 이전 쪽 선택이 되살아나지 않는다', () => {
+    renderItems(manyItems(LINKS_PER_PAGE + 1));
+
+    check('방치 1 선택');
+    check('방치 2 선택');
+    expect(deleteTrigger()).toHaveTextContent('선택한 2개 삭제');
+
+    fireEvent.click(nextPage());
+    expect(deleteTrigger()).toHaveTextContent('선택한 0개 삭제');
+
+    fireEvent.click(prevPage());
+    expect(checkbox('방치 1 선택')).not.toBeChecked();
+    expect(checkbox('방치 2 선택')).not.toBeChecked();
+    expect(deleteTrigger()).toHaveTextContent('선택한 0개 삭제');
+  });
+
+  it("'전체 선택'은 현재 쪽 20개만 고른다 — 개수는 언제나 눈에 보이는 것만 센다", () => {
+    renderItems(manyItems(LINKS_PER_PAGE * 2 + 1));
+
+    check('오래 손대지 않은 링크 전체 선택');
+
+    expect(deleteTrigger()).toHaveTextContent(`선택한 ${LINKS_PER_PAGE}개 삭제`);
+    expect(checkbox('오래 손대지 않은 링크 전체 선택')).toBeChecked();
+
+    // 마지막 쪽은 한 줄뿐이므로 같은 상자가 1개만 고른다 — '전부'의 뜻이 쪽마다 달라진다.
+    fireEvent.click(nextPage());
+    fireEvent.click(nextPage());
+    check('오래 손대지 않은 링크 전체 선택');
+    expect(deleteTrigger()).toHaveTextContent('선택한 1개 삭제');
+  });
+
+  it('삭제 요청에도 현재 쪽의 id 만 실린다', async () => {
+    renderItems(manyItems(LINKS_PER_PAGE + 3));
+
+    fireEvent.click(nextPage());
+    check('오래 손대지 않은 링크 전체 선택');
+    openConfirm();
+    await pressDelete();
+
+    expect(deleteBookmarks).toHaveBeenCalledExactlyOnceWith(['p21', 'p22', 'p23']);
+  });
+
+  /**
+   * 확인이 열려 있는 동안 쪽이 넘어가면 화면이 물은 개수("선택한 3개를 삭제할까요")와 실제로
+   * 지우는 개수가 갈린다 — `confirming` 이 선택 훅에 사는 이유가 그것이고, 쪽 넘김도 같은 빗장을
+   * 나눠 진다.
+   */
+  it('확인이 열려 있는 동안에는 쪽을 넘길 수 없다', () => {
+    renderItems(manyItems(LINKS_PER_PAGE * 2 + 1));
+
+    fireEvent.click(nextPage());
+    check('방치 21 선택');
+    openConfirm();
+
+    expect(prevPage()).toBeDisabled();
+    expect(nextPage()).toBeDisabled();
+
+    fireEvent.click(nextPage());
+    expect(pagePosition()).toHaveTextContent('2 / 3 쪽');
+    expect(screen.getByRole('alert')).toHaveTextContent('선택한 1개를 삭제할까요');
+  });
+
+  it('서버 왕복 중에도 쪽 넘김은 잠겨 있다', async () => {
+    renderItems(manyItems(LINKS_PER_PAGE * 2 + 1));
+
+    fireEvent.click(nextPage());
+    check('방치 21 선택');
+    openConfirm();
+
+    const finish = pending();
+    await act(async () => {
+      fireEvent.click(confirmDeleteButton());
+    });
+
+    expect(prevPage()).toBeDisabled();
+    expect(nextPage()).toBeDisabled();
+
+    await finish();
+  });
+
+  /**
+   * 삭제가 성공하면 서버가 목록을 다시 그려 `items` 가 짧아진다. 마지막 쪽에 있던 것을 전부
+   * 지우면 그 쪽 번호가 사라지는데, 그대로 두면 빈 목록이 뜬다 — 마지막 쪽으로 물린다.
+   */
+  it('items 가 짧아져 지금 쪽이 사라지면 마지막 쪽으로 물린다 — 빈 화면을 남기지 않는다', () => {
+    const { rerender } = renderItems(manyItems(LINKS_PER_PAGE * 2 + 1));
+
+    fireEvent.click(nextPage());
+    fireEvent.click(nextPage());
+    expect(pagePosition()).toHaveTextContent('3 / 3 쪽');
+
+    rerender(
+      <>
+        <CleanupLinkList label="오래 손대지 않은 링크" items={manyItems(LINKS_PER_PAGE * 2)} />
+        <Toaster />
+      </>,
+    );
+
+    expect(pagePosition()).toHaveTextContent('2 / 2 쪽');
+    expect(shownNumbers()).toEqual(
+      Array.from({ length: LINKS_PER_PAGE }, (_, i) => i + 1 + LINKS_PER_PAGE),
+    );
+  });
+
+  it('한 쪽에 담길 만큼 짧아지면 쪽 넘김 줄이 통째로 사라진다', () => {
+    const { rerender } = renderItems(manyItems(LINKS_PER_PAGE + 1));
+
+    fireEvent.click(nextPage());
+    expect(shownNumbers()).toEqual([21]);
+
+    rerender(
+      <>
+        <CleanupLinkList label="오래 손대지 않은 링크" items={manyItems(LINKS_PER_PAGE)} />
+        <Toaster />
+      </>,
+    );
+
+    expect(screen.queryByRole('button', { name: /다음 쪽$/ })).not.toBeInTheDocument();
+    expect(shownNumbers()).toEqual(Array.from({ length: LINKS_PER_PAGE }, (_, i) => i + 1));
+  });
+
+  /**
+   * 눌러서 잠긴 버튼은 포커스를 잃는다(브라우저가 떼어 문서 뿌리로 보낸다) — 이 저장소는 그런
+   * 전환에서 포커스를 건져 내는 것을 표준으로 지켜 왔다(`BulkBar` 의 `restoreTrigger`·DeleteConfirm).
+   * 여기서는 반대쪽 버튼이 받는다: 끝 쪽에서 갈 수 있는 방향은 그쪽뿐이다.
+   */
+  it('마지막 쪽에 닿아 `다음` 이 잠기면 포커스가 `이전` 으로 간다', () => {
+    renderItems(manyItems(LINKS_PER_PAGE + 1));
+
+    fireEvent.click(nextPage());
+
+    expect(nextPage()).toBeDisabled();
+    expect(prevPage()).toHaveFocus();
+  });
+
+  it('첫 쪽으로 돌아와 `이전` 이 잠기면 포커스가 `다음` 으로 간다', () => {
+    renderItems(manyItems(LINKS_PER_PAGE + 1));
+
+    fireEvent.click(nextPage());
+    fireEvent.click(prevPage());
+
+    expect(prevPage()).toBeDisabled();
+    expect(nextPage()).toHaveFocus();
+  });
+
+  it('가운데 쪽으로 옮길 때는 포커스를 건드리지 않는다 — 누른 버튼이 그대로 살아 있다', () => {
+    renderItems(manyItems(LINKS_PER_PAGE * 2 + 1));
+
+    fireEvent.click(nextPage());
+
+    expect(pagePosition()).toHaveTextContent('2 / 3 쪽');
+    expect(nextPage()).toBeEnabled();
+    expect(prevPage()).not.toHaveFocus();
+    expect(nextPage()).not.toHaveFocus();
+  });
+
+  /**
+   * 쪽이 바뀐 것은 눈에만 보인다 — 위치 표시가 live 영역이라야 화면을 보지 않는 사용자도 옮겨 간
+   * 것을 안다. 목록 `aria-label` 갱신과 **둘 다** 하면 같은 것이 두 번 읽히므로 한 곳에서만 한다.
+   */
+  it('위치 표시가 live 영역이고, 낭독은 그 한 곳에서만 한다', () => {
+    renderItems(manyItems(LINKS_PER_PAGE + 1));
+
+    expect(pagePosition()).toHaveAttribute('aria-live', 'polite');
+
+    const list = screen.getByRole('list');
+    expect(list).not.toHaveAttribute('aria-live');
+    expect(list).not.toHaveAttribute('aria-label');
+  });
+
+  /* 세 구역의 바가 한 화면에 서므로 버튼 이름은 구역으로 갈라 둔다(삭제 버튼과 같은 규칙). */
+  it('쪽 넘김 버튼 이름에도 구역이 선다', () => {
+    renderItems(manyItems(LINKS_PER_PAGE + 1));
+
+    expect(prevPage()).toHaveAccessibleName('오래 손대지 않은 링크 이전 쪽');
+    expect(nextPage()).toHaveAccessibleName('오래 손대지 않은 링크 다음 쪽');
+    expect(prevPage()).toHaveTextContent('이전');
+    expect(nextPage()).toHaveTextContent('다음');
   });
 });

@@ -37,6 +37,12 @@ yarn-error.log*
 # 관리자 계정 자격 (scripts/create-admin.ts 산출물 — 평문 비밀번호가 들어 있다)
 .admin-credentials.local
 
+# IA 재분류 되돌림 스냅샷 (scripts/reclassify.ts --apply 산출물 — 라이브 데이터 덤프)
+reclassify-snapshot-*.json
+
+# 제목·설명·분류 고도화 되돌림 스냅샷 (scripts/enrich.ts --apply 산출물 — 라이브 데이터 덤프)
+enrich-snapshot-*.json
+
 # vercel
 .vercel
 

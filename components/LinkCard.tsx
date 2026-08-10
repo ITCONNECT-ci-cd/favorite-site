@@ -2,6 +2,13 @@
 
 import type { MouseEvent, ReactNode } from 'react';
 import { CheckIcon, EyeIcon, PencilIcon, PinIcon, TrashIcon } from '@/components/icons';
+import {
+  CARD_DESC_CLAMP,
+  CARD_HEIGHT,
+  CARD_PADDING,
+  CARD_TITLE_CLAMP,
+} from '@/components/card/geometry';
+import type { CardDrag } from '@/components/useCardReorder';
 import { faviconSrc } from '@/lib/favicon';
 import { rendersSomething } from '@/lib/slots';
 import type { BookmarkWithCount } from '@/lib/types';
@@ -70,8 +77,8 @@ export type LinkCardProps = {
    * 교체 대상으로 적은 것이 그 둘뿐이고, 카드 밖 모달을 쓰지 않는 이상 나가는 길(취소)은
    * 폼 자신이 들기 때문이다. 액션 줄을 `isEditing` 으로 감추는 변경은 스펙 2-1장을 먼저 고쳐라.
    *
-   * **교체 자리는 flex-col 의 중간 항목이다** — 카드 높이는 `min-h-[126px]`(모바일 104px)로
-   * 정해져 있고, 지금 본문 앵커가 `mt-auto` 로 아래에 붙어 그 높이를 메운다. 폼이 `mt-auto`
+   * **교체 자리는 flex-col 의 중간 항목이다** — 카드 높이는 `CARD_HEIGHT`(180px · 모바일 176px)로
+   * 고정되어 있고, 지금 본문 앵커가 `mt-auto` 로 아래에 붙어 그 높이를 메운다. 폼이 `mt-auto`
    * 나 `flex-1` 을 갖지 않으면 폼은 위에 붙고 그 아래로 빈 공간이 남는다. 카드는 그 여백을
    * 대신 메워 주지 않는다(자리만 준다는 계약이라 그렇다) — 세로 배치는 폼의 몫이다 (J2 참고).
    *
@@ -120,6 +127,22 @@ export type LinkCardProps = {
   deleteSlot?: ReactNode;
   /** 링크를 여는 순간 호출 — F3이 클릭 기록에 배선한다 */
   onOpen?: (id: string) => void;
+  /**
+   * 관리자가 카드를 끌어 순서를 바꾸는 배선 (`components/useCardReorder.ts`).
+   *
+   * **주면 카드 전체가 드래그 손잡이가 된다.** 손잡이 아이콘을 따로 두지 않는 것은 카드 폭이
+   * 158px 라 아이콘 넷(체크·핀·연필·휴지통)만으로 이미 상단 줄이 꽉 차 있기 때문이다. 대신
+   * 커서를 `grab` 으로 바꿔 끌 수 있는 자리임을 알린다.
+   *
+   * ⚠️ **주는 순간 카드 안의 두 앵커가 `draggable={false}` 가 된다.** 앵커는 브라우저가 기본으로
+   * 드래그 소스로 삼는 요소라, 그대로 두면 카드를 끌려고 본문을 집었을 때 순서 바꾸기가 아니라
+   * **주소를 끌어다 놓는 브라우저 기본 동작**이 일어난다(북마크바로 떨어진다). 자식이 소스에서
+   * 빠지면 브라우저가 위로 올라가며 `draggable` 인 조상을 찾으므로 카드가 끌린다.
+   *
+   * 관리자가 아닌 화면에서는 **주지 않는다** — 그러면 속성이 한 조각도 실리지 않고 앵커의 기본
+   * 드래그(주소 끌기)도 그대로 살아 있다.
+   */
+  drag?: CardDrag;
 };
 
 /**
@@ -129,7 +152,8 @@ export type LinkCardProps = {
  */
 const CARD = [
   'relative overflow-hidden flex flex-col gap-[6px] bg-card border rounded-[10px]',
-  'p-[10px] min-[820px]:p-[12px] min-h-[104px] min-[820px]:min-h-[126px]',
+  // 높이·패딩은 `components/card/geometry.ts` 가 든다 — '+ 링크 추가' 타일과 같은 값이어야 한다.
+  `${CARD_PADDING} ${CARD_HEIGHT}`,
   'shadow-[0_1px_2px_rgba(20,21,22,.04)]',
   '[transition:transform_.22s_cubic-bezier(.22,.9,.28,1),box-shadow_.22s_ease,border-color_.22s_ease]',
   // 확대만 motion-safe 로 감싼다 (D5, prefers-reduced-motion 가드). 같은 규칙을 reduce 쪽에서
@@ -223,9 +247,11 @@ export function LinkCard({
   editSlot,
   deleteSlot,
   onOpen,
+  drag,
 }: LinkCardProps) {
   const { id, title, url, description } = bookmark;
   const icon = faviconSrc(bookmark);
+  const isDraggable = drag !== undefined;
 
   /** 가운데 클릭(새 탭)도 여는 것이다. 우클릭(button 2)은 메뉴만 여니 세지 않는다. */
   function recordAuxOpen(event: MouseEvent<HTMLAnchorElement>) {
@@ -242,6 +268,9 @@ export function LinkCard({
     rel: 'noopener noreferrer',
     onClick: () => onOpen?.(id),
     onAuxClick: recordAuxOpen,
+    // 정렬 중에만 앵커를 드래그 소스에서 뺀다 — 근거는 `drag` prop 의 JSDoc.
+    // `undefined` 여야 속성 자체가 실리지 않는다(`false` 를 늘 붙이면 주소 끌기가 영영 막힌다).
+    draggable: isDraggable ? false : undefined,
   } as const;
 
   // 체크를 감춘 화면에서 넘어온 checked는 무시한다 — 보이지 않는 상태로 테두리만 바뀌면 안 된다.
@@ -270,7 +299,9 @@ export function LinkCard({
   }
 
   return (
-    <div className={`${CARD} ${border}`}>
+    // 드래그 배선은 통째로 스프레드한다 — 관리자가 아니면 `drag` 가 undefined 라 속성이 하나도
+    // 실리지 않는다(`draggable={false}` 를 그려 두고 막는 방식이 아니다).
+    <div {...drag} className={`${CARD} ${border}${isDraggable ? ' cursor-grab' : ''}`}>
       <div className="flex min-h-[32px] items-start gap-[4px]">
         {/* 파비콘 타일은 본문과 같은 곳으로 가는 마우스 전용 보조 영역이다.
             탭 순서에 290번 중복으로 끼어들지 않도록 접근성 트리에서는 감춘다.
@@ -351,11 +382,15 @@ export function LinkCard({
           <a {...openLink} className="mt-auto block w-full cursor-pointer">
             {/* button과 달리 a는 흐름 콘텐츠를 담을 수 있지만, 스펙의 2줄 말줄임
                 (max-height + overflow)만 필요하므로 span + block으로 충분하다. */}
-            <span className="block max-h-[2.6em] overflow-hidden text-[13px] leading-[1.3] font-semibold tracking-[-0.01em] min-[820px]:text-[13.5px]">
+            <span
+              className={`block ${CARD_TITLE_CLAMP} overflow-hidden text-[13px] leading-[1.3] font-semibold tracking-[-0.01em] min-[820px]:text-[13.5px]`}
+            >
               {title}
             </span>
             {description !== null && description !== '' && (
-              <span className="mt-[4px] block max-h-[2.8em] overflow-hidden text-[12px] leading-[1.4] text-desc">
+              <span
+                className={`mt-[4px] block ${CARD_DESC_CLAMP} overflow-hidden text-[12px] leading-[1.4] text-desc`}
+              >
                 {description}
               </span>
             )}

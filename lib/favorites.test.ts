@@ -215,6 +215,53 @@ describe('useFavorites', () => {
     expect(storedFavs()).toEqual(['a', 'b', 'c']);
   });
 
+  it('reorder — 담긴 차례를 통째로 다시 쓴다 (J5 드래그 정렬)', () => {
+    localStorage.setItem(FAVS_KEY, JSON.stringify(['a', 'b', 'c']));
+
+    const { result } = renderHook(() => useFavorites());
+    act(() => {
+      result.current.reorder(['c', 'a', 'b']);
+    });
+
+    expect(storedFavs()).toEqual(['c', 'a', 'b']);
+  });
+
+  it('reorder — 새 차례에 없는 id 는 지우지 않고 뒤에 남긴다', () => {
+    // 지워진 링크의 id 가 남아 있을 수 있고, 그것들은 화면에 안 보여 끌 수도 없다.
+    // 새 차례에 없다는 이유로 지우면 드래그 한 번이 조용히 청소까지 해 버린다.
+    localStorage.setItem(FAVS_KEY, JSON.stringify(['a', 'dead', 'b']));
+
+    const { result } = renderHook(() => useFavorites());
+    act(() => {
+      result.current.reorder(['b', 'a']);
+    });
+
+    expect(storedFavs()).toEqual(['b', 'a', 'dead']);
+  });
+
+  it('reorder — 담기지 않은 id 가 섞여 와도 담지 않는다', () => {
+    localStorage.setItem(FAVS_KEY, JSON.stringify(['a', 'b']));
+
+    const { result } = renderHook(() => useFavorites());
+    act(() => {
+      result.current.reorder(['b', '남의-id', 'a']);
+    });
+
+    expect(storedFavs()).toEqual(['b', 'a']);
+  });
+
+  it('reorder — 차례가 그대로면 아무것도 쓰지 않는다 (다른 탭을 헛되이 깨우지 않는다)', () => {
+    localStorage.setItem(FAVS_KEY, JSON.stringify(['a', 'b']));
+    const { result } = renderHook(() => useFavorites());
+    const write = vi.spyOn(Storage.prototype, 'setItem');
+
+    act(() => {
+      result.current.reorder(['a', 'b']);
+    });
+
+    expect(write).not.toHaveBeenCalled();
+  });
+
   it('다시 마운트해도 저장된 값을 복원한다 (localStorage 왕복)', () => {
     const first = renderHook(() => useFavorites());
     act(() => {

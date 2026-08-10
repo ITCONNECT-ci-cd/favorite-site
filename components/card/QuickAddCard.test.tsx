@@ -102,13 +102,23 @@ describe('QuickAddCard — 접힌 타일', () => {
   it('카드 한 장 자리에 앉는 점선 타일이다', () => {
     renderTile();
 
-    // 카드와 같은 라운드·최소 높이라야 같은 격자에 자연스럽게 앉는다(C2 LinkCard 의 값).
+    // 카드와 **같은 고정 높이**라야 같은 격자에 자연스럽게 앉는다(components/card/geometry.ts).
     expect(tile()).toHaveClass(
       'rounded-[10px]',
-      'min-h-[104px]',
-      'min-[820px]:min-h-[126px]',
+      'h-[176px]',
+      'min-[820px]:h-[180px]',
       'border-dashed',
     );
+  });
+
+  it('펼친 폼만은 하한을 쓴다 — 입력 넷 + 버튼 줄이 카드 한 장보다 크다', () => {
+    renderTile();
+    fireEvent.click(tile());
+
+    const form = screen.getByRole('form', { name: '링크 추가' });
+    expect(form).toHaveClass('min-h-[176px]', 'min-[820px]:min-h-[180px]');
+    // 고정 높이가 함께 걸리면 취소 버튼이 잘려 나간다.
+    expect(form.className).not.toMatch(/(?:^|\s)h-\[\d/);
   });
 
   it('손가락 커서를 쓴다 — Tailwind v4 preflight 에는 버튼 커서 규칙이 없다', () => {
@@ -246,10 +256,25 @@ describe('QuickAddCard — 등록', () => {
       description: '검색형 AI',
       categoryId: 'cat-ops',
       faviconUrl: ICON_URL,
+      // 이 타일은 '매일' 섹션이 아니라 분류 목록에 서 있다 — 고정은 켜지 않는다.
+      pinned: false,
     });
     // 순서가 뒤집히면 파비콘 없는 행이 만들어지고 두 번 쓰게 된다(I3 와 같은 계약).
     expect(vi.mocked(collectFavicon).mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(createBookmark).mock.invocationCallOrder[0],
+    );
+  });
+
+  it('pinNew 를 주면 만들면서 매일 고정까지 켜고, 알림도 그렇게 말한다', async () => {
+    renderTile({ pinNew: true });
+
+    open();
+    fill({ url: 'https://a.b/', title: '가나' });
+    await click(addButton());
+
+    expect(createBookmark).toHaveBeenCalledWith(expect.objectContaining({ pinned: true }));
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '가나 추가됨 · 현재 운영 중인 사이트 · 매일 고정',
     );
   });
 

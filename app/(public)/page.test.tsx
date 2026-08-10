@@ -95,12 +95,12 @@ describe('홈 — 관리자 편집 노출 (J1)', () => {
  * `components/card/QuickAddCard.test.tsx` 가 본다.
  */
 describe('홈 — 링크 추가 타일 (K1)', () => {
-  const tile = () => screen.queryByRole('button', { name: '링크 추가' });
+  const tiles = () => screen.queryAllByRole('button', { name: '링크 추가' });
 
   it('비로그인 렌더에는 타일 마크업이 없다', async () => {
     const { container } = await renderPage();
 
-    expect(tile()).toBeNull();
+    expect(tiles()).toHaveLength(0);
     expect(container.querySelector('[data-testid="quick-add"]')).toBeNull();
   });
 
@@ -109,9 +109,10 @@ describe('홈 — 링크 추가 타일 (K1)', () => {
 
     await renderPage();
 
-    expect(tile()).toBeInTheDocument();
+    // 둘이다 — '매일'(고정까지 켜는 타일)과 '현재 운영 중인 사이트'.
+    expect(tiles()).toHaveLength(2);
 
-    fireEvent.click(tile()!);
+    fireEvent.click(tiles()[0]);
 
     // 서버가 내려보내는 것은 세 필드짜리 목록이다(components/card/quick-add-options.ts).
     expect(screen.getAllByRole('option')).toHaveLength(siteData().categories.length);
