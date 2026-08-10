@@ -17,6 +17,7 @@ import {
   renameSubCategory,
   reorderBookmarks,
   reorderCategories,
+  reorderFavorites,
   setFavorite,
   updateBookmark,
   type ActionResult,
@@ -147,6 +148,7 @@ const ALL_ACTIONS: Record<string, () => Promise<ActionResult>> = {
   deleteBookmarks: () => deleteBookmarks(['bm-1', 'bm-2']),
   reorderBookmarks: () => reorderBookmarks(['bm-1', 'bm-2']),
   setFavorite: () => setFavorite('bm-1', true),
+  reorderFavorites: () => reorderFavorites(['bm-1', 'bm-2']),
 };
 
 const ACTION_ENTRIES = Object.entries(ALL_ACTIONS);
@@ -160,11 +162,11 @@ beforeEach(() => {
 // ───────────────────────────────────────────────────────────── 계약 · 구조
 
 describe('모듈 계약', () => {
-  it('내보내는 액션 이름은 전수 테스트 목록과 정확히 같다 (14번째를 추가하면 여기서 걸린다)', async () => {
+  it('내보내는 액션 이름은 전수 테스트 목록과 정확히 같다 (15번째를 추가하면 여기서 걸린다)', async () => {
     const actions = await import('@/lib/mutations');
 
     expect(Object.keys(actions).sort()).toEqual(Object.keys(ALL_ACTIONS).sort());
-    expect(ACTION_ENTRIES).toHaveLength(13);
+    expect(ACTION_ENTRIES).toHaveLength(14);
   });
 
   it("첫 줄이 'use server' 다 — 이게 빠지면 그냥 서버 함수가 되어 화면에서 부를 수 없다", () => {
@@ -1421,5 +1423,94 @@ describe('setFavorite — 토글이 아니라 방향을 받는다', () => {
       error: '권한이 없습니다. 다시 로그인해 주세요.',
     });
     expect(ops).toHaveLength(1);
+  });
+});
+
+/** 즐겨찾기 자리 조회 응답. `slots` 의 `fav_order` 판이다. */
+function favSlots(rows: { id: string; fav_order: number }[]) {
+  return { data: rows, error: null };
+}
+
+describe('reorderFavorites — 즐겨찾기 자리만 맞바꾼다', () => {
+  it('fav_order 를 쓴다 — sort_order 는 건드리지 않는다', async () => {
+    const { ops } = signedIn([
+      favSlots([
+        { id: 'a', fav_order: 3 },
+        { id: 'b', fav_order: 4 },
+      ]),
+      OK,
+      OK,
+    ]);
+
+    await expect(reorderFavorites(['b', 'a'])).resolves.toEqual({ ok: true });
+
+    expect(argsOf(ops[0], 'select')).toEqual(['id, fav_order']);
+    expect(ops.slice(1).map((op) => [argsOf(op, 'eq'), argsOf(op, 'update')])).toEqual([
+      [['id', 'b'], [{ fav_order: 3 }]],
+      [['id', 'a'], [{ fav_order: 4 }]],
+    ]);
+  });
+
+  it('한 묶음의 id 만 와도 그 묶음이 쥔 자리 안에서만 바뀐다', async () => {
+    // 홈은 즐겨찾기를 세 묶음으로 나눠 각각 따로 끈다 — 'AI 소식' 두 장만 보내는 상황이다.
+    const { ops } = signedIn([
+      favSlots([
+        { id: 'news-1', fav_order: 10 },
+        { id: 'news-2', fav_order: 40 },
+      ]),
+      OK,
+      OK,
+    ]);
+
+    await expect(reorderFavorites(['news-2', 'news-1'])).resolves.toEqual({ ok: true });
+
+    // 10 과 40 이라는 원래 자리가 유지된다 — 다른 묶음이 쓰는 사잇값(20·30)은 손대지 않는다.
+    expect(ops.slice(1).map((op) => argsOf(op, 'update'))).toEqual([
+      [{ fav_order: 10 }],
+      [{ fav_order: 40 }],
+    ]);
+  });
+
+  it('제자리에 놓으면 아무것도 쓰지 않고 화면도 다시 그리지 않는다', async () => {
+    const { ops } = signedIn([favSlots([{ id: 'a', fav_order: 2 }])]);
+
+    await expect(reorderFavorites(['a'])).resolves.toEqual({ ok: true });
+
+    expect(ops).toHaveLength(1);
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it('그 사이 지워진 id 는 조용히 빠지고 남은 것들끼리 자리를 맞바꾼다', async () => {
+    const { ops } = signedIn([
+      favSlots([
+        { id: 'a', fav_order: 1 },
+        { id: 'c', fav_order: 5 },
+      ]),
+      OK,
+      OK,
+    ]);
+
+    await expect(reorderFavorites(['c', 'b-지워짐', 'a'])).resolves.toEqual({ ok: true });
+
+    expect(ops.slice(1).map((op) => [argsOf(op, 'eq'), argsOf(op, 'update')])).toEqual([
+      [['id', 'c'], [{ fav_order: 1 }]],
+      [['id', 'a'], [{ fav_order: 5 }]],
+    ]);
+  });
+
+  it('하나도 못 찾으면 실패다', async () => {
+    signedIn([favSlots([])]);
+
+    await expect(reorderFavorites(['없음'])).resolves.toEqual({
+      ok: false,
+      error: '링크를 찾을 수 없습니다.',
+    });
+  });
+
+  it('빈 목록은 아무 일도 하지 않고 성공이다', async () => {
+    const { ops } = signedIn([]);
+
+    await expect(reorderFavorites([])).resolves.toEqual({ ok: true });
+    expect(ops).toHaveLength(0);
   });
 });

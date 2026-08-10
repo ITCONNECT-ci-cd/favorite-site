@@ -116,6 +116,8 @@ type NameRow = { id: string; name: string };
 
 /** 링크 행에서 `reorderBookmarks` 가 보는 부분 — 지금 쥐고 있는 자리를 읽는다. */
 type OrderRow = { id: string; sort_order: number };
+/** `reorderFavorites` 가 읽는 자리 행 — 같은 모양이지만 축이 다르다(`fav_order`). */
+type FavOrderRow = { id: string; fav_order: number };
 
 // ───────────────────────────────────────────────────────── 사용자 문구
 //
@@ -788,6 +790,49 @@ export async function reorderBookmarks(orderedIds: string[]): Promise<ActionResu
   if (changes.length === 0) return { ok: true };
 
   return writeOrder(supabase, 'bookmarks', 'sort_order', changes, 'any');
+}
+
+/**
+ * 즐겨찾기의 차례를 다시 쓴다 (J5 드래그 정렬) — `fav_order` 축이다.
+ *
+ * `reorderBookmarks` 와 **같은 방식**이다: 0..n 으로 다시 매기지 않고, 받은 id 들이 지금 쥐고
+ * 있는 자리 값들만 모아 새 차례대로 나눠 준다. 그 선택의 근거는 위 JSDoc 에 길게 적혀 있고
+ * 여기서도 그대로 필요하다 — 홈은 즐겨찾기를 **세 묶음으로 갈라 각각 따로** 끌기 때문에
+ * (`lib/fav-groups.ts`) 한 번의 드롭이 언제나 부분 목록을 보낸다. 0..n 으로 매기면 그 묶음이
+ * 다른 두 묶음의 자리를 통째로 빼앗아 홈의 차례가 뒤섞인다.
+ *
+ * 자리를 **서버가 읽는다**는 점도 같다 — 화면은 '차례'만 말하고 '값'은 말하지 못한다.
+ *
+ * 없는 id 는 조용히 빠진다(그 사이 지워졌거나 즐겨찾기에서 빠진 링크). 하나도 못 찾으면 실패다.
+ */
+export async function reorderFavorites(orderedIds: string[]): Promise<ActionResult> {
+  const supabase = await writeClient();
+  if (supabase === null) return DENIED;
+
+  const ids = asIdList(orderedIds);
+  if (ids === null) return fail(INVALID_REQUEST);
+  if (ids.length === 0) return { ok: true };
+
+  const found = await supabase.from('bookmarks').select('id, fav_order').in('id', ids);
+  if (found.error !== null) return describeFailure('즐겨찾기 순서 조회', found.error);
+
+  const current = new Map(
+    ((found.data ?? []) as FavOrderRow[]).map((row) => [row.id, row.fav_order] as const),
+  );
+  // 받은 차례를 그대로 두되 사라진 id 만 뺀다 — 남은 것들끼리의 상대 순서가 사용자가 본 그것이다.
+  const targets = ids.filter((id) => current.has(id));
+  if (targets.length === 0) return fail(BOOKMARK_NOT_FOUND);
+
+  // 이 목록이 쥐고 있는 자리들. 오름차순이 곧 '화면에서 위에서 아래로'다(pickFavorites 의 정렬).
+  const slots = targets.map((id) => current.get(id) ?? 0).sort((left, right) => left - right);
+
+  const changes = targets.flatMap((id, index) =>
+    current.get(id) === slots[index] ? [] : [{ id, sortOrder: slots[index] }],
+  );
+  // 이미 그 순서다(제자리에 놓았다) — 쓰지도, 화면을 다시 그리지도 않는다.
+  if (changes.length === 0) return { ok: true };
+
+  return writeOrder(supabase, 'bookmarks', 'fav_order', changes, 'any');
 }
 
 // ───────────────────────────────────────────────────────── 내부 helpers
