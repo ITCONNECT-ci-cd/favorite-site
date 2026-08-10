@@ -726,7 +726,7 @@ export async function reorderBookmarks(orderedIds: string[]): Promise<ActionResu
   // 이미 그 순서다(제자리에 놓았다) — 쓰지도, 화면을 다시 그리지도 않는다.
   if (changes.length === 0) return { ok: true };
 
-  return writeOrder(supabase, 'bookmarks', changes, 'any');
+  return writeOrder(supabase, 'bookmarks', 'sort_order', changes, 'any');
 }
 
 // ───────────────────────────────────────────────────────── 내부 helpers
@@ -829,6 +829,7 @@ async function applyOrder(
   return writeOrder(
     supabase,
     table,
+    'sort_order',
     ids.map((id, index) => ({ id, sortOrder: index })),
     scope,
   );
@@ -846,8 +847,12 @@ type OrderEntry = { id: string; sortOrder: number };
  *
  * **한 문장으로 못 한다** — PostgREST 에는 행마다 다른 값을 넣는 대량 update 가 없고, upsert 로
  * 흉내 내면 `name` 같은 not null 컬럼을 함께 실어야 해서 그 사이 다른 창에서 바뀐 이름을 덮어쓰거나
- * 방금 지워진 행을 되살린다. 그래서 `sort_order` 만 건드리는 update 를 짝 수만큼 동시에 던진다.
+ * 방금 지워진 행을 되살린다. 그래서 **자리 컬럼 하나만** 건드리는 update 를 짝 수만큼 동시에 던진다.
  * 중간에 실패하면 순서가 일부만 반영되는데, 드래그를 다시 하면 그대로 복구된다(멱등).
+ *
+ * **어느 컬럼에 쓰는지는 부르는 쪽이 정한다**(`column`). 이 제품에는 자리 축이 둘 있다 —
+ * `sort_order`(분류 안에서의 차례)와 `fav_order`(즐겨찾기 안에서의 차례). 두 축은 서로 무관하므로
+ * 한쪽을 쓰면서 다른 쪽을 건드리면 안 된다.
  *
  * `Promise.all` 이 아니라 **`Promise.allSettled`** 인 이유: `fetch` 자체가 거부되면(네트워크 단절 등)
  * `all` 은 그 거부를 그대로 던져 **액션이 예외로 끝난다** — 화면은 `{ ok:false }` 를 기다리는데
@@ -862,6 +867,7 @@ type OrderEntry = { id: string; sortOrder: number };
 async function writeOrder(
   supabase: WriteClient,
   table: 'categories' | 'bookmarks',
+  column: 'sort_order' | 'fav_order',
   entries: readonly OrderEntry[],
   scope: 'top-level-only' | 'any',
 ): Promise<ActionResult> {
@@ -869,7 +875,7 @@ async function writeOrder(
 
   const settled = await Promise.allSettled(
     entries.map(({ id, sortOrder }) => {
-      const query = supabase.from(table).update({ sort_order: sortOrder }).eq('id', id);
+      const query = supabase.from(table).update({ [column]: sortOrder }).eq('id', id);
 
       return (scope === 'top-level-only' ? query.is('parent_id', null) : query).select('id');
     }),
@@ -880,14 +886,17 @@ async function writeOrder(
 
   const rejected = settled.find((result): result is PromiseRejectedResult => result.status === 'rejected');
   if (rejected !== undefined) {
-    console.error(`[mutations] ${table} 순서 저장 실패 — 요청이 거부됐다`, rejected.reason);
+    console.error(`[mutations] ${table}.${column} 순서 저장 실패 — 요청이 거부됐다`, rejected.reason);
 
     return failAfterPartialChange(touched, fail(ORDER_FAILED));
   }
 
   const broken = answered.find((result) => result.error !== null);
   if (broken !== undefined && broken.error !== null) {
-    return failAfterPartialChange(touched, describeFailure(`${table} 순서 저장`, broken.error));
+    return failAfterPartialChange(
+      touched,
+      describeFailure(`${table}.${column} 순서 저장`, broken.error),
+    );
   }
 
   if (touched === 0) return fail(ORDER_FAILED);
