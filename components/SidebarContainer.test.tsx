@@ -23,7 +23,6 @@ const PROPS: SidebarContainerProps = {
   categories: CATEGORIES,
   counts: { ai: 118, op: 16 },
   totalCount: 290,
-  dailyCount: 12,
   operatingCategoryId: 'op',
 };
 
@@ -77,7 +76,6 @@ describe('SidebarContainer', () => {
     render(<SidebarContainer {...PROPS} />);
 
     expect(countOf('홈')).toBe('290');
-    expect(countOf('매일 사용하는 사이트')).toBe('12');
     expect(countOf('현재 운영 중인 사이트')).toBe('16');
     expect(countOf('AI 도구 모음')).toBe('118');
   });

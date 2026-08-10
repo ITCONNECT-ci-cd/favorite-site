@@ -215,7 +215,6 @@ function linkRows(
       categoryId: bookmark.category_id,
       faviconUrl: bookmark.favicon_url,
       clickCount: bookmark.click_count,
-      isPinned: bookmark.is_pinned,
       source: bookmark.source,
     });
   }

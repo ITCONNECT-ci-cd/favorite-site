@@ -15,7 +15,6 @@ export type SidebarProps = {
   /** 카테고리 id → 링크 수. 상위는 하위 합산 롤업이며 계산은 D1 책임 — 여기선 표시만 한다. */
   counts: Readonly<Record<string, number>>;
   totalCount: number;
-  dailyCount: number;
   /** E1 useFavorites 파생 — C1의 클라이언트 래퍼가 공급, SSR 초기값 0. */
   favCount: number;
   /** '현재 운영 중인 사이트' 카테고리 id. 빠른 접근으로 올리고 분류 목록에서는 뺀다. */
@@ -113,7 +112,6 @@ export function Sidebar({
   categories,
   counts,
   totalCount,
-  dailyCount,
   favCount,
   operatingCategoryId,
 }: SidebarProps) {
@@ -170,7 +168,6 @@ export function Sidebar({
   const quick = [
     { href: '/', name: '홈', count: totalCount },
     { href: '/favorites', name: '내 즐겨찾기', count: favCount },
-    { href: '/daily', name: '매일 사용하는 사이트', count: dailyCount },
     ...(operatingCategoryId
       ? [
           {

@@ -1,9 +1,9 @@
 /**
- * I4. 링크 표 + 인라인 편집 + 고정 — DESIGN_SPEC 6장 "표 헤더 38px" · "행(min-height 52px …)"
+ * I4. 링크 표 + 인라인 편집 — DESIGN_SPEC 6장 "표 헤더 38px" · "행(min-height 52px …)"
  * + 프로토타입 원문 실측(`docs/prototype/링크 대시보드 v2.dc.html` 382–406행).
  *
  * 이 파일이 못박는 것: **표가 어떻게 생겼는가**(수치·색·행 구성과 order), **무엇을 서버에
- * 보내는가**(`updateBookmark`·`togglePin`·`reorderBookmarks` 의 인자), **결과를 어떻게 쓰는가**
+ * 보내는가**(`updateBookmark`·`reorderBookmarks` 의 인자), **결과를 어떻게 쓰는가**
  * (토스트·초안 유지). 액션이 무엇을 검사하고 어떤 문구를 돌려주는지는 `lib/mutations.test.ts` 가
  * 고정한다 — 여기서는 액션을 갈아 끼우고 계약만 본다.
  */
@@ -19,14 +19,13 @@ import { LinkFilterProvider, useLinkFilter } from '@/components/admin/FilterRow'
 import { LinkTable, type AdminLink, type LinkRowMap } from '@/components/admin/LinkTable';
 import type { SubCategoryMap } from '@/components/admin/SubCategoryRow';
 import { Toaster } from '@/components/Toast';
-import { reorderBookmarks, togglePin, updateBookmark } from '@/lib/mutations';
+import { reorderBookmarks, updateBookmark } from '@/lib/mutations';
 import { setupToastTimers } from '@/test/toast';
 
 vi.mock('@/lib/mutations', () => ({
   createCategory: vi.fn(),
   reorderCategories: vi.fn(),
   reorderBookmarks: vi.fn(),
-  togglePin: vi.fn(),
   updateBookmark: vi.fn(),
 }));
 
@@ -51,7 +50,6 @@ function link(overrides: Partial<AdminLink> & Pick<AdminLink, 'id' | 'title'>): 
     categoryId: 'cat-ai',
     faviconUrl: null,
     clickCount: 0,
-    isPinned: false,
     source: 'manual',
     ...overrides,
   };
@@ -67,7 +65,6 @@ const LINKS: LinkRowMap = {
       description: '검색형 AI',
       faviconUrl: ICON_URL,
       clickCount: 42,
-      isPinned: true,
       source: 'discord',
     }),
     // 주소가 **주소로 해석되지 않는** 한 줄이다(스킴이 없다 — `hostOf` JSDoc 의 그 예). 표가 그
@@ -154,7 +151,6 @@ const titleField = (title: string) => screen.getByRole('textbox', { name: `${tit
 const row = (title: string) => titleField(title).closest('li') as HTMLElement;
 const descField = (title: string) => screen.getByRole('textbox', { name: `${title} 한 줄 설명` });
 const subSelect = (title: string) => screen.getByRole('combobox', { name: `${title} 하위 카테고리` });
-const pinToggle = (title: string) => screen.getByRole('button', { name: `${title} 매일 고정` });
 
 /** 액션이 프라미스를 돌려주므로 쓰기 경로는 act 안에서 마이크로태스크까지 흘려보낸다. */
 async function flush(run: () => void) {
@@ -216,7 +212,6 @@ setupToastTimers();
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(updateBookmark).mockResolvedValue({ ok: true });
-  vi.mocked(togglePin).mockResolvedValue({ ok: true });
   vi.mocked(reorderBookmarks).mockResolvedValue({ ok: true });
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });
@@ -248,8 +243,6 @@ describe('LinkTable — 표 헤더 (프로토타입 382–387행)', () => {
     expect(cell('한 줄 설명 — 눌러서 바로 고칩니다')).toHaveClass('flex-1', 'min-w-0');
     expect(cell('하위 카테고리')).toHaveClass('w-[130px]', 'flex-none');
     expect(cell('클릭')).toHaveClass('w-[46px]', 'flex-none', 'text-right');
-    // `고정`은 켜진 토글의 글자이기도 하다 — 헤더 안으로 좁혀야 헛짚지 않는다.
-    expect(cell('고정')).toHaveClass('w-[56px]', 'flex-none', 'text-right');
   });
 
   it('선택한 카테고리의 링크만 목록에 오른다 — 하위 소속도 함께다', () => {
@@ -298,7 +291,7 @@ describe('LinkTable — 행의 모습 (프로토타입 390–406행)', () => {
     expect(row('Perplexity')).toHaveAttribute('draggable', 'true');
   });
 
-  it('감쌀 때의 자리는 order 로 잠근다 — 손잡이 0 · 이름 1 · 설명 2 · 하위 3 · 클릭 4 · 고정 5', () => {
+  it('감쌀 때의 자리는 order 로 잠근다 — 손잡이 0 · 이름 1 · 설명 2 · 하위 3 · 클릭 4', () => {
     renderTable();
 
     const cells = within(row('Perplexity'));
@@ -308,7 +301,6 @@ describe('LinkTable — 행의 모습 (프로토타입 390–406행)', () => {
     expect(descField('Perplexity').closest('form')).toHaveClass('order-2');
     expect(subSelect('Perplexity')).toHaveClass('order-3');
     expect(cells.getByTestId('clicks')).toHaveClass('order-4');
-    expect(pinToggle('Perplexity')).toHaveClass('order-5');
   });
 
   it('손잡이는 9×12px 두 줄이다', () => {
@@ -385,19 +377,6 @@ describe('LinkTable — 행의 모습 (프로토타입 390–406행)', () => {
     expect(cell.querySelector('svg')).not.toBeNull();
   });
 
-  it('고정 토글은 56×26px 알약이다 — 켜짐은 검은 배경 `고정`, 꺼짐은 흰 배경 `☆`', () => {
-    renderTable();
-
-    // 손가락 커서는 프로토타입 406행 원문이다. 이 버튼은 잠기지 않으므로 `disabled:` 짝은 없다.
-    expect(pinToggle('Perplexity')).toHaveClass('cursor-pointer');
-    expect(pinToggle('Perplexity')).toHaveClass('w-[56px]', 'h-[26px]', 'rounded-[13px]', 'bg-ink', 'text-white', 'border-ink');
-    expect(pinToggle('Perplexity')).toHaveTextContent('고정');
-    expect(pinToggle('Perplexity')).toHaveAttribute('aria-pressed', 'true');
-
-    expect(pinToggle('Claude')).toHaveClass('bg-card', 'text-ghost', 'border-border-strong');
-    expect(pinToggle('Claude')).toHaveTextContent('☆');
-    expect(pinToggle('Claude')).toHaveAttribute('aria-pressed', 'false');
-  });
 });
 
 describe('LinkTable — 제목 인라인 편집', () => {
@@ -718,105 +697,6 @@ describe('LinkTable — 하위 카테고리 지정', () => {
 
     expect(console.error).toHaveBeenCalled();
     expect(screen.getByRole('status')).toHaveTextContent(REQUEST_FAILED);
-  });
-});
-
-describe('LinkTable — 매일 고정', () => {
-  it('토글은 링크 id 하나만 보낸다 (켜고 끄는 판정은 서버가 한다)', async () => {
-    renderTable();
-
-    await flush(() => {
-      fireEvent.click(pinToggle('Claude'));
-    });
-
-    expect(togglePin).toHaveBeenCalledWith('bm-3');
-    expect(screen.getByRole('status')).toHaveTextContent('Claude 매일 보는 곳에 고정');
-  });
-
-  it('이미 고정된 링크를 누르면 해제라고 알린다', async () => {
-    renderTable();
-
-    await flush(() => {
-      fireEvent.click(pinToggle('Perplexity'));
-    });
-
-    expect(screen.getByRole('status')).toHaveTextContent('Perplexity 고정 해제');
-  });
-
-  /**
-   * **13번째는 화면이 미리 세지 않는다.** 상한 판정은 DB 트리거 하나가 갖고(lib/mutations.ts
-   * `togglePin`), 화면이 한 벌 더 세면 두 창에서 동시에 누를 때 조용히 갈라진다.
-   */
-  it('12개가 이미 고정돼 있어도 요청은 그대로 나가고, 막는 것은 서버 문구다', async () => {
-    const full: LinkRowMap = {
-      'cat-ai': [
-        ...Array.from({ length: 12 }, (_unused, index) =>
-          link({ id: `pin-${index}`, title: `고정 ${index}`, isPinned: true }),
-        ),
-        link({ id: 'bm-13', title: '열세 번째' }),
-      ],
-    };
-    vi.mocked(togglePin).mockResolvedValue({ ok: false, error: '매일 고정은 최대 12개입니다.' });
-    renderTable(full);
-
-    await flush(() => {
-      fireEvent.click(pinToggle('열세 번째'));
-    });
-
-    expect(togglePin).toHaveBeenCalledWith('bm-13');
-    expect(screen.getByRole('status')).toHaveTextContent('매일 고정은 최대 12개입니다.');
-  });
-
-  it('같은 틱에 두 번 눌러도 한 번만 나간다 (ref 빗장)', async () => {
-    const pin = pendingResult();
-    vi.mocked(togglePin).mockReturnValue(pin.promise);
-    renderTable();
-
-    await flush(() => {
-      fireEvent.click(pinToggle('Claude'));
-      fireEvent.click(pinToggle('Claude'));
-    });
-
-    expect(togglePin).toHaveBeenCalledTimes(1);
-    await pin.finish();
-  });
-
-  /** 버튼도 잠그지 않는다(누른 버튼이 잠기면 포커스가 문서로 튕긴다) — 상태만 알린다. */
-  it('누른 뒤 나가 있는 동안임을 aria-busy 로 알리되 잠그지는 않는다', async () => {
-    const pin = pendingResult();
-    vi.mocked(togglePin).mockReturnValue(pin.promise);
-    renderTable();
-
-    expect(pinToggle('Claude')).toHaveAttribute('aria-busy', 'false');
-
-    await flush(() => {
-      fireEvent.click(pinToggle('Claude'));
-    });
-
-    expect(pinToggle('Claude')).toHaveAttribute('aria-busy', 'true');
-    expect(pinToggle('Claude')).not.toBeDisabled();
-
-    await pin.finish();
-    expect(pinToggle('Claude')).toHaveAttribute('aria-busy', 'false');
-  });
-
-  it('요청 자체가 거부되면 한 줄로 알리고 빗장을 푼다', async () => {
-    vi.mocked(togglePin).mockRejectedValue(REJECTION);
-    renderTable();
-
-    await flush(() => {
-      fireEvent.click(pinToggle('Claude'));
-    });
-
-    expect(console.error).toHaveBeenCalled();
-    expect(screen.getByRole('status')).toHaveTextContent(REQUEST_FAILED);
-
-    vi.mocked(togglePin).mockResolvedValue({ ok: true });
-    await flush(() => {
-      fireEvent.click(pinToggle('Claude'));
-    });
-
-    expect(togglePin).toHaveBeenCalledTimes(2);
   });
 });
 

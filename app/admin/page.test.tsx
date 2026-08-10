@@ -232,17 +232,13 @@ describe('AdminPage — 카테고리 · 링크 (I1 2단)', () => {
     expect(within(linkList()).queryByRole('textbox', { name: 'bm-4 제목' })).not.toBeInTheDocument();
   });
 
-  it('행이 든 값은 표가 그리는 여섯 칸뿐이다 (클릭 수·고정·하위 배정)', async () => {
+  it('행은 최신 표의 클릭 수·하위 배정과 자동 수집 출처를 함께 받는다', async () => {
     render((await AdminPage()) as ReactElement);
 
     const row = within(linkList()).getAllByRole('listitem')[1];
 
     expect(row).toHaveTextContent('7'); // bm-2 의 클릭 수 (뷰에서 붙어 온 값)
     expect(within(row).getByRole('combobox', { name: 'bm-2 하위 카테고리' })).toHaveValue('sub-chat');
-    expect(within(row).getByRole('button', { name: 'bm-2 매일 고정' })).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    );
     expect(within(row).getByTestId('source-badge')).toHaveTextContent('자동');
   });
 

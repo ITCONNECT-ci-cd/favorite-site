@@ -16,12 +16,7 @@ import type { AdminSubCategory, SubCategoryMap } from '@/components/admin/SubCat
 import { EyeIcon } from '@/components/icons';
 import { toast } from '@/components/Toast';
 import { REQUEST_FAILED } from '@/lib/constants';
-import {
-  reorderBookmarks,
-  togglePin,
-  updateBookmark,
-  type ActionResult,
-} from '@/lib/mutations';
+import { reorderBookmarks, updateBookmark, type ActionResult } from '@/lib/mutations';
 import { moveOnto } from '@/lib/reorder';
 import { hostOf } from '@/lib/url';
 
@@ -30,7 +25,7 @@ import { hostOf } from '@/lib/url';
  *
  * **화면이 쓸 만큼만 담는다** — 좌측 패널(`AdminCategory`)·하위 줄(`AdminSubCategory`)과 같은
  * 방침이다. 290행짜리 `BookmarkWithCount` 를 그대로 내리지 않고 화면(app/admin/page.tsx)이 표에
- * 필요한 여덟 칸만 접어 온다: 표의 여섯 칸(이름·주소·설명·하위·클릭·고정)과 그것을 서버로
+ * 필요한 일곱 칸만 접어 온다: 표의 다섯 칸(이름·주소·설명·하위·클릭)과 그것을 서버로
  * 되돌려 보낼 때 쓰는 `id` 다.
  *
  * `sort_order` 는 **일부러 없다.** 순서는 배열의 자리가 이미 들고 있고(`getAllData` 가
@@ -50,7 +45,6 @@ export type AdminLink = {
   categoryId: string;
   faviconUrl: string | null;
   clickCount: number;
-  isPinned: boolean;
   source: 'manual' | 'discord';
 };
 
@@ -112,16 +106,6 @@ const SUB_FIELD =
 /** 클릭 46px 우측 정렬. `#5a5651` 은 스펙 색상표에 없는 프로토타입 고유값이다(405행). */
 const CLICKS = 'order-4 flex items-center justify-end gap-[4px] w-[46px] flex-none text-[11.5px] font-semibold text-[#5a5651]';
 
-/**
- * 고정 토글 56×26px 알약. 켜짐·꺼짐의 세 색(배경·글자·테두리)이 함께 뒤집힌다(프로토타입 1114행).
- *
- * 손가락 커서는 프로토타입 원문 그대로다(406행 `cursor:pointer`). `disabled:cursor-default` 를
- * 함께 달지 않는 것은 이 버튼을 **잠그지 않기** 때문이다 — 이중 제출은 `pinningRef` 가 막는다
- * (아래 버튼의 주석. 잠그는 버튼을 가진 I2·J2 는 그쪽 짝을 함께 단다).
- */
-const PIN = 'order-5 flex items-center justify-center w-[56px] h-[26px] flex-none cursor-pointer rounded-[13px] border text-[11px] font-semibold';
-const PIN_ON = 'bg-ink text-white border-ink';
-const PIN_OFF = 'bg-card text-ghost border-border-strong';
 
 /**
  * 파비콘 주소를 CSS `url()` 안에 안전하게 넣는다. 따옴표가 든 주소를 그대로 이어 붙이면 url()
@@ -156,8 +140,8 @@ async function run(call: () => Promise<ActionResult>, what: string): Promise<Act
  * 링크 표 — DESIGN_SPEC 6장 "표 헤더 38px" · "행 (min-height 52px …)", 프로토타입 382–406행.
  *
  * 선택한 상위 카테고리의 **트리 전체**(직속 + 하위 소속)를 한 목록으로 늘어놓고, 그 자리에서
- * 설명을 고치고(`updateBookmark`), 하위를 옮기고(`updateBookmark`), 매일 고정을 켜고 끄고
- * (`togglePin`), 드래그로 순서를 바꾼다(`reorderBookmarks`). 어느 상위인지는 prop 이 아니라
+ * 설명을 고치고(`updateBookmark`), 하위를 옮기고(`updateBookmark`), 드래그로 순서를 바꾼다
+ * (`reorderBookmarks`). 어느 상위인지는 prop 이 아니라
  * 좌측 패널과 공유하는 선택 상태에서 온다(`useSelectedCategory`).
  *
  * ## 자리 — 링크 추가 줄과 **같은 상자** 안이다
@@ -177,18 +161,13 @@ async function run(call: () => Promise<ActionResult>, what: string): Promise<Act
  *
  * ## 서버와의 계약
  *
- * 세 액션을 직접 부른다(`lib/mutations.ts`). 인자가 positional 이라 `<form action>` 에 그대로 걸
+ * 두 액션을 직접 부른다(`lib/mutations.ts`). 인자가 positional 이라 `<form action>` 에 그대로 걸
  * 수 없고, 돌아오는 `{ ok:false, error }` 의 `error` 는 **그대로 토스트에 넣는다** — 화면이 문구를
  * 다시 적으면 서버와 조용히 갈라진다(I1·I2·J2 와 같은 방침).
  *
- * **13번째 고정을 화면이 미리 세지 않는다.** 상한 판정은 DB 트리거 하나가 갖고(`togglePin`
- * JSDoc — `pg_advisory_xact_lock` 으로 경합까지 직렬화한다), 화면이 한 벌 더 세면 두 창에서
- * 동시에 누를 때 조용히 갈라진다. 프로토타입은 자기 상태를 세어 막았지만(689–694행) 그때는
- * 상태가 화면 하나뿐이었다.
- *
  * ## 알려진 한계 — 순서 변경은 마우스로만 된다
  *
- * HTML5 `draggable` 은 키보드로 다룰 수 없다(좌측 패널과 같은 한계·같은 근거). 설명·하위·고정은
+ * HTML5 `draggable` 은 키보드로 다룰 수 없다(좌측 패널과 같은 한계·같은 근거). 설명·하위는
  * 전부 키보드로 되므로 정렬만 마우스 전용으로 남는다.
  */
 export function LinkTable({
@@ -331,7 +310,6 @@ function Table({
         <span className="flex-1 min-w-0">한 줄 설명 — 눌러서 바로 고칩니다</span>
         <span className="w-[130px] flex-none">하위 카테고리</span>
         <span className="w-[46px] flex-none text-right">클릭</span>
-        <span className="w-[56px] flex-none text-right">고정</span>
       </div>
 
       {order.length === 0 ? (
@@ -432,8 +410,8 @@ function Row({
 
   /**
    * 세 동작이 각자 빗장을 갖는다. 하나로 합치지 않는 이유는 **떠나면서 누르는 길** 때문이다:
-   * 설명 칸에서 고정 토글을 누르면 blur(저장 시작)와 click 이 잇달아 일어나는데, 빗장이 하나면
-   * 그 클릭이 조용히 버려진다.
+   * 설명 칸에서 하위 select 를 누르면 blur(저장 시작)와 change 가 잇달아 일어나는데, 빗장이
+   * 하나면 그 변경이 조용히 버려진다.
    *
    * 상태가 아니라 ref 인 것은 React 의 일괄 처리 때문이다 — 한 틱 안에 둘이 들어오면 둘 다 같은
    * 렌더의 클로저를 보므로 상태 가드는 아직 false 다(I1·J2·J3 와 같은 장치).
@@ -441,10 +419,7 @@ function Row({
   const savingDescRef = useRef(false);
   const savingTitleRef = useRef(false);
   const movingRef = useRef(false);
-  const pinningRef = useRef(false);
 
-  /** 고정 토글이 나가 있는 동안. `disabled` 를 걸지 않는 이유는 아래 버튼의 주석에 있다. */
-  const [pinning, setPinning] = useState(false);
   /**
    * 하위 이동이 나가 있는 동안. 여기만 상태가 아니라 **트랜지션의 pending** 인 이유는 아래
    * 낙관값 때문이다 — 트랜지션 안에서 `setState` 를 하면 그 갱신이 트랜지션의 일부가 되어
@@ -467,8 +442,7 @@ function Row({
   /**
    * select 가 실제로 그리는 값. **고른 것을 그 자리에서 보여 주기 위해** 낙관값을 하나 얹는다 —
    * 값이 prop 에서만 오면 React 는 다시 그릴 때 고른 값을 되돌려 놓아, 사람은 옮겼는데 칸은
-   * 옛 하위를 가리키는 구간이 서버 왕복 내내 이어진다(고정 토글에는 이 문제가 없다: 그쪽은
-   * 늦게 따라올 뿐 다른 값으로 **되돌아가지** 않는다).
+   * 옛 하위를 가리키는 구간이 서버 왕복 내내 이어진다.
    *
    * 트랜지션이 끝나면 이 값은 걷히고 서버가 이긴다 — 성공했으면 그때 새 prop 이 함께 도착해
    * 눈에는 이어져 보이고, 거절당했으면 원래 하위로 돌아간다(좌측 패널의 낙관 순서와 같은 성질).
@@ -562,28 +536,6 @@ function Row({
       // 토스트는 React 상태가 아니라 곁가지라 트랜지션에 얹혀도 낙관값 해제를 미루지 않는다.
       toast(result.ok ? `${link.title} → ${target?.name ?? parent.name}` : result.error);
     });
-  }
-
-  async function toggle(): Promise<void> {
-    if (pinningRef.current) return;
-
-    pinningRef.current = true;
-    setPinning(true);
-
-    const result = await run(() => togglePin(link.id), '매일 고정');
-
-    pinningRef.current = false;
-    setPinning(false);
-
-    // 프로토타입 693–694행의 두 문장 그대로다. 실패 문구는 서버가 준 것을 그대로 쓴다
-    // (13번째 고정을 막는 `매일 고정은 최대 12개입니다.` 가 이 길로 나온다).
-    if (!result.ok) {
-      toast(result.error);
-
-      return;
-    }
-
-    toast(link.isPinned ? `${link.title} 고정 해제` : `${link.title} 매일 보는 곳에 고정`);
   }
 
   return (
@@ -685,21 +637,6 @@ function Row({
         {link.clickCount}
       </span>
 
-      {/* 이름은 상태에 따라 바뀌지 않는다 — 눌린 상태는 `aria-pressed` 가 알리고, 이름이 함께
-          바뀌면 스크린 리더에 같은 사실이 두 번 실린다. 눈에 보이는 글자(`고정`/`☆`)는
-          프로토타입 그대로다.
-          여기도 `disabled` 를 걸지 않는다 — 방금 누른 버튼이 잠기면 초점이 문서로 튕겨 나가
-          키보드 사용자가 자리를 잃는다. 이중 제출은 `pinningRef` 가 막는다. */}
-      <button
-        type="button"
-        aria-label={`${link.title} 매일 고정`}
-        aria-pressed={link.isPinned}
-        aria-busy={pinning}
-        onClick={() => void toggle()}
-        className={`${PIN} ${link.isPinned ? PIN_ON : PIN_OFF}`}
-      >
-        {link.isPinned ? '고정' : '☆'}
-      </button>
     </li>
   );
 }

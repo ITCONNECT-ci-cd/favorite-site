@@ -31,7 +31,6 @@ const PROPS: SidebarProps = {
     pf: 9, uiux: 17, etc: 8, ref: 24, 'ref-tool': 15, google: 11, op: 16,
   },
   totalCount: 290,
-  dailyCount: 12,
   favCount: 3,
   operatingCategoryId: 'op',
 };
@@ -95,14 +94,13 @@ describe('Sidebar', () => {
       );
     });
 
-    it('4항목을 지정된 경로로 건다', () => {
+    it('3항목을 지정된 경로로 건다', () => {
       renderSidebar();
 
       expect(row('홈').link).toHaveAttribute('href', '/');
       expect(row('내 즐겨찾기').link).toHaveAttribute('href', '/favorites');
-      expect(row('매일 사용하는 사이트').link).toHaveAttribute('href', '/daily');
       expect(row('현재 운영 중인 사이트').link).toHaveAttribute('href', '/category/op');
-      expect(quickList().children).toHaveLength(4);
+      expect(quickList().children).toHaveLength(3);
     });
 
     it('항목 글자는 14px/600 이다', () => {
@@ -112,19 +110,18 @@ describe('Sidebar', () => {
       expect(row('현재 운영 중인 사이트').label).toHaveClass('text-[14px]', 'font-semibold');
     });
 
-    it('개수는 전체·즐겨찾기·매일·운영 중 순으로 각 prop 을 쓴다', () => {
+    it('개수는 전체·즐겨찾기·운영 중 순으로 각 prop 을 쓴다', () => {
       renderSidebar();
 
       expect(row('홈').count).toHaveTextContent('290');
       expect(row('내 즐겨찾기').count).toHaveTextContent('3');
-      expect(row('매일 사용하는 사이트').count).toHaveTextContent('12');
       expect(row('현재 운영 중인 사이트').count).toHaveTextContent('16');
     });
 
     it('운영 중 카테고리 id 가 없으면 그 행을 만들지 않는다', () => {
       renderSidebar({ operatingCategoryId: null });
 
-      expect(quickList().children).toHaveLength(3);
+      expect(quickList().children).toHaveLength(2);
       expect(
         within(quickList()).queryByRole('link', { name: '현재 운영 중인 사이트' }),
       ).not.toBeInTheDocument();
@@ -306,10 +303,10 @@ describe('Sidebar', () => {
     });
 
     it('빠른 접근의 다른 경로에서도 활성 표시가 따라간다', () => {
-      pathname.current = '/daily';
+      pathname.current = '/favorites';
       renderSidebar();
 
-      expect(row('매일 사용하는 사이트').container).toHaveClass('bg-select');
+      expect(row('내 즐겨찾기').container).toHaveClass('bg-select');
       expect(row('홈').container).not.toHaveClass('bg-select');
     });
 

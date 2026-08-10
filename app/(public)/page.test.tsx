@@ -43,11 +43,11 @@ beforeEach(() => {
 });
 
 describe('홈 — 데이터 배선', () => {
-  it('getAllData 한 벌을 그대로 화면에 넘긴다 — 세 섹션이 선다', async () => {
+  it('getAllData 한 벌을 그대로 화면에 넘긴다 — 섹션이 선다', async () => {
     await renderPage();
 
+    // 즐겨찾기는 서버 렌더에서 비어 있어(localStorage) 안내 한 장만 선다.
     expect(screen.getByRole('heading', { name: '내 즐겨찾기' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '매일 사용하는 사이트' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '현재 운영 중인 사이트' })).toBeInTheDocument();
   });
 
@@ -72,14 +72,14 @@ describe('홈 — 관리자 편집 노출 (J1)', () => {
     expect(container.innerHTML).not.toContain(TRASH_PATH);
   });
 
-  it('관리자 세션이면 매일 12 · 운영 중 16 카드 전부에 연필·휴지통이 붙는다', async () => {
+  it('관리자 세션이면 운영 중 16 카드 전부에 연필·휴지통이 붙는다', async () => {
     vi.mocked(getAdminSession).mockResolvedValue(adminSession);
 
     await renderPage();
 
-    // 즐겨찾기 섹션은 비어 있다(localStorage 를 비운 상태) — 남은 두 섹션이 28장이다.
-    expect(edits()).toHaveLength(28);
-    expect(deletes()).toHaveLength(28);
+    // 즐겨찾기 묶음은 비어 있다(localStorage 를 비운 상태) — 남은 섹션이 16장이다.
+    expect(edits()).toHaveLength(16);
+    expect(deletes()).toHaveLength(16);
   });
 
   it('세션 판정은 getAdminSession 하나로만 한다 — 요청당 한 번', async () => {
@@ -109,8 +109,8 @@ describe('홈 — 링크 추가 타일 (K1)', () => {
 
     await renderPage();
 
-    // 둘이다 — '매일'(고정까지 켜는 타일)과 '현재 운영 중인 사이트'.
-    expect(tiles()).toHaveLength(2);
+    // 하나다 — '현재 운영 중인 사이트' 섹션에만 선다.
+    expect(tiles()).toHaveLength(1);
 
     fireEvent.click(tiles()[0]);
 

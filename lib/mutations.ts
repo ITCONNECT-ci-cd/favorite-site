@@ -53,7 +53,11 @@
 import { revalidatePath } from 'next/cache';
 
 import { parseBookmarkUrlV1 } from '@/lib/bookmark-url';
-import { DAILY_PIN_MAX } from '@/lib/constants';
+import {
+  AI_TOOLS_CATEGORY_NAME,
+  NEWS_CATEGORY_NAME,
+  OPERATING_CATEGORY_NAME,
+} from '@/lib/constants';
 import { createServerSupabaseClient, getAdminSession } from '@/lib/supabase/server';
 import { hostOf } from '@/lib/url';
 
@@ -95,15 +99,6 @@ export type NewBookmark = {
   description?: string | null;
   categoryId: string;
   faviconUrl?: string | null;
-  /**
-   * 만들면서 '매일 사용하는 사이트' 고정까지 켠다 — 홈의 **'매일' 섹션 타일**만 참으로 준다(J5).
-   *
-   * 그 자리에서 만든 링크는 고른 분류로 들어가지만, 고정이 꺼져 있으면 **방금 누른 섹션에는
-   * 나타나지 않는다.** 눌린 자리와 결과가 어긋나는 그 한 가지 때문에 이 플래그가 있다.
-   *
-   * 참이 아닌 값(미지정 포함)은 전부 거짓이다 — 남이 보낸 `"true"` 문자열로 고정이 켜지지 않는다.
-   */
-  pinned?: boolean;
 };
 
 /**
@@ -117,39 +112,32 @@ type WriteClient = Awaited<ReturnType<typeof createServerSupabaseClient>>;
 /** 카테고리 행에서 우리가 보는 부분 — 상위/하위 판정은 `parent_id` 하나로 끝난다. */
 type CategoryRow = { id: string; parent_id: string | null };
 
-/** 링크 행에서 `togglePin` 이 보는 부분. */
-type PinRow = { id: string; is_pinned: boolean };
+/** 이름을 바꾸려는 상위 카테고리에서 `renameCategory` 가 보는 부분. */
+type NameRow = { id: string; name: string };
 
 // ───────────────────────────────────────────────────────── 사용자 문구
 //
 // 화면에 나가는 문장을 **한 블록에 모아 둔다.** 같은 상황을 여러 액션이 서로 다르게 말하면
 // (`카테고리를 찾을 수 없습니다.` 를 액션마다 따로 적으면) 문구가 조용히 갈라진다. 여기서만
-// 고치면 13개 액션이 함께 바뀐다. 문구를 바꿀 때 테스트도 함께 바뀌는 것은 의도다 —
+// 고치면 12개 액션이 함께 바뀐다. 문구를 바꿀 때 테스트도 함께 바뀌는 것은 의도다 —
 // 사용자에게 보이는 문장은 계약이다.
 
 /**
- * 미인증 거부 문구. **13개 액션이 모두 같은 문구를 쓴다** — 어떤 액션이 왜 막혔는지 나눠 말하면
+ * 미인증 거부 문구. **12개 액션이 모두 같은 문구를 쓴다** — 어떤 액션이 왜 막혔는지 나눠 말하면
  * 그 자체가 서버 구조를 알려 주는 단서가 된다(H2 의 "사유 비구분" 방침과 같은 결).
  */
 const DENIED: ActionResult = { ok: false, error: '로그인이 필요합니다.' };
 
-/**
- * 고정 상한 초과 문구. 숫자는 `DAILY_PIN_MAX` 에서 온다 — DB 트리거(`enforce_pin_limit`, 12)와
- * 화면 문구가 따로 놀지 않게 하기 위해서다.
- *
- * DB 예외 원문은 `PIN_LIMIT: 매일 고정은 최대 12개입니다`(마침표 없음)지만, 이 파일의 다른 문구가
- * 모두 마침표로 끝나므로 토스트 문장으로 다듬어 마침표를 붙였다. 문장 자체는 원문 그대로다.
- *
- * ⚠️ **상한은 `0005_lift_pin_limit.sql` 이 걷어냈다**(매일 쓰는 사이트가 20개 안팎으로 늘어 12가
- * 실제 사용을 막았다 — 2026-08-10 제품 결정). 0005 가 적용된 DB 에서는 트리거가 없으므로 이
- * 문구가 나갈 일이 없다. 그래도 남겨 두는 이유는 **0005 를 아직 적용하지 않은 DB**(새로 세운
- * 프로젝트, 스테이징)에서 13번째 고정이 거부될 때 "처리하지 못했습니다" 같은 뭉뚱그린 문장 대신
- * 무엇에 막혔는지 그대로 알려 주기 위해서다. 상한을 되살릴 일이 없다고 판단되면 이 상수·아래
- * 분기·`DAILY_PIN_MAX` 를 함께 지우면 된다.
- */
-const PIN_LIMIT_MESSAGE = `매일 고정은 최대 ${DAILY_PIN_MAX}개입니다.`;
-
 const INVALID_REQUEST = '요청이 올바르지 않습니다.';
+/**
+ * 화면이 **이름으로 찾는** 분류의 개명을 막을 때 쓰는 문구.
+ *
+ * 파일 이름이나 상수 이름을 적지 않는다 — 관리 화면을 보는 사람이 할 수 있는 일은 "개발자와
+ * 함께 바꾸기" 하나이고, 나머지는 서버 구조를 알려 주는 단서일 뿐이다(이 파일의 다른 문구와
+ * 같은 방침).
+ */
+const NAME_IS_LOAD_BEARING =
+  '홈 화면이 이 분류를 이름으로 찾습니다. 이름을 바꾸면 홈에서 사라지므로 개발자와 함께 바꿔야 합니다.';
 const NAME_REQUIRED = '이름을 입력하세요.';
 const NAME_TAKEN = '같은 이름의 카테고리가 이미 있습니다.';
 const URL_REQUIRED = '주소 형식이 올바르지 않습니다. http:// 또는 https:// 로 시작하는 주소를 입력하세요.';
@@ -175,8 +163,8 @@ const SIGN_IN_AGAIN = '권한이 없습니다. 다시 로그인해 주세요.';
 /**
  * 분류되지 않은 DB 실패의 기본 문구(`describeFailure` 의 default).
  *
- * **동작을 가리키지 않는 낱말('처리')인 것은 의도다.** 이 한 문장을 13개 액션이 나눠 쓰는데,
- * '저장'이라고 말하면 삭제·고정 해제가 실패한 자리에서 하지도 않은 일을 말하게 된다(바로 위
+ * **동작을 가리키지 않는 낱말('처리')인 것은 의도다.** 이 한 문장을 12개 액션이 나눠 쓰는데,
+ * '저장'이라고 말하면 삭제가 실패한 자리에서 하지도 않은 일을 말하게 된다(바로 위
  * `ORDER_FAILED` 는 반대다 — 순서 저장 한 곳만 쓰므로 그 동작을 이름으로 부른다).
  *
  * `lib/constants.ts` 의 `REQUEST_FAILED` 와 **같은 문장**이어야 한다 — 화면이 응답을 아예 받지
@@ -190,6 +178,16 @@ const RETRY_LATER = '처리하지 못했습니다. 잠시 후 다시 시도해 �
  * 되고 알 필요도 없다(더 많이 골라도 액션이 알아서 나눠 보낸다).
  */
 const DELETE_BATCH_SIZE = 100;
+
+/**
+ * 화면이 **이름으로 찾는** 상위 분류들 — `renameCategory` 가 개명을 거부하는 대상이다.
+ * 근거와 각 이름이 무엇을 떠받치는지는 그 액션의 JSDoc 에 있다.
+ */
+const NAME_LOOKED_UP_BY_SCREENS: ReadonlySet<string> = new Set([
+  OPERATING_CATEGORY_NAME,
+  NEWS_CATEGORY_NAME,
+  AI_TOOLS_CATEGORY_NAME,
+]);
 
 // ───────────────────────────────────────────────────────── 상위 카테고리
 
@@ -227,6 +225,23 @@ export async function createCategory(name: string): Promise<ActionResult> {
 /**
  * 상위 카테고리의 이름을 바꾼다. **하위는 이 액션으로 바꿀 수 없다**(`renameSubCategory` 를 써라) —
  * 쿼리에 `parent_id is null` 을 함께 걸어 두었으므로 하위 id 를 주면 "찾을 수 없다"로 돌아온다.
+ *
+ * ## 화면이 이름으로 찾는 분류 셋은 개명을 거부한다
+ *
+ * 세 화면 요소가 분류를 **id 가 아니라 이름**으로 찾는다. id 는 uuid 라 DB 마다 다르고 재시드하면
+ * 바뀌어서 코드에 못 박을 수 없기 때문이다.
+ *
+ * - `현재 운영 중인 사이트` — 홈의 마지막 섹션 · 사이드바 빠른 접근 · 모바일 칩 · 그 섹션에만
+ *   서는 '+ 링크 추가' 타일 (`findOperatingCategoryId`)
+ * - `뉴스·인사이트` · `AI 도구 모음` — 홈의 즐겨찾기 묶음 판정 (`lib/fav-groups.ts`)
+ *
+ * 이름이 어긋나면 **아무 오류 없이** 그 섹션이 사라지거나 즐겨찾기가 '업무용 서비스'로 밀린다.
+ * 조용한 고장을 문서로만 막아 두면 언젠가 눌린다 — 그래서 여기서 거부한다. 정말 바꿔야 하면
+ * 코드의 상수(`lib/constants.ts`)와 함께 고쳐야 하고, 그때는 이 목록도 따라 바뀐다.
+ *
+ * **지금 이름을 보고 판정한다**(바꾸려는 새 이름이 아니다) — 보호 대상은 "그 자리에 있는 분류"지
+ * 특정 낱말이 아니다. 그래서 다른 분류를 `AI 도구 모음` 으로 **바꾸는 것**은 막지 않는다(그건
+ * 이름 중복이라 DB 의 unique 제약이 따로 거른다).
  */
 export async function renameCategory(id: string, name: string): Promise<ActionResult> {
   const supabase = await writeClient();
@@ -237,6 +252,21 @@ export async function renameCategory(id: string, name: string): Promise<ActionRe
 
   const cleanName = asText(name);
   if (cleanName === null) return fail(NAME_REQUIRED);
+
+  const found = await supabase
+    .from('categories')
+    .select('id, name')
+    .eq('id', targetId)
+    .is('parent_id', null)
+    .maybeSingle();
+  if (found.error !== null) return describeFailure('상위 카테고리 조회', found.error);
+
+  const current = found.data as NameRow | null;
+  if (current === null) return fail(CATEGORY_NOT_FOUND);
+  // 같은 이름으로 다시 저장하는 것은 막지 않는다 — 바뀌는 것이 없으므로 깨질 것도 없다.
+  if (current.name !== cleanName && NAME_LOOKED_UP_BY_SCREENS.has(current.name)) {
+    return fail(NAME_IS_LOAD_BEARING);
+  }
 
   const { data, error } = await supabase
     .from('categories')
@@ -517,8 +547,10 @@ export async function createBookmark(input: NewBookmark): Promise<ActionResult> 
     description,
     favicon_url: faviconUrl,
     sort_order: sortOrder,
-    // `=== true` 다 — 남이 보낸 `"true"`·`1` 같은 참 같은 값으로 고정이 켜지지 않는다(NewBookmark).
-    is_pinned: input.pinned === true,
+    /* '매일 고정'은 없어졌지만 컬럼은 남아 있다(constants.ts). DB 기본값에 기대지 않고 늘 실어
+       보내는 것은 `favicon_url` 과 같은 이유다 — 기본값이 바뀌면 이 액션이 만든 행의 의미가
+       조용히 따라 바뀐다. */
+    is_pinned: false,
   });
   if (error !== null) return describeFailure('링크 추가', error);
 
@@ -703,47 +735,6 @@ export async function reorderBookmarks(orderedIds: string[]): Promise<ActionResu
   return succeed();
 }
 
-/**
- * '매일 사용하는 사이트' 고정을 켜고 끈다.
- *
- * **개수 상한은 없다** — `0005_lift_pin_limit.sql` 이 `enforce_pin_limit` 트리거를 걷어냈다(12개가
- * 실제 사용을 막아 제품 결정으로 해제, 2026-08-10). 홈의 '매일' 섹션과 `/daily` 는 `is_pinned` 로
- * 거르기만 하고 개수를 자르지 않으므로 화면도 그대로 늘어난다.
- *
- * 액션이 개수를 **미리 세지 않는** 설계는 그대로다(원래 이유: 세어 보고 쓰는 사이에 다른 요청이
- * 끼어드는 TOCTOU). 아래 `describeFailure` 의 `PIN_LIMIT` 분기는 0005 를 아직 적용하지 않은 DB 를
- * 위한 전이 경로로만 남아 있다 — 적용된 DB 에서는 그 예외가 오지 않는다.
- *
- * 읽고 나서 쓰는(read-then-write) 이유: PostgREST 의 update 값에는 **컬럼 식을 넣을 수 없다**
- * (`is_pinned = not is_pinned` 를 표현할 방법이 없고 리터럴만 받는다). 그래서 현재 값을 읽어 반대를
- * 쓴다 — 그 사이 다른 창이 토글하면 나중 요청이 이기지만, 다시 누르면 맞아 돌아온다.
- *
- * (0005 이전 DB 에서도 고정을 **푸는** 방향은 트리거가 발동하지 않았다 — `when (new.is_pinned)`.)
- */
-export async function togglePin(id: string): Promise<ActionResult> {
-  const supabase = await writeClient();
-  if (supabase === null) return DENIED;
-
-  const targetId = asText(id);
-  if (targetId === null) return fail(INVALID_REQUEST);
-
-  const found = await supabase.from('bookmarks').select('id, is_pinned').eq('id', targetId).maybeSingle();
-  if (found.error !== null) return describeFailure('링크 조회', found.error);
-
-  const bookmark = found.data as PinRow | null;
-  if (bookmark === null) return fail(BOOKMARK_NOT_FOUND);
-
-  const { data, error } = await supabase
-    .from('bookmarks')
-    .update({ is_pinned: !bookmark.is_pinned })
-    .eq('id', targetId)
-    .select('id');
-  if (error !== null) return describeFailure('고정 토글', error);
-  if (isEmpty(data)) return fail(BOOKMARK_NOT_FOUND);
-
-  return succeed();
-}
-
 // ───────────────────────────────────────────────────────── 내부 helpers
 
 /**
@@ -785,8 +776,8 @@ function failAfterPartialChange(changed: number, result: ActionResult): ActionRe
 /**
  * DB 오류를 **사용자에게 보여도 되는 한 문장**으로 바꾼다. 원본은 서버 로그로만 보낸다.
  *
- * `PIN_LIMIT` 을 코드(`P0001`)가 아니라 메시지로 알아보는 이유: `P0001` 은 `raise exception`
- * 전부가 쓰는 범용 코드라, 나중에 다른 트리거가 생기면 그 예외까지 고정 상한 문구로 둔갑한다.
+ * 예전에 있던 `PIN_LIMIT` 분기는 '매일 고정'과 함께 걷어냈다 — 고정을 켜는 액션이 없으므로
+ * 그 트리거(0001, 0005 가 이미 제거)가 발동할 경로 자체가 사라졌다.
  */
 function describeFailure(context: string, error: DbError): ActionResult {
   console.error(`[mutations] ${context} 실패`, error);
@@ -795,10 +786,6 @@ function describeFailure(context: string, error: DbError): ActionResult {
     .filter((value): value is string => typeof value === 'string')
     .join(' ')
     .toLowerCase();
-
-  if (typeof error.message === 'string' && error.message.includes('PIN_LIMIT')) {
-    return fail(PIN_LIMIT_MESSAGE);
-  }
 
   switch (error.code) {
     case '23505': // unique_violation — category 이름 또는 bookmark normalized URL

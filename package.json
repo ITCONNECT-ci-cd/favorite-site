@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "verify:discord-ingest": "tsx scripts/verify-discord-ingest.ts",
     "seed": "tsx scripts/seed.ts",
+    "verify:deploy": "tsx scripts/verify-deploy.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

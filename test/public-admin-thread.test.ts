@@ -33,7 +33,7 @@ const PUBLIC_ROOT = 'app/(public)';
 const EXCLUDED: string[] = [];
 
 /**
- * 반드시 이 목록에 있어야 할 화면 넷 (카나리).
+ * 반드시 이 목록에 있어야 할 화면 셋 (카나리).
  *
  * 라우트 그룹 이동처럼 경로가 통째로 바뀌면 재귀가 0건을 돌려주고, 그러면 아래 단언들은
  * 빈 배열 위에서 조용히 통과한다. 개수 임계값만으로는 그 사고를 못 잡으므로 이름을 못박는다.
@@ -41,7 +41,6 @@ const EXCLUDED: string[] = [];
 const KNOWN_PAGES = [
   `${PUBLIC_ROOT}/page.tsx`,
   `${PUBLIC_ROOT}/category/[id]/page.tsx`,
-  `${PUBLIC_ROOT}/daily/page.tsx`,
   `${PUBLIC_ROOT}/favorites/page.tsx`,
 ];
 

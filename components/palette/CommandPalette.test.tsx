@@ -67,14 +67,14 @@ function renderPalette(props: Partial<CommandPaletteProps> = {}) {
 const panel = () => screen.getByRole('dialog');
 const input = () => screen.getByRole('textbox');
 /**
- * 스크롤 영역 안의 앵커 — 결과 행이거나(질의가 있을 때) 고정 링크 행이다(빈 입력일 때).
+ * 스크롤 영역 안의 앵커 — 결과 행이거나(질의가 있을 때) '많이 연 링크' 행이다(빈 입력일 때).
  * 둘은 동시에 보이지 않으므로 섞이지 않는다.
  *
  * `screen` 전체가 아니라 패널 안으로 스코프를 좁힌다: 이 파일은 `<Toaster />` 나 트리거 버튼을
  * 함께 마운트하는 테스트가 있고, N3 이 붙일 AI 결과 행도 앵커라 곧 이웃이 늘어난다.
  */
 const rows = () => within(scrollArea()).getAllByRole('link');
-/** 키워드 결과 행만 — AI 결과·고정 링크와 섞이지 않는 그 목록이다(↑↓·↵ 의 대상). */
+/** 키워드 결과 행만 — AI 결과·'많이 연 링크'와 섞이지 않는 그 목록이다(↑↓·↵ 의 대상). */
 const resultRows = () => within(screen.getByTestId('palette-results')).queryAllByRole('link');
 /**
  * 패널의 세 영역은 testid 로 잡는다 — `panel().children[n]` 은 N3 이 영역을 하나
@@ -206,7 +206,7 @@ describe('입력 즉시 필터 — 실시드', () => {
     type('   ');
 
     expect(countLabel()).toHaveTextContent('');
-    expect(screen.getByText('고정해 둔 링크')).toBeInTheDocument();
+    expect(screen.getByText('많이 연 링크')).toBeInTheDocument();
   });
 
   it('한 글자를 더 치면 결과가 즉시 좁혀진다', () => {
@@ -390,20 +390,16 @@ describe('선택 행 표시', () => {
   });
 });
 
-describe('빈 입력 — 고정해 둔 링크', () => {
-  it('캡션과 함께 is_pinned 앞 6개를 보여준다', () => {
+describe('빈 입력 — 많이 연 링크', () => {
+  it('캡션과 함께 클릭 수 상위 6개를 보여준다', () => {
     renderPalette();
 
-    expect(screen.getByText('고정해 둔 링크')).toBeInTheDocument();
+    expect(screen.getByText('많이 연 링크')).toBeInTheDocument();
     expect(rows()).toHaveLength(6);
-    expect(rows().map((row) => row.children[1].textContent)).toEqual([
-      'ChatGPT',
-      'Claude',
-      'Perplexity',
-      'Gemini',
-      'Google AI Studio',
-      'Google NotebookLM',
-    ]);
+    // 픽스처는 `click_count: index` 라 뒤쪽일수록 많이 열린 링크다.
+    expect(rows().map((row) => row.children[1].textContent)).toEqual(
+      [...BOOKMARKS].sort((left, right) => right.click_count - left.click_count).slice(0, 6).map((b) => b.title),
+    );
   });
 
   it('행 높이는 44px 이고 이름 200px · 설명 · 주소를 담는다', () => {
@@ -416,17 +412,17 @@ describe('빈 입력 — 고정해 둔 링크', () => {
     expect(row.children[3]).toHaveClass('flex-none', 'text-[10.5px]', 'text-fainter');
   });
 
-  it('질의를 치면 고정 링크가 사라지고 결과로 바뀐다', () => {
+  it('질의를 치면 그 줄이 사라지고 결과로 바뀐다', () => {
     renderPalette();
     type('문서');
 
-    expect(screen.queryByText('고정해 둔 링크')).not.toBeInTheDocument();
+    expect(screen.queryByText('많이 연 링크')).not.toBeInTheDocument();
   });
 
-  it('고정된 링크가 하나도 없으면 목록 없이 캡션만 남지 않는다', () => {
-    renderPalette({ data: site([makeBookmark({ id: 'a' })]) });
+  it('링크가 하나도 없으면 목록 없이 캡션만 남지 않는다', () => {
+    renderPalette({ data: site([]) });
 
-    expect(screen.queryByText('고정해 둔 링크')).not.toBeInTheDocument();
+    expect(screen.queryByText('많이 연 링크')).not.toBeInTheDocument();
     expect(screen.queryAllByRole('link')).toHaveLength(0);
   });
 });
@@ -457,7 +453,7 @@ describe('결과 0건', () => {
     );
   });
 
-  it('빈 입력에서는 0건 안내를 띄우지 않는다 (고정 링크 자리다)', () => {
+  it('빈 입력에서는 0건 안내를 띄우지 않는다 (많이 연 링크 자리다)', () => {
     renderPalette();
 
     expect(screen.queryByText('이름이 일치하는 링크가 없습니다')).not.toBeInTheDocument();
@@ -582,7 +578,7 @@ describe('수치 (DESIGN_SPEC 5장)', () => {
     expect(enter).toHaveClass('w-[44px]', 'flex-none', 'text-right', 'text-[10px]', 'font-semibold', 'text-ink');
   });
 
-  it('고정 링크 파비콘은 22px 타일에 14px 이미지다', () => {
+  it('많이 연 링크 파비콘은 22px 타일에 14px 이미지다', () => {
     renderPalette();
 
     expect(rows()[0].firstElementChild).toHaveClass(
@@ -1022,16 +1018,17 @@ describe('↵ 열기 · 행 클릭 = ↵', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('고정 링크 행도 같은 계약이다 (프로토타입은 recent 도 같은 open 을 쓴다)', () => {
+  it('많이 연 링크 행도 같은 계약이다 (프로토타입은 recent 도 같은 open 을 쓴다)', () => {
     const onClose = vi.fn();
     const onOpenLink = vi.fn();
     renderWithToaster({ onClose, onOpenLink });
 
+    const top = [...BOOKMARKS].sort((left, right) => right.click_count - left.click_count)[0];
     fireEvent.click(rows()[0]);
 
-    expect(recordClick).toHaveBeenCalledWith(BOOKMARKS[0].id);
-    expect(screen.getByText(`${BOOKMARKS[0].title} · 새 탭으로 이동`)).toBeInTheDocument();
-    expect(onOpenLink).toHaveBeenCalledWith(BOOKMARKS[0].id);
+    expect(recordClick).toHaveBeenCalledWith(top.id);
+    expect(screen.getByText(`${top.title} · 새 탭으로 이동`)).toBeInTheDocument();
+    expect(onOpenLink).toHaveBeenCalledWith(top.id);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -1079,11 +1076,11 @@ describe('결과 0건에서의 ↵ · ⌘↵ (AI 검색 자리 — 실동작은 
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it('빈 입력에서의 ↵ 도 AI 검색이다 — 고정 링크는 선택 대상이 아니다', () => {
+  it('빈 입력에서의 ↵ 도 AI 검색이다 — 그 줄은 선택 대상이 아니다', () => {
     const onAiSearch = vi.fn();
     const onClose = vi.fn();
     renderWithToaster({ onAiSearch, onClose });
-    expect(screen.getByText('고정해 둔 링크')).toBeInTheDocument();
+    expect(screen.getByText('많이 연 링크')).toBeInTheDocument();
 
     press('Enter');
 
@@ -1222,7 +1219,7 @@ describe('이어지는 시나리오 — ⌘K → 타자 → ↓ → ↵', () => 
   });
 
   it('esc 로 닫았다가 ⌘K 로 다시 열면 지난 질의가 남아 있지 않다', () => {
-    // 고정 링크 줄까지 확인하려고 실시드를 쓴다 (THREE 에는 고정된 링크가 없다).
+    // '많이 연 링크' 줄까지 확인하려고 실시드를 쓴다.
     render(<StatefulPalette data={REAL} />);
     press('k', { metaKey: true }, window);
     type('문서');
@@ -1233,7 +1230,7 @@ describe('이어지는 시나리오 — ⌘K → 타자 → ↓ → ↵', () => 
     press('k', { metaKey: true }, window);
 
     expect(input()).toHaveValue('');
-    expect(screen.getByText('고정해 둔 링크')).toBeInTheDocument();
+    expect(screen.getByText('많이 연 링크')).toBeInTheDocument();
   });
 });
 

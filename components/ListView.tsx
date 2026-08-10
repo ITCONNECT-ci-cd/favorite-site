@@ -15,11 +15,10 @@ import type { BookmarkWithCount } from '@/lib/types';
 /**
  * '+ 링크 추가' 타일(K1)에 필요한 것 — **이 목록이 진짜 분류 목록일 때만** 준다.
  *
- * 이 화면은 카테고리뿐 아니라 즐겨찾기(localStorage 파생)·매일(`is_pinned` 파생)도 그리는데,
- * 그 둘에 '추가'는 의미가 어긋난다: 담는 일은 카드의 핀이 하고(즐겨찾기), 고정은 관리 화면의
- * 몫이라(매일) 여기서 만든 링크는 그 목록에 나타나지도 않는다. 그래서 타일의 유무를
- * `isAdmin` 하나로 정하지 않고 **호출부가 이 값을 주는가**로도 가른다 — 파생 목록을 그리는
- * 화면(app/(public)/favorites·daily)은 주지 않는다.
+ * 이 화면은 카테고리뿐 아니라 즐겨찾기(localStorage 파생)도 그리는데, 거기에 '추가'는 의미가
+ * 어긋난다 — 담는 일은 카드의 핀이 하므로 여기서 만든 링크는 그 목록에 나타나지 않는다.
+ * 그래서 타일의 유무를 `isAdmin` 하나로 정하지 않고 **호출부가 이 값을 주는가**로도 가른다 —
+ * 파생 목록을 그리는 화면(app/(public)/favorites)은 주지 않는다.
  */
 export type QuickAdd = {
   /** 분류 선택 상자에 세울 목록 — 서버가 `toQuickAddOptions` 로 추려 내려보낸다. */
@@ -78,7 +77,7 @@ export type ListViewProps = {
   /**
    * 드래그로 바꾼 순서를 **어디에 저장하는가** (J5).
    *
-   * - `'server'`(기본) — `sort_order` 를 서버에 쓴다. 분류 화면·`/daily` 가 이것이다.
+   * - `'server'`(기본) — `sort_order` 를 서버에 쓴다. 분류 화면이 이것이다.
    * - `'favorites'` — 이 브라우저의 localStorage 담긴 차례를 다시 쓴다. `/favorites` 전용이다.
    *   그 화면의 순서는 애초에 서버가 모르므로(`pickFavorites`) 서버로 보내면 아무 일도
    *   일어나지 않고, 대신 엉뚱한 분류들의 `sort_order` 만 흔든다.
@@ -110,7 +109,7 @@ const CLEAR_CHECKED = 'cursor-pointer text-[11.5px] text-faint hover:text-ink';
 const TOOLBAR_NOTE = '체크한 것만 열거나, 전체를 새 탭으로 한 번에 엽니다';
 
 /**
- * 카테고리 · 내 즐겨찾기 · 매일 사용하는 사이트가 공유하는 목록 화면 (DESIGN_SPEC 4장).
+ * 카테고리 · 내 즐겨찾기가 공유하는 목록 화면 (DESIGN_SPEC 4장).
  *
  * 본문은 **홈과 똑같은 카드 그리드**다 — 이 화면만의 행 목록을 따로 만들지 않는다.
  *
