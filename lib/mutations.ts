@@ -114,11 +114,11 @@ type PinRow = { id: string; is_pinned: boolean };
 //
 // 화면에 나가는 문장을 **한 블록에 모아 둔다.** 같은 상황을 여러 액션이 서로 다르게 말하면
 // (`카테고리를 찾을 수 없습니다.` 를 액션마다 따로 적으면) 문구가 조용히 갈라진다. 여기서만
-// 고치면 12개 액션이 함께 바뀐다. 문구를 바꿀 때 테스트도 함께 바뀌는 것은 의도다 —
+// 고치면 13개 액션이 함께 바뀐다. 문구를 바꿀 때 테스트도 함께 바뀌는 것은 의도다 —
 // 사용자에게 보이는 문장은 계약이다.
 
 /**
- * 미인증 거부 문구. **12개 액션이 모두 같은 문구를 쓴다** — 어떤 액션이 왜 막혔는지 나눠 말하면
+ * 미인증 거부 문구. **13개 액션이 모두 같은 문구를 쓴다** — 어떤 액션이 왜 막혔는지 나눠 말하면
  * 그 자체가 서버 구조를 알려 주는 단서가 된다(H2 의 "사유 비구분" 방침과 같은 결).
  */
 const DENIED: ActionResult = { ok: false, error: '로그인이 필요합니다.' };
@@ -154,7 +154,7 @@ const SIGN_IN_AGAIN = '권한이 없습니다. 다시 로그인해 주세요.';
 /**
  * 분류되지 않은 DB 실패의 기본 문구(`describeFailure` 의 default).
  *
- * **동작을 가리키지 않는 낱말('처리')인 것은 의도다.** 이 한 문장을 12개 액션이 나눠 쓰는데,
+ * **동작을 가리키지 않는 낱말('처리')인 것은 의도다.** 이 한 문장을 13개 액션이 나눠 쓰는데,
  * '저장'이라고 말하면 삭제·고정 해제가 실패한 자리에서 하지도 않은 일을 말하게 된다(바로 위
  * `ORDER_FAILED` 는 반대다 — 순서 저장 한 곳만 쓰므로 그 동작을 이름으로 부른다).
  *
@@ -162,6 +162,13 @@ const SIGN_IN_AGAIN = '권한이 없습니다. 다시 로그인해 주세요.';
  * 못했을 때 대신 내는 문장이라, 갈라지면 같은 상황이 두 가지로 불린다.
  */
 const RETRY_LATER = '처리하지 못했습니다. 잠시 후 다시 시도해 주세요.';
+
+/**
+ * 일괄 삭제 한 문장에 실을 수 있는 id 수 (`deleteBookmarks`). PostgREST 의 `in` 필터가 id 를 전부
+ * URL 에 싣기 때문에 생기는 **전송 계층의 한계**이지 도메인 규칙이 아니다 — 화면은 이 값을 몰라도
+ * 되고 알 필요도 없다(더 많이 골라도 액션이 알아서 나눠 보낸다).
+ */
+const DELETE_BATCH_SIZE = 100;
 
 // ───────────────────────────────────────────────────────── 상위 카테고리
 
@@ -548,6 +555,72 @@ export async function deleteBookmark(id: string): Promise<ActionResult> {
 }
 
 /**
+ * 고른 링크들을 **한 번에** 지운다 (M2 정리 도구의 일괄 삭제).
+ *
+ * `deleteBookmark` 를 건수만큼 부르지 않는 이유는 왕복 수가 아니라 **결과의 설명 가능성**이다:
+ * n번 부르면 n개의 부분 결과가 생겨 "무엇이 지워졌는지"를 화면이 다시 조립해야 한다. `in` 한
+ * 문장은 그 묶음 안에서는 전부 지워지거나 하나도 안 지워진다(Postgres 의 문장 단위 트랜잭션).
+ *
+ * ## 100건씩 나눠 보낸다
+ *
+ * PostgREST 의 `in` 필터는 **id 를 전부 URL 질의문자열에 싣는다.** uuid 하나가 인코딩 뒤 40바이트
+ * 남짓이라 290건을 한 문장에 담으면 12KB 를 넘고, Supabase 앞단(요청 줄 8KB 기본)이 414 로 끊는다.
+ * 시드 290행 전체를 고르는 '전체 선택'이 실제로 가능한 화면이라 가정이 아니라 도달하는 경로다.
+ * 그래서 `DELETE_BATCH_SIZE` 로 잘라 `Promise.allSettled` 로 보낸다 — `applyOrder` 와 같은 이유로
+ * `all` 이 아니다(fetch 거부가 그대로 액션 밖으로 나가면 화면은 `{ok:false}` 를 기다리는데 Next
+ * 오류 경계가 뜬다).
+ *
+ * ## 몇 건이 지워져야 성공인가
+ *
+ * **한 건이라도 지워졌으면 성공이다** — `applyOrder`(0건이면 실패, 그 외 성공)와 같은 규칙이다.
+ * 고른 뒤 다른 창이 그중 하나를 먼저 지웠다면 요청한 끝 상태("이 링크들은 없다")는 이미 이뤄진
+ * 셈이라, 이룬 것을 실패라고 말하면 화면이 거짓 경보를 낸다. 반대로 **한 건도 못 지웠으면**
+ * 성공이라 하지 않는다(`deleteBookmark` 와 같은 판단 — 화면이 "지웠다"고 말하려면 정말 지워져야
+ * 한다). 몇 건이 지워졌는지는 응답이 아니라 **다시 그려진 목록**이 알려 준다: 반환 모양
+ * `{ok:true}|{ok:false,error}` 은 12개 액션이 함께 쓰는 계약이라 이 액션 하나 때문에 넓히지 않는다.
+ *
+ * ## 빈 목록은 성공이 아니다
+ *
+ * `reorderBookmarks([])` 는 성공이지만(빈 목록을 정렬한 결과는 빈 목록이다) 여기서는 거부한다.
+ * 화면은 0건일 때 버튼을 잠그므로 빈 배열은 화면을 거치지 않은 요청이고, `{ok:true}` 로 접으면
+ * 아무것도 안 지운 채 "삭제했습니다" 토스트가 나간다.
+ *
+ * @param ids 지울 링크 id 들. 빈 배열·중복·문자열 아닌 값은 DB 에 붙기 전에 거부한다.
+ */
+export async function deleteBookmarks(ids: string[]): Promise<ActionResult> {
+  const supabase = await writeClient();
+  if (supabase === null) return DENIED;
+
+  const targetIds = asIdList(ids);
+  if (targetIds === null || targetIds.length === 0) return fail(INVALID_REQUEST);
+
+  const settled = await Promise.allSettled(
+    batches(targetIds, DELETE_BATCH_SIZE).map((batch) =>
+      supabase.from('bookmarks').delete().in('id', batch).select('id'),
+    ),
+  );
+
+  const answered = settled.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []));
+  const deleted = answered.reduce((sum, result) => sum + countRows(result.data), 0);
+
+  const rejected = settled.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+  if (rejected !== undefined) {
+    console.error('[mutations] 링크 일괄 삭제 실패 — 요청이 거부됐다', rejected.reason);
+
+    return failAfterPartialChange(deleted, fail(RETRY_LATER));
+  }
+
+  const broken = answered.find((result) => result.error !== null);
+  if (broken !== undefined && broken.error !== null) {
+    return failAfterPartialChange(deleted, describeFailure('링크 일괄 삭제', broken.error));
+  }
+
+  if (deleted === 0) return fail(BOOKMARK_NOT_FOUND);
+
+  return succeed();
+}
+
+/**
  * 링크 순서를 통째로 다시 매긴다 — `orderedIds[i]` 의 `sort_order` 가 `i` 가 된다.
  *
  * ⚠️ `sort_order` 는 테이블 전체가 공유하는 컬럼 하나다(카테고리별 컬럼이 아니다). 그래서 어느
@@ -814,13 +887,28 @@ function asIdList(value: unknown): string[] | null {
   if (!Array.isArray(value)) return null;
 
   const ids: string[] = [];
+  // 중복 판정은 `ids.includes` 가 아니라 Set 이다 — 목록이 길어질 수 있는 호출부
+  // (`deleteBookmarks` 의 '전체 선택')가 생겼고, 배열 스캔이면 길이의 제곱만큼 돌아
+  // 남이 보낸 큰 배열 하나가 요청을 붙들고 있게 된다(공개 엔드포인트다).
+  const seen = new Set<string>();
   for (const item of value) {
     const id = asText(item);
-    if (id === null || ids.includes(id)) return null;
+    if (id === null || seen.has(id)) return null;
+    seen.add(id);
     ids.push(id);
   }
 
   return ids;
+}
+
+/** 긴 목록을 `size` 씩 자른다 — `deleteBookmarks` 가 URL 길이 한계 때문에 나눠 보낼 때 쓴다. */
+function batches<T>(items: readonly T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+
+  return chunks;
 }
 
 /** PostgREST 가 돌려준 행 배열이 비었는지 — "대상이 없었다"의 판정이다. */

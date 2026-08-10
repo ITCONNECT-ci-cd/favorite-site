@@ -9,6 +9,8 @@ import { LinkCard } from '@/components/LinkCard';
 import { SectionHeader } from '@/components/SectionHeader';
 import { DeleteConfirm } from '@/components/card/DeleteConfirm';
 import { InlineEdit } from '@/components/card/InlineEdit';
+import { QuickAddCard } from '@/components/card/QuickAddCard';
+import { toQuickAddOptions } from '@/components/card/quick-add-options';
 import { useCardHandlers } from '@/components/useCardHandlers';
 import { DAILY_TITLE, FAVORITES_TITLE, OPERATING_CATEGORY_NAME } from '@/lib/constants';
 import { pickFavorites } from '@/lib/favorites';
@@ -77,6 +79,9 @@ function findOperatingIds(categories: readonly Category[]): { id: string; ids: S
  * `isAdmin` 도 세 섹션 모두에 같이 준다 — 관리자가 고칠 수 있는 대상은 '어느 섹션에 놓였는가'와
  * 무관하다. 연필이 하는 일(J2 인라인 편집)은 아래 `editingId` 가, 휴지통이 하는 일(J3 삭제 확인)은
  * `deletingId` 가 든다. 두 상태는 서로를 밀어낸다 — 그 이유는 각 선언에 적어 두었다.
+ *
+ * **추가(K1)만은 세 섹션에 고루 두지 않는다** — '현재 운영 중인 사이트' 섹션 하나에만 선다.
+ * 근거는 그 섹션의 `lead` 주석에 있다.
  */
 export function HomeView({ data, isAdmin }: HomeViewProps) {
   const { categories, bookmarks } = data;
@@ -238,7 +243,30 @@ export function HomeView({ data, isAdmin }: HomeViewProps) {
             }
           />
 
-          <CardGrid>
+          {/* '+ 링크 추가' 타일 (K1) — **홈에서는 이 섹션에만** 둔다.
+
+              앞의 두 섹션은 **파생 목록**이라 추가가 의미와 어긋난다: 즐겨찾기는 이 브라우저의
+              localStorage 에서 오고(담는 일은 카드의 핀이 한다), '매일'은 `is_pinned` 로 걸러 낸
+              결과다 — 거기에 링크를 만들면 어느 분류에 들어가는지도, 왜 그 자리에 나타나지
+              않는지도 설명할 수 없다. 이 섹션만이 실제 분류('현재 운영 중인 사이트') 하나를
+              그대로 비추는 목록이라 새 카드가 곧바로 제자리에 선다.
+
+              기본 분류가 이 섹션의 분류인 것도 같은 이유다 — 보고 있는 목록에 한 건 더 붙이는
+              것이 가장 흔한 의도다. 다른 분류로 넣고 싶으면 폼의 분류 상자에서 고른다(그때는
+              새 카드가 이 섹션에 보이지 않지만, 어디에 들어갔는지는 알림이 이름으로 말한다).
+
+              ⚠️ 운영 중 분류가 없는 데이터에서는 이 섹션 자체가 접히므로 홈에 타일이 서지 않는다.
+              그때는 분류 화면(ListView)의 타일로 추가한다. */}
+          <CardGrid
+            lead={
+              isAdmin ? (
+                <QuickAddCard
+                  categories={toQuickAddOptions(categories)}
+                  defaultCategoryId={operating.id}
+                />
+              ) : undefined
+            }
+          >
             {operatingItems.map((bookmark) => (
               <LinkCard
                 key={bookmark.id}

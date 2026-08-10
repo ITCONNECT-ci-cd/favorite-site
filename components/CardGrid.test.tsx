@@ -42,6 +42,30 @@ describe('CardGrid', () => {
     expect(container.firstElementChild).toHaveClass('grid-cols-2', 'gap-[8px]');
   });
 
+  it('lead 를 주면 첫 칸에 놓는다 — 카드보다 앞이다', () => {
+    const { container } = render(
+      <CardGrid lead={<span>타일</span>}>
+        <span>카드 A</span>
+        <span>카드 B</span>
+      </CardGrid>,
+    );
+
+    const cells = [...(container.firstElementChild?.children ?? [])];
+
+    expect(cells.map((cell) => cell.textContent)).toEqual(['타일', '카드 A', '카드 B']);
+  });
+
+  it('lead 를 주지 않으면 아무 자리도 만들지 않는다 — 마크업이 종전 그대로다', () => {
+    // 비관리자 응답에 타일 마크업이 한 조각도 실리지 않아야 한다(README 주의사항 7).
+    const { container } = render(
+      <CardGrid>
+        <span>카드 A</span>
+      </CardGrid>,
+    );
+
+    expect(container.firstElementChild?.children).toHaveLength(1);
+  });
+
   it('className을 덧붙일 수 있다', () => {
     const { container } = render(
       <CardGrid className="mt-[10px]">

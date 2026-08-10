@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { ListView } from '@/components/ListView';
+import { toQuickAddOptions } from '@/components/card/quick-add-options';
 import { EMPTY_LIST_MESSAGE } from '@/lib/constants';
 import { findOperatingCategoryId, getAllData, rollupCounts } from '@/lib/queries';
 import { getAdminSession } from '@/lib/supabase/server';
@@ -82,6 +83,12 @@ export default async function CategoryPage({ params }: CategoryPageProps) {
       initialSubId={target.id === root.id ? null : target.id}
       emptyMessage={EMPTY_LIST_MESSAGE}
       isAdmin={session !== null}
+      // 관리자의 '+ 링크 추가' 타일 (K1). 분류 화면은 **진짜 분류 목록**이라 타일이 선다 —
+      // 파생 목록인 `/favorites`·`/daily` 는 이 값을 주지 않는다(ListView 의 QuickAdd 참조).
+      //
+      // 카테고리 원본을 그대로 내려보내지 않고 `toQuickAddOptions` 로 세 필드만 추린다.
+      // 이 화면은 이미 북마크 수백 건을 클라이언트로 나르고 있어 거기에 더 얹지 않는다.
+      quickAdd={{ categories: toQuickAddOptions(categories), defaultCategoryId: root.id }}
     />
   );
 }

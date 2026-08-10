@@ -190,31 +190,83 @@ describe('openToastText', () => {
   });
 });
 
+/**
+ * 네 분기를 순수 함수 단위로 못박는다 — 어느 분기가 어떤 결과에 붙는지가 이 함수의 전부다.
+ * 배선(무엇을 열림으로 세는가)은 `useCardHandlers.openMany` 와 두 화면 테스트의 몫이다.
+ */
 describe('bulkOpenToastText (G4 한 번에 열기)', () => {
-  it('탭 그룹은 권유형으로 안내하고 팝업 차단 안내를 뒤에 붙인다 (계획서 V7)', () => {
-    expect(bulkOpenToastText(12, '매일 사용하는 사이트')).toBe(
-      '12개를 새 탭으로 엽니다 · 크롬에서 "매일 사용하는 사이트" 탭 그룹으로 묶어 두면 좋습니다 · 열리지 않으면 팝업 차단을 확인하세요',
-    );
+  const HELP = '주소창의 팝업 차단 아이콘에서 이 사이트를 허용해 주세요';
+
+  describe('전부 열림', () => {
+    it('연 개수와 탭 그룹 명칭을 권유형으로 안내한다 (계획서 V7)', () => {
+      expect(
+        bulkOpenToastText({ opened: 12, blocked: 0, groupLabel: '매일 사용하는 사이트' }),
+      ).toBe('12개를 새 탭으로 엽니다 · 크롬에서 "매일 사용하는 사이트" 탭 그룹으로 묶어 두면 좋습니다');
+    });
+
+    it('묶는 일이 끝났다고 단정하지 않는다 — 웹은 탭을 그룹으로 묶지 못한다 (PRD 범위 밖)', () => {
+      expect(
+        bulkOpenToastText({ opened: 12, blocked: 0, groupLabel: '매일 사용하는 사이트' }),
+      ).not.toContain('묶임');
+    });
+
+    it('탭 그룹 명칭을 그대로 따옴표 안에 넣는다 (하위 탭이면 "상위 · 하위")', () => {
+      expect(bulkOpenToastText({ opened: 3, blocked: 0, groupLabel: 'AI 도구 모음 · 영상' })).toContain(
+        '"AI 도구 모음 · 영상" 탭 그룹으로 묶어 두면 좋습니다',
+      );
+    });
+
+    it('막힌 것이 없으면 팝업 이야기를 꺼내지 않는다 — 예전의 예방 안내는 걷어냈다', () => {
+      // 언제나 붙던 꼬리("열리지 않으면 팝업 차단을 확인하세요")는 차단을 감지할 수 없던 시절의
+      // 것이다. 이제 감지하므로, 멀쩡히 열린 경우까지 겁주지 않는다.
+      const text = bulkOpenToastText({ opened: 1, blocked: 0, groupLabel: '내 즐겨찾기' });
+
+      expect(text).not.toContain('팝업');
+      expect(text).not.toContain('차단');
+    });
   });
 
-  it('묶는 일이 끝났다고 단정하지 않는다 — 웹은 탭을 그룹으로 묶지 못한다 (PRD 범위 밖)', () => {
-    expect(bulkOpenToastText(12, '매일 사용하는 사이트')).not.toContain('묶임');
+  describe('일부 차단', () => {
+    it('연 수와 막힌 수를 함께 말하고 푸는 법을 알려 준다', () => {
+      expect(bulkOpenToastText({ opened: 2, blocked: 10, groupLabel: '매일 사용하는 사이트' })).toBe(
+        `2개를 열었고 10개는 팝업 차단으로 열리지 않았습니다 · ${HELP}`,
+      );
+    });
+
+    it('탭 그룹 권유는 접는다 — 슬롯 하나짜리 토스트에서 급한 말은 푸는 법이다', () => {
+      expect(
+        bulkOpenToastText({ opened: 2, blocked: 10, groupLabel: '매일 사용하는 사이트' }),
+      ).not.toContain('탭 그룹');
+    });
   });
 
-  it('탭 그룹 명칭을 그대로 따옴표 안에 넣는다 (하위 탭이면 "상위 · 하위")', () => {
-    expect(bulkOpenToastText(3, 'AI 도구 모음 · 영상')).toContain(
-      '"AI 도구 모음 · 영상" 탭 그룹으로 묶어 두면 좋습니다',
-    );
+  describe('전부 차단', () => {
+    it('열었다고 말하지 않고 하나도 열리지 않았음을 분명히 한다', () => {
+      const text = bulkOpenToastText({ opened: 0, blocked: 28, groupLabel: '내 즐겨찾기' });
+
+      expect(text).toBe(`팝업 차단으로 28개 모두 열리지 않았습니다 · ${HELP}`);
+      // 사용자가 신고한 고장이 정확히 이것이었다 — 탭 0개에 "엽니다".
+      expect(text).not.toContain('엽니다');
+      expect(text).not.toContain('열었');
+    });
+
+    it('일부 차단과 똑같은 실행 안내를 쓴다 — 같은 고장을 두 가지로 설명하지 않는다', () => {
+      expect(bulkOpenToastText({ opened: 0, blocked: 3, groupLabel: '내 즐겨찾기' })).toContain(HELP);
+      expect(bulkOpenToastText({ opened: 1, blocked: 2, groupLabel: '내 즐겨찾기' })).toContain(HELP);
+    });
   });
 
-  it('팝업 차단 안내는 개수와 무관하게 언제나 붙는다 (V4 · noopener 라 차단 감지 불가)', () => {
-    expect(bulkOpenToastText(1, '내 즐겨찾기')).toContain('열리지 않으면 팝업 차단을 확인하세요');
-    expect(bulkOpenToastText(118, 'AI 도구 모음')).toContain(
-      '열리지 않으면 팝업 차단을 확인하세요',
-    );
-  });
+  describe('열 것이 전무', () => {
+    it('0개면 프로토타입 원문의 가드 문구를 그대로 쓴다 — 열 것이 없다는 말만 한다', () => {
+      expect(bulkOpenToastText({ opened: 0, blocked: 0, groupLabel: '내 즐겨찾기' })).toBe(
+        '열 링크를 먼저 선택하세요',
+      );
+    });
 
-  it('0개면 프로토타입 원문의 가드 문구를 그대로 쓴다 — 열 것이 없다는 말만 한다', () => {
-    expect(bulkOpenToastText(0, '내 즐겨찾기')).toBe('열 링크를 먼저 선택하세요');
+    it('시도가 없었던 것과 전부 막힌 것을 구별한다 — 없는 팝업 아이콘을 찾게 하지 않는다', () => {
+      expect(bulkOpenToastText({ opened: 0, blocked: 0, groupLabel: '내 즐겨찾기' })).not.toContain(
+        HELP,
+      );
+    });
   });
 });

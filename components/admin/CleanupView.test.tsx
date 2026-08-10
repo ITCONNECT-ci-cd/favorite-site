@@ -1,5 +1,5 @@
-import { render, screen, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 
 import { CleanupView } from '@/components/admin/CleanupView';
 import { ADMIN_CLEANUP_PATH } from '@/lib/routes';
@@ -13,10 +13,17 @@ import type {
 /**
  * M2 — 정리 도구 본문(DESIGN_SPEC 6장 "정리 도구", 프로토타입 545–595행 실측).
  *
- * 화면은 순수 표시다 — 데이터는 페이지가 M1(lib/cleanup.ts)에서 받아 넘긴다. 여기서는
- * 넘어온 세 구역(①완전 중복 · ②도메인 · ③방치)이 스펙대로 그려지는지, 0건 안내와
- * "정리 대상이 아닙니다" 명시, 기준 탭(URL ?days=), <820px 1단만 본다.
+ * 데이터는 페이지가 M1(lib/cleanup.ts)에서 받아 넘긴다. 여기서는 넘어온 세 구역(①완전 중복 ·
+ * ②도메인 · ③방치)이 스펙대로 그려지는지, 0건 안내와 "정리 대상이 아닙니다" 명시, 기준 탭
+ * (URL ?days=), <820px 1단을 본다.
+ *
+ * 고르고 지우는 **동작**(접힘 토글·체크·확인·액션 호출)은 `CleanupSelection.test.tsx` 가 본다 —
+ * 여기서 보는 것은 **배선**이다: 세 구역이 각자 자기 목록 컴포넌트를 갖는가, 그래서 한 북마크가
+ * ①과 ②에 동시에 떠도 체크가 서로 번지지 않는가.
  */
+
+/** 액션까지 가는 길은 CleanupSelection.test 의 몫이라, 여기서는 실수로도 나가지 않게 갈아 끼운다. */
+vi.mock('@/lib/mutations', () => ({ deleteBookmarks: vi.fn() }));
 
 /** CleanupBookmark 한 건 — 판정 결과가 카드로 그릴 최소 모양(M1 Pick). */
 function cb(id: string, url: string, title: string): CleanupBookmark {
@@ -139,6 +146,19 @@ describe('CleanupView — ② 같은 도메인 · 서로 다른 페이지', () =
     }
   });
 
+  /**
+   * 같은 구역에 일괄 삭제 바가 서므로, 안내가 "정리 대상이 아닙니다"에서 끝나면 한 화면이 서로
+   * 반대되는 말을 한다. 판정이 지우라고 하지 않을 뿐 사람이 골라 지우는 길은 열려 있다는 것을
+   * 화면 문구가 함께 말해야 한다.
+   */
+  it('그 명시가 삭제 수단과 모순으로 읽히지 않게 한 줄에서 함께 말한다', () => {
+    renderView();
+
+    expect(
+      within(domainRegion()).getByText('서로 다른 서비스라 정리 대상이 아닙니다 · 직접 고른 것만 지웁니다'),
+    ).toBeInTheDocument();
+  });
+
   it('0건이면 안내문을 낸다', () => {
     renderView({ domainGroups: [] });
 
@@ -227,6 +247,87 @@ describe('CleanupView — 기준 탭 (30·90·180·365, URL ?days=)', () => {
       .getAllByRole('link')
       .filter((link) => link.getAttribute('aria-current') === 'page');
     expect(selected).toHaveLength(1);
+  });
+});
+
+describe('CleanupView — 고르고 지우기 (구역마다 따로)', () => {
+  const groupToggle = (region: HTMLElement, label: string) =>
+    within(region).getByRole('button', { name: new RegExp(`^${label}`) });
+  /* 이름은 `${구역}에서 선택한 N개 삭제` 다 — 세 구역의 버튼이 이름으로 갈린다(아래 전용 테스트). */
+  const deleteButton = (region: HTMLElement) =>
+    within(region).getByRole('button', { name: /선택한 \d+개 삭제$/ });
+
+  it('세 구역이 모두 자기 삭제 버튼을 갖고, 아무것도 안 골랐으면 잠겨 있다', () => {
+    renderView();
+
+    for (const region of [dupRegion(), domainRegion(), staleRegion()]) {
+      expect(deleteButton(region)).toBeDisabled();
+      expect(deleteButton(region)).toHaveTextContent('선택한 0개 삭제');
+    }
+  });
+
+  /**
+   * 세 바가 한 화면에 서므로 글자만 보면 세 버튼이 전부 `선택한 0개 삭제` 로 같다 — 이름만 듣는
+   * 사람에게는 같은 버튼이 셋이다. 이름 앞에 구역을 달아 갈라 둔다(SubCategoryRow 규칙).
+   */
+  it('세 구역의 삭제 버튼은 이름으로 갈린다 — 글자가 같아도 이름이 다르다', () => {
+    renderView();
+
+    for (const label of [
+      '같은 주소를 두 번 등록',
+      '같은 도메인 · 서로 다른 페이지',
+      '오래 손대지 않은 링크',
+    ]) {
+      expect(
+        screen.getByRole('button', { name: `${label}에서 선택한 0개 삭제` }),
+      ).toBeInTheDocument();
+    }
+  });
+
+  it('①②의 그룹은 접힌 채로 뜬다 — 열 개가 한꺼번에 펼쳐지지 않는다', () => {
+    renderView();
+
+    expect(groupToggle(dupRegion(), 'dup.test')).toHaveAttribute('aria-expanded', 'false');
+    expect(groupToggle(domainRegion(), 'github.com')).toHaveAttribute('aria-expanded', 'false');
+    // 접힌 동안에는 항목 체크박스가 아예 없다(그룹 전체 선택만 있다).
+    expect(screen.queryByRole('checkbox', { name: '중복 하나 선택' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: '깃헙 A 선택' })).not.toBeInTheDocument();
+  });
+
+  it('③ 방치 목록은 줄마다 체크가 있고 구역 전체 선택도 있다 (전부 보이는 목록이라)', () => {
+    renderView();
+
+    expect(within(staleRegion()).getByRole('checkbox', { name: '방치 하나 선택' })).toBeInTheDocument();
+    expect(
+      within(staleRegion()).getByRole('checkbox', { name: '오래 손대지 않은 링크 전체 선택' }),
+    ).toBeInTheDocument();
+    // ①②에는 구역 전체 선택을 두지 않는다 — 접힌 그룹까지 통째로 골라 버리는 길이다.
+    expect(within(dupRegion()).queryByRole('checkbox', { name: /^같은 주소/ })).not.toBeInTheDocument();
+  });
+
+  /**
+   * M1 인계 — 한 host 가 완전 중복과 다른 페이지를 둘 다 가지면 그 북마크는 ①과 ②에 함께 뜬다.
+   * 구역마다 목록 컴포넌트가 따로 서므로 체크도 따로다: 같은 id 인데 한쪽만 골라진다.
+   */
+  it('한 북마크가 ①②에 함께 떠도 체크는 번지지 않는다', () => {
+    const shared = [cb('x1', 'https://github.com/a', '겹친 링크'), cb('x2', 'https://github.com/a', '겹친 둘')];
+    renderView({
+      duplicateUrlGroups: [{ url: 'https://github.com/a', bookmarks: shared }],
+      domainGroups: [
+        { host: 'github.com', bookmarks: [...shared, cb('x3', 'https://github.com/b', '다른 페이지')] },
+      ],
+    });
+
+    fireEvent.click(groupToggle(dupRegion(), 'github.com'));
+    fireEvent.click(groupToggle(domainRegion(), 'github.com'));
+    fireEvent.click(within(dupRegion()).getByRole('checkbox', { name: '겹친 링크 선택' }));
+
+    expect(within(dupRegion()).getByRole('checkbox', { name: '겹친 링크 선택' })).toBeChecked();
+    expect(deleteButton(dupRegion())).toHaveTextContent('선택한 1개 삭제');
+    // 같은 id 인데 ②는 그대로다.
+    expect(within(domainRegion()).getByRole('checkbox', { name: '겹친 링크 선택' })).not.toBeChecked();
+    expect(deleteButton(domainRegion())).toHaveTextContent('선택한 0개 삭제');
+    expect(deleteButton(domainRegion())).toBeDisabled();
   });
 });
 

@@ -13,7 +13,7 @@ import type { BookmarkWithCount, Category, SiteData } from '@/lib/types';
 import { middleClick } from '@/test/events';
 import { setFavs, storedFavs } from '@/test/favs';
 import { BOOKMARKS, CATEGORIES, siteData } from '@/test/fixtures/seed';
-import { setupWindowOpen } from '@/test/open';
+import { openedTab, openedTabs, setupWindowOpen } from '@/test/open';
 import { setupToastTimers } from '@/test/toast';
 
 /**
@@ -57,8 +57,20 @@ const section = (name: string) => screen.getByRole('region', { name });
 /** 섹션 본문 — 헤더 다음에 오는 카드 그리드(또는 빈 상태 박스). */
 const body = (name: string) => section(name).lastElementChild as HTMLElement;
 
-/** 섹션 안 카드들 — 그리드에 놓인 순서 그대로. */
-const cards = (name: string) => [...body(name).children] as HTMLElement[];
+/**
+ * 섹션 안 **카드들** — 그리드에 놓인 순서 그대로.
+ *
+ * 관리자에게만 서는 '+ 링크 추가' 타일(K1)은 격자 첫 칸을 차지하지만 카드가 아니므로 뺀다.
+ * 빼지 않으면 `cards(...)[n]` 이 관리자 화면에서만 한 칸씩 밀려 엉뚱한 카드를 가리킨다.
+ */
+const cards = (name: string) =>
+  [...body(name).children].filter(
+    (cell) => cell.getAttribute('data-testid') !== 'quick-add',
+  ) as HTMLElement[];
+
+/** 섹션의 '+ 링크 추가' 타일 — 없으면 null (K1). */
+const quickAddTile = (name: string) =>
+  within(section(name)).queryByRole('button', { name: '링크 추가' });
 
 /**
  * 섹션이 어떤 링크를 어떤 순서로 놓았는지 확인한다.
@@ -496,9 +508,12 @@ describe('HomeView — 섹션 한 번에 열기 (G4)', () => {
 
   /** 그 섹션의 카드가 놓인 순서 그대로 새 탭에 열리고 bulk 로 기록됐는지 본다. */
   function expectOpened(expected: readonly BookmarkWithCount[]): void {
-    expect(windowOpen.mock.calls).toEqual(
-      expected.map((bookmark) => [bookmark.url, '_blank', 'noopener,noreferrer']),
-    );
+    // 인자가 **둘뿐이다**. 기능 문자열(`noopener`/`noreferrer`)을 하나라도 넘기면 규격상 창 핸들
+    // 대신 null 이 와서 차단 감지가 통째로 무너진다(useCardHandlers.openMany 의 맞바꿈 설명).
+    expect(windowOpen.mock.calls).toEqual(expected.map((bookmark) => [bookmark.url, '_blank']));
+    // `noopener` 를 뺀 자리를 메우는 한 줄 — 열린 창마다 되잡는 경로를 끊었는지. 하나라도
+    // 빠뜨리면 길이가 맞지 않아 여기서 깨진다.
+    expect(openedTabs(windowOpen).map((tab) => tab.opener)).toEqual(expected.map(() => null));
     // 카드 클릭(F3)과 달리 두 번째 인자가 true 다 — 순위 왜곡을 막는 bulk 플래그(PRD).
     expect(vi.mocked(recordClick).mock.calls).toEqual(
       expected.map((bookmark) => [bookmark.id, true]),
@@ -513,7 +528,7 @@ describe('HomeView — 섹션 한 번에 열기 (G4)', () => {
     expectOpened(FAV_ITEMS);
     expect(
       screen.getByText(
-        '3개를 새 탭으로 엽니다 · 크롬에서 "내 즐겨찾기" 탭 그룹으로 묶어 두면 좋습니다 · 열리지 않으면 팝업 차단을 확인하세요',
+        '3개를 새 탭으로 엽니다 · 크롬에서 "내 즐겨찾기" 탭 그룹으로 묶어 두면 좋습니다',
       ),
     ).toBeInTheDocument();
   });
@@ -526,7 +541,7 @@ describe('HomeView — 섹션 한 번에 열기 (G4)', () => {
     expectOpened(DAILY);
     expect(
       screen.getByText(
-        '12개를 새 탭으로 엽니다 · 크롬에서 "매일 사용하는 사이트" 탭 그룹으로 묶어 두면 좋습니다 · 열리지 않으면 팝업 차단을 확인하세요',
+        '12개를 새 탭으로 엽니다 · 크롬에서 "매일 사용하는 사이트" 탭 그룹으로 묶어 두면 좋습니다',
       ),
     ).toBeInTheDocument();
   });
@@ -539,7 +554,7 @@ describe('HomeView — 섹션 한 번에 열기 (G4)', () => {
     expectOpened(OPERATING);
     expect(
       screen.getByText(
-        '16개를 새 탭으로 엽니다 · 크롬에서 "현재 운영 중인 사이트" 탭 그룹으로 묶어 두면 좋습니다 · 열리지 않으면 팝업 차단을 확인하세요',
+        '16개를 새 탭으로 엽니다 · 크롬에서 "현재 운영 중인 사이트" 탭 그룹으로 묶어 두면 좋습니다',
       ),
     ).toBeInTheDocument();
   });
@@ -561,6 +576,62 @@ describe('HomeView — 섹션 한 번에 열기 (G4)', () => {
     fireEvent.click(openAll('내 즐겨찾기'));
 
     expectOpened([BOOKMARKS[5], BOOKMARKS[40]]);
+  });
+
+  /**
+   * 사용자가 신고한 고장 그대로다 — 탭은 한 개도 열리지 않았는데 화면은 "N개를 새 탭으로 엽니다"
+   * 라고 말했고 DB 에는 열리지도 않은 클릭 28건이 남았다. 브라우저가 팝업을 막으면
+   * `window.open` 이 null 을 돌려주므로, 그 신호를 무시하는 구현으로 되돌리면 이 셋이 깨진다.
+   */
+  it('전부 차단되면 한 건도 기록하지 않는다 — 열지 못한 클릭이 통계에 남지 않는다', () => {
+    windowOpen.mockReturnValue(null);
+    renderHome();
+
+    fireEvent.click(openAll('내 즐겨찾기'));
+
+    // 시도는 목록 끝까지 한다 — 앞이 막혔다고 뒤를 포기하지 않는다.
+    expect(windowOpen).toHaveBeenCalledTimes(FAV_ITEMS.length);
+    expect(recordClick).not.toHaveBeenCalled();
+  });
+
+  it('전부 차단되면 열었다고 말하지 않고 팝업 차단을 푸는 법을 알려 준다', () => {
+    windowOpen.mockReturnValue(null);
+    renderHome();
+
+    fireEvent.click(openAll('매일 사용하는 사이트'));
+
+    expect(
+      screen.getByText(
+        '팝업 차단으로 12개 모두 열리지 않았습니다 · 주소창의 팝업 차단 아이콘에서 이 사이트를 허용해 주세요',
+      ),
+    ).toBeInTheDocument();
+    // "열었다"고 읽히는 말이 화면 어디에도 없어야 한다 — 그것이 이 고장의 본체였다.
+    expect(screen.queryByText(/엽니다/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/열었/)).not.toBeInTheDocument();
+  });
+
+  it('일부만 차단되면 열린 것만 기록하고 열림·차단 수를 그대로 알린다', () => {
+    // 브라우저가 앞의 몇 개만 허용하고 나머지를 막는 실제 모습이다.
+    windowOpen
+      .mockReturnValueOnce(openedTab())
+      .mockReturnValueOnce(openedTab())
+      .mockReturnValue(null);
+    renderHome();
+
+    fireEvent.click(openAll('내 즐겨찾기'));
+
+    expect(windowOpen).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(recordClick).mock.calls).toEqual([
+      [FAV_ITEMS[0].id, true],
+      [FAV_ITEMS[1].id, true],
+    ]);
+    // 열린 두 창만 핸들이 왔고, 그 둘의 opener 는 끊겨 있다.
+    expect(openedTabs(windowOpen).map((tab) => tab.opener)).toEqual([null, null]);
+    expect(
+      screen.getByText(
+        '2개를 열었고 1개는 팝업 차단으로 열리지 않았습니다 · 주소창의 팝업 차단 아이콘에서 이 사이트를 허용해 주세요',
+      ),
+    ).toBeInTheDocument();
   });
 });
 
@@ -604,6 +675,78 @@ describe('HomeView — 관리자 편집 노출 (J1)', () => {
     expect(pins('매일 사용하는 사이트')).toHaveLength(0);
     expect(daily.queryAllByRole('button', { name: /.+ 수정$/ })).toHaveLength(DAILY_COUNT);
     expect(daily.queryAllByRole('button', { name: /.+ 삭제$/ })).toHaveLength(DAILY_COUNT);
+  });
+});
+
+/**
+ * K1. '+ 링크 추가' 타일 — 홈에서는 **'현재 운영 중인 사이트' 섹션 하나에만** 선다.
+ *
+ * 폼이 무엇을 보내는지는 `components/card/QuickAddCard.test.tsx` 가 못박는다. 여기서 보는 것은
+ * 화면의 몫 — **어느 목록에 서는가**와 **비관리자에게는 렌더 자체가 없는가**다.
+ */
+describe('HomeView — 링크 추가 타일 (K1)', () => {
+  it('비관리자에게는 마크업 자체가 없다', () => {
+    // 늘 그려 두고 CSS 로 감추는 방식은 금지다(README 주의사항 7) — 응답에 실리지 않아야 한다.
+    setFavs(FAV_IDS);
+    const { container } = render(<HomeView data={DATA} isAdmin={false} />);
+
+    expect(screen.queryByRole('button', { name: '링크 추가' })).toBeNull();
+    expect(container.querySelector('[data-testid="quick-add"]')).toBeNull();
+  });
+
+  it('관리자에게는 운영 중 섹션 그리드의 **맨 앞** 칸에 선다', () => {
+    render(<HomeView data={DATA} isAdmin />);
+
+    const grid = body(OPERATING_CATEGORY_NAME);
+
+    expect(grid.firstElementChild).toBe(quickAddTile(OPERATING_CATEGORY_NAME));
+    // 카드는 한 장도 밀려나지 않는다 — 타일은 한 칸을 더할 뿐이다.
+    expect(cards(OPERATING_CATEGORY_NAME)).toHaveLength(
+      BOOKMARKS.filter((bookmark) => bookmark.category_id === OPERATING_ID).length,
+    );
+  });
+
+  it('파생 목록(즐겨찾기·매일)에는 두지 않는다', () => {
+    // 즐겨찾기는 이 브라우저의 localStorage 에서, '매일'은 is_pinned 에서 나온 목록이다 —
+    // 거기서 만든 링크는 어느 분류에 들어가는지도, 왜 그 자리에 안 보이는지도 설명할 수 없다.
+    setFavs(FAV_IDS);
+    render(<HomeView data={DATA} isAdmin />);
+
+    expect(quickAddTile('내 즐겨찾기')).toBeNull();
+    expect(quickAddTile('매일 사용하는 사이트')).toBeNull();
+    expect(screen.getAllByRole('button', { name: '링크 추가' })).toHaveLength(1);
+  });
+
+  it('기본 분류는 그 섹션의 분류다 — 보고 있는 목록에 한 건 더 붙인다', () => {
+    render(<HomeView data={DATA} isAdmin />);
+
+    fireEvent.click(quickAddTile(OPERATING_CATEGORY_NAME)!);
+
+    expect(screen.getByRole('combobox', { name: '분류' })).toHaveValue(OPERATING_ID);
+  });
+
+  it('분류 상자에는 모든 분류가 온다 — 홈에서 어느 분류로든 넣을 수 있다', () => {
+    render(<HomeView data={DATA} isAdmin />);
+
+    fireEvent.click(quickAddTile(OPERATING_CATEGORY_NAME)!);
+
+    // 상위·하위를 가리지 않는다(둘 다 링크를 담는다). 시드의 분류 수와 같아야 한다.
+    expect(screen.getAllByRole('option')).toHaveLength(CATEGORIES.length);
+  });
+
+  it('운영 중 분류가 없어 섹션이 접히면 타일도 없다', () => {
+    // 홈에 실제 분류 목록이 하나도 없는 데이터다 — 그때는 분류 화면의 타일로 추가한다.
+    render(
+      <HomeView
+        data={{
+          categories: CATEGORIES.filter((category) => category.id !== OPERATING_ID),
+          bookmarks: DATA.bookmarks,
+        }}
+        isAdmin
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: '링크 추가' })).toBeNull();
   });
 });
 
