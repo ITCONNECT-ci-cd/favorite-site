@@ -14,7 +14,7 @@ import { deleteBookmark, updateBookmark } from '@/lib/mutations';
 import type { BookmarkWithCount } from '@/lib/types';
 import { middleClick } from '@/test/events';
 import { setFavs, storedFavs } from '@/test/favs';
-import { openedUrls, setupWindowOpen } from '@/test/open';
+import { openedTab, openedTabs, openedUrls, setupWindowOpen } from '@/test/open';
 import { setupToastTimers } from '@/test/toast';
 
 /**
@@ -596,12 +596,22 @@ describe('ListView — 한 번에 열기 (G4)', () => {
 
     fireEvent.click(openAllButton());
 
+    // 인자가 **둘뿐이다** — 기능 문자열(`noopener`/`noreferrer`)을 넘기면 규격상 창 핸들 대신
+    // null 이 와서 차단 감지가 무너진다(useCardHandlers.openMany 의 맞바꿈 설명).
     expect(windowOpen.mock.calls).toEqual([
-      ['https://example.com/직속', '_blank', 'noopener,noreferrer'],
-      ['https://example.com/대화A', '_blank', 'noopener,noreferrer'],
-      ['https://example.com/대화B', '_blank', 'noopener,noreferrer'],
-      ['https://example.com/영상A', '_blank', 'noopener,noreferrer'],
+      ['https://example.com/직속', '_blank'],
+      ['https://example.com/대화A', '_blank'],
+      ['https://example.com/대화B', '_blank'],
+      ['https://example.com/영상A', '_blank'],
     ]);
+  });
+
+  it('연 창마다 opener 를 끊는다 — noopener 를 뺀 자리를 이 한 줄이 메운다', () => {
+    renderList();
+
+    fireEvent.click(openAllButton());
+
+    expect(openedTabs(windowOpen).map((tab) => tab.opener)).toEqual([null, null, null, null]);
   });
 
   it('연 링크마다 isBulk=true 로 기록한다 (F3 — handleOpen 재사용이 아니다)', () => {
@@ -617,16 +627,14 @@ describe('ListView — 한 번에 열기 (G4)', () => {
     ]);
   });
 
-  it('탭 그룹 명칭과 팝업 차단을 함께 알린다', () => {
+  it('다 열렸으면 탭 그룹 명칭만 안내한다 — 팝업 차단은 실제로 막혔을 때만 말한다', () => {
     renderList();
     render(<Toaster />);
 
     fireEvent.click(openAllButton());
 
     expect(
-      screen.getByText(
-        '4개를 새 탭으로 엽니다 · 크롬에서 "AI 도구 모음" 탭 그룹으로 묶어 두면 좋습니다 · 열리지 않으면 팝업 차단을 확인하세요',
-      ),
+      screen.getByText('4개를 새 탭으로 엽니다 · 크롬에서 "AI 도구 모음" 탭 그룹으로 묶어 두면 좋습니다'),
     ).toBeInTheDocument();
   });
 
@@ -643,7 +651,7 @@ describe('ListView — 한 번에 열기 (G4)', () => {
     ]);
     expect(
       screen.getByText(
-        '2개를 새 탭으로 엽니다 · 크롬에서 "AI 도구 모음 · 대화·검색" 탭 그룹으로 묶어 두면 좋습니다 · 열리지 않으면 팝업 차단을 확인하세요',
+        '2개를 새 탭으로 엽니다 · 크롬에서 "AI 도구 모음 · 대화·검색" 탭 그룹으로 묶어 두면 좋습니다',
       ),
     ).toBeInTheDocument();
   });
@@ -666,8 +674,49 @@ describe('ListView — 한 번에 열기 (G4)', () => {
       ['영상A', true],
     ]);
     expect(
+      screen.getByText('2개를 새 탭으로 엽니다 · 크롬에서 "AI 도구 모음" 탭 그룹으로 묶어 두면 좋습니다'),
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * 선택 열기도 같은 `openMany` 를 지난다 — 차단 감지가 홈에만 붙는 일이 없도록 이 화면에서도
+   * 못박는다. `window.open` 이 돌려주는 null 을 무시하는 구현으로 되돌리면 둘 다 깨진다.
+   */
+  it('선택 열기가 전부 차단되면 한 건도 기록하지 않고 푸는 법을 알려 준다', () => {
+    windowOpen.mockReturnValue(null);
+    renderList();
+    render(<Toaster />);
+
+    fireEvent.click(check('직속'));
+    fireEvent.click(check('영상A'));
+    fireEvent.click(openCheckedButton());
+
+    // 시도는 둘 다 한다 — 막힌 것은 브라우저이지 이 코드가 건너뛴 것이 아니다.
+    expect(openedUrls(windowOpen)).toEqual([
+      'https://example.com/직속',
+      'https://example.com/영상A',
+    ]);
+    expect(recordClick).not.toHaveBeenCalled();
+    expect(
       screen.getByText(
-        '2개를 새 탭으로 엽니다 · 크롬에서 "AI 도구 모음" 탭 그룹으로 묶어 두면 좋습니다 · 열리지 않으면 팝업 차단을 확인하세요',
+        '팝업 차단으로 2개 모두 열리지 않았습니다 · 주소창의 팝업 차단 아이콘에서 이 사이트를 허용해 주세요',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/개를 새 탭으로 엽니다/)).not.toBeInTheDocument();
+  });
+
+  it('전체 열기가 일부만 차단되면 열린 것만 기록하고 개수를 그대로 알린다', () => {
+    windowOpen.mockReturnValueOnce(openedTab()).mockReturnValue(null);
+    renderList();
+    render(<Toaster />);
+
+    fireEvent.click(openAllButton());
+
+    expect(vi.mocked(recordClick).mock.calls).toEqual([['직속', true]]);
+    expect(openedTabs(windowOpen).map((tab) => tab.opener)).toEqual([null]);
+    expect(
+      screen.getByText(
+        '1개를 열었고 3개는 팝업 차단으로 열리지 않았습니다 · 주소창의 팝업 차단 아이콘에서 이 사이트를 허용해 주세요',
       ),
     ).toBeInTheDocument();
   });

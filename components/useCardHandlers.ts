@@ -75,7 +75,7 @@ export function useCardHandlers(bookmarks: readonly BookmarkWithCount[]): CardHa
   );
 
   /**
-   * 한 번에 열기 (G4) — 목록의 순서대로 새 탭을 열고 하나씩 **bulk 로** 기록한다.
+   * 한 번에 열기 (G4) — 목록의 순서대로 새 탭을 열고, **실제로 열린 것만** bulk 로 기록한다.
    *
    * `items` 는 **화면에 보이는 것의 부분집합이어야 한다** — 이 함수는 거르지 않고 받은 대로 연다.
    * 거르는 일은 부르는 쪽 몫이다(ListView 의 `checkedItems` 가 `shown` 과 교차시킨다).
@@ -83,32 +83,65 @@ export function useCardHandlers(bookmarks: readonly BookmarkWithCount[]): CardHa
    * `handleOpen` 을 재사용하지 않는 이유가 둘이다. 기록의 `isBulk` 가 달라야 하고, 링크마다
    * 토스트를 띄우면 마지막 하나만 남는다.
    *
+   * ## 팝업 차단을 감지하려고 `noopener,noreferrer` 를 뺐다 — 무엇을 맞바꿨나
+   *
+   * 예전에는 카드 앵커의 `rel` 과 같은 값(`noopener,noreferrer`)으로 열었다. 그런데 규격상
+   * **`noopener` 로 연 창은 `window.open` 이 참조 대신 언제나 null 을 돌려준다**(`noreferrer` 는
+   * `noopener` 를 함의한다). 즉 차단됐을 때와 열렸을 때의 반환값이 똑같아, 열린 것이 하나도 없어도
+   * 화면은 "N개를 새 탭으로 엽니다" 라고 말하고 기록까지 남겼다 — 사용자가 신고한 고장이 정확히
+   * 그것이었다(탭은 0개, 기록은 28건). **감지하지 못하면 사용자에게 거짓말을 하고 통계까지
+   * 오염된다**는 것이 이 맞바꿈의 이유다.
+   *
+   * 그래서 기능 문자열 없이 열어 창 핸들을 돌려받고, 핸들이 null 인지로 링크마다 열림/차단을
+   * 가른다. 잃은 것과 되찾은 것:
+   *
+   * - **되찾음(보안)**: 핸들을 받는 즉시 `tab.opener = null` 로 끊는다. `noopener` 를 뺀 대가로
+   *   생기는 것은 열린 페이지가 `window.opener` 로 이 창을 되잡아 주소를 바꿔치기하는 경로
+   *   (reverse tabnabbing)인데, 이 대입이 바로 그것을 닫는다 — `rel=noopener` 가 생기기 전부터
+   *   쓰이던 표준 완화이고, 상대가 크로스 오리진이어도 `opener` 는 쓰기가 허용된 몇 안 되는
+   *   속성이다. 대입은 `window.open` 이 돌아온 **직후·동기적으로** 해야 한다.
+   * - **잃음(사생활)**: `noreferrer` 가 빠져 대상 사이트에 이 대시보드의 Referer 가 간다. 사내
+   *   대시보드에서 **이미 아는 사이트**로 가는 이동이고, 같은 링크를 카드로 하나씩 열 때와 달리
+   *   이 경로만의 추가 노출이므로 수용한다. (카드 앵커는 그대로 `rel="noopener noreferrer"` 다 —
+   *   거기는 브라우저가 막지 않으므로 감지할 것이 없다.)
+   *
    * **`isBulk` 가 지금 무엇을 하고 무엇을 하지 않는지**: 이 플래그는 *이후* 순위 산정이 일괄
    * 열기를 제외할 수 있도록 기록에 남겨 두는 표시다(PRD — 순위 왜곡 방지). 지금 카드에 보이는
    * 클릭 수는 bulk 를 **포함한** 값이다 — PRD 가 절대값을 참고용으로 두므로 그대로 수용한다.
    * 걸러 내는 일은 순위를 실제로 매기는 화면(3단계 통계)이 이 플래그로 한다.
    *
-   * 게다가 bulk 기록은 best-effort 다: 팝업이 차단돼 열리지 않은 탭도 기록에 함께 실린다
-   * (`noopener` 라 열렸는지 알 수 없다 — 아래 참조). 이것이 순위에서 bulk 를 빼야 하는 또 하나의
-   * 근거다.
-   *
    * **반드시 사용자 제스처 핸들러 안에서 동기적으로 돈다.** `await` 하나만 끼어도 그 뒤의
    * `window.open` 은 브라우저가 사용자 행동과 잇지 못해 팝업으로 막는다. 그래서 기록
-   * (`recordClick`)도 응답을 기다리지 않는 fire-and-forget 이어야 한다(F3).
-   *
-   * `noopener,noreferrer` 는 카드 앵커의 `rel` 과 같은 값이다(C2) — 여는 경로가 둘이어도 새 탭이
-   * 이 창을 되잡지 못하는 것은 같아야 한다. 그 대가로 `window.open` 이 창 참조 대신 null 을
-   * 돌려주므로 차단 여부는 알 수 없고, 안내는 토스트가 무조건 한다(bulkOpenToastText).
+   * (`recordClick`)도 응답을 기다리지 않는 fire-and-forget 이어야 한다(F3). 차단을 만나도 루프를
+   * 멈추지 않는 이유도 같다 — 브라우저는 앞의 몇 개만 허용하고 나머지를 막기도 하지만, 반대로
+   * 중간 것만 막는 경우도 있어 시도 자체는 목록 끝까지 해야 한다.
    *
    * 기록이 118건까지 늘어도 keepalive 쿼터(64KiB)에는 닿지 않는다 — 본문이 건당 ~120B 다(F2 리뷰).
    */
   const openMany = useCallback((items: readonly BookmarkWithCount[], groupLabel: string) => {
+    let opened = 0;
+    let blocked = 0;
+
     for (const item of items) {
-      window.open(item.url, '_blank', 'noopener,noreferrer');
+      // 기능 문자열을 넘기지 않는다 — `noopener`/`noreferrer` 중 하나라도 있으면 핸들 대신 null 이
+      // 와서 아래 판정이 통째로 '전부 차단'이 된다(위 맞바꿈 설명).
+      const tab = window.open(item.url, '_blank');
+
+      if (tab === null) {
+        blocked += 1;
+        continue;
+      }
+
+      // 되잡는 경로를 여기서 끊는다. 이 한 줄이 `noopener` 의 자리를 대신한다.
+      tab.opener = null;
+      opened += 1;
+
+      // 열린 링크만 기록한다 — 차단된 것까지 세면 카드의 클릭 수가 열리지도 않은 유령 클릭으로
+      // 부풀고, 그것이 실제로 한 번 일어났다(28건을 손으로 지웠다).
       recordClick(item.id, true);
     }
 
-    toast(bulkOpenToastText(items.length, groupLabel));
+    toast(bulkOpenToastText({ opened, blocked, groupLabel }));
   }, []);
 
   return { favs, handleToggleFav, handleOpen, openMany };

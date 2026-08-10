@@ -13,7 +13,7 @@ import type { BookmarkWithCount, Category, SiteData } from '@/lib/types';
 import { middleClick } from '@/test/events';
 import { setFavs, storedFavs } from '@/test/favs';
 import { BOOKMARKS, CATEGORIES, siteData } from '@/test/fixtures/seed';
-import { setupWindowOpen } from '@/test/open';
+import { openedTab, openedTabs, setupWindowOpen } from '@/test/open';
 import { setupToastTimers } from '@/test/toast';
 
 /**
@@ -508,9 +508,12 @@ describe('HomeView — 섹션 한 번에 열기 (G4)', () => {
 
   /** 그 섹션의 카드가 놓인 순서 그대로 새 탭에 열리고 bulk 로 기록됐는지 본다. */
   function expectOpened(expected: readonly BookmarkWithCount[]): void {
-    expect(windowOpen.mock.calls).toEqual(
-      expected.map((bookmark) => [bookmark.url, '_blank', 'noopener,noreferrer']),
-    );
+    // 인자가 **둘뿐이다**. 기능 문자열(`noopener`/`noreferrer`)을 하나라도 넘기면 규격상 창 핸들
+    // 대신 null 이 와서 차단 감지가 통째로 무너진다(useCardHandlers.openMany 의 맞바꿈 설명).
+    expect(windowOpen.mock.calls).toEqual(expected.map((bookmark) => [bookmark.url, '_blank']));
+    // `noopener` 를 뺀 자리를 메우는 한 줄 — 열린 창마다 되잡는 경로를 끊었는지. 하나라도
+    // 빠뜨리면 길이가 맞지 않아 여기서 깨진다.
+    expect(openedTabs(windowOpen).map((tab) => tab.opener)).toEqual(expected.map(() => null));
     // 카드 클릭(F3)과 달리 두 번째 인자가 true 다 — 순위 왜곡을 막는 bulk 플래그(PRD).
     expect(vi.mocked(recordClick).mock.calls).toEqual(
       expected.map((bookmark) => [bookmark.id, true]),
@@ -525,7 +528,7 @@ describe('HomeView — 섹션 한 번에 열기 (G4)', () => {
     expectOpened(FAV_ITEMS);
     expect(
       screen.getByText(
-        '3개를 새 탭으로 엽니다 · 크롬에서 "내 즐겨찾기" 탭 그룹으로 묶어 두면 좋습니다 · 열리지 않으면 팝업 차단을 확인하세요',
+        '3개를 새 탭으로 엽니다 · 크롬에서 "내 즐겨찾기" 탭 그룹으로 묶어 두면 좋습니다',
       ),
     ).toBeInTheDocument();
   });
@@ -538,7 +541,7 @@ describe('HomeView — 섹션 한 번에 열기 (G4)', () => {
     expectOpened(DAILY);
     expect(
       screen.getByText(
-        '12개를 새 탭으로 엽니다 · 크롬에서 "매일 사용하는 사이트" 탭 그룹으로 묶어 두면 좋습니다 · 열리지 않으면 팝업 차단을 확인하세요',
+        '12개를 새 탭으로 엽니다 · 크롬에서 "매일 사용하는 사이트" 탭 그룹으로 묶어 두면 좋습니다',
       ),
     ).toBeInTheDocument();
   });
@@ -551,7 +554,7 @@ describe('HomeView — 섹션 한 번에 열기 (G4)', () => {
     expectOpened(OPERATING);
     expect(
       screen.getByText(
-        '16개를 새 탭으로 엽니다 · 크롬에서 "현재 운영 중인 사이트" 탭 그룹으로 묶어 두면 좋습니다 · 열리지 않으면 팝업 차단을 확인하세요',
+        '16개를 새 탭으로 엽니다 · 크롬에서 "현재 운영 중인 사이트" 탭 그룹으로 묶어 두면 좋습니다',
       ),
     ).toBeInTheDocument();
   });
@@ -573,6 +576,62 @@ describe('HomeView — 섹션 한 번에 열기 (G4)', () => {
     fireEvent.click(openAll('내 즐겨찾기'));
 
     expectOpened([BOOKMARKS[5], BOOKMARKS[40]]);
+  });
+
+  /**
+   * 사용자가 신고한 고장 그대로다 — 탭은 한 개도 열리지 않았는데 화면은 "N개를 새 탭으로 엽니다"
+   * 라고 말했고 DB 에는 열리지도 않은 클릭 28건이 남았다. 브라우저가 팝업을 막으면
+   * `window.open` 이 null 을 돌려주므로, 그 신호를 무시하는 구현으로 되돌리면 이 셋이 깨진다.
+   */
+  it('전부 차단되면 한 건도 기록하지 않는다 — 열지 못한 클릭이 통계에 남지 않는다', () => {
+    windowOpen.mockReturnValue(null);
+    renderHome();
+
+    fireEvent.click(openAll('내 즐겨찾기'));
+
+    // 시도는 목록 끝까지 한다 — 앞이 막혔다고 뒤를 포기하지 않는다.
+    expect(windowOpen).toHaveBeenCalledTimes(FAV_ITEMS.length);
+    expect(recordClick).not.toHaveBeenCalled();
+  });
+
+  it('전부 차단되면 열었다고 말하지 않고 팝업 차단을 푸는 법을 알려 준다', () => {
+    windowOpen.mockReturnValue(null);
+    renderHome();
+
+    fireEvent.click(openAll('매일 사용하는 사이트'));
+
+    expect(
+      screen.getByText(
+        '팝업 차단으로 12개 모두 열리지 않았습니다 · 주소창의 팝업 차단 아이콘에서 이 사이트를 허용해 주세요',
+      ),
+    ).toBeInTheDocument();
+    // "열었다"고 읽히는 말이 화면 어디에도 없어야 한다 — 그것이 이 고장의 본체였다.
+    expect(screen.queryByText(/엽니다/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/열었/)).not.toBeInTheDocument();
+  });
+
+  it('일부만 차단되면 열린 것만 기록하고 열림·차단 수를 그대로 알린다', () => {
+    // 브라우저가 앞의 몇 개만 허용하고 나머지를 막는 실제 모습이다.
+    windowOpen
+      .mockReturnValueOnce(openedTab())
+      .mockReturnValueOnce(openedTab())
+      .mockReturnValue(null);
+    renderHome();
+
+    fireEvent.click(openAll('내 즐겨찾기'));
+
+    expect(windowOpen).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(recordClick).mock.calls).toEqual([
+      [FAV_ITEMS[0].id, true],
+      [FAV_ITEMS[1].id, true],
+    ]);
+    // 열린 두 창만 핸들이 왔고, 그 둘의 opener 는 끊겨 있다.
+    expect(openedTabs(windowOpen).map((tab) => tab.opener)).toEqual([null, null]);
+    expect(
+      screen.getByText(
+        '2개를 열었고 1개는 팝업 차단으로 열리지 않았습니다 · 주소창의 팝업 차단 아이콘에서 이 사이트를 허용해 주세요',
+      ),
+    ).toBeInTheDocument();
   });
 });
 
