@@ -94,6 +94,15 @@ export type NewBookmark = {
   description?: string | null;
   categoryId: string;
   faviconUrl?: string | null;
+  /**
+   * 만들면서 '매일 사용하는 사이트' 고정까지 켠다 — 홈의 **'매일' 섹션 타일**만 참으로 준다(J5).
+   *
+   * 그 자리에서 만든 링크는 고른 분류로 들어가지만, 고정이 꺼져 있으면 **방금 누른 섹션에는
+   * 나타나지 않는다.** 눌린 자리와 결과가 어긋나는 그 한 가지 때문에 이 플래그가 있다.
+   *
+   * 참이 아닌 값(미지정 포함)은 전부 거짓이다 — 남이 보낸 `"true"` 문자열로 고정이 켜지지 않는다.
+   */
+  pinned?: boolean;
 };
 
 /**
@@ -109,6 +118,9 @@ type CategoryRow = { id: string; parent_id: string | null };
 
 /** 링크 행에서 `togglePin` 이 보는 부분. */
 type PinRow = { id: string; is_pinned: boolean };
+
+/** 링크 행에서 `reorderBookmarks` 가 보는 부분 — 지금 쥐고 있는 자리를 읽는다. */
+type OrderRow = { id: string; sort_order: number };
 
 // ───────────────────────────────────────────────────────── 사용자 문구
 //
@@ -484,6 +496,8 @@ export async function createBookmark(input: NewBookmark): Promise<ActionResult> 
     description: asText(input.description),
     favicon_url: faviconUrl,
     sort_order: sortOrder,
+    // `=== true` 다 — 남이 보낸 `"true"`·`1` 같은 참 같은 값으로 고정이 켜지지 않는다(NewBookmark).
+    is_pinned: input.pinned === true,
   });
   if (error !== null) return describeFailure('링크 추가', error);
 
@@ -628,19 +642,59 @@ export async function deleteBookmarks(ids: string[]): Promise<ActionResult> {
 }
 
 /**
- * 링크 순서를 통째로 다시 매긴다 — `orderedIds[i]` 의 `sort_order` 가 `i` 가 된다.
+ * 링크 순서를 바꾼다 — **넘긴 목록이 지금 차지하고 있는 자리들만 서로 맞바꾼다.**
  *
- * ⚠️ `sort_order` 는 테이블 전체가 공유하는 컬럼 하나다(카테고리별 컬럼이 아니다). 그래서 어느
- * 카테고리의 목록을 0..n 으로 다시 매기면 **`/daily`·`/favorites` 처럼 여러 카테고리를 섞어 보여
- * 주는 화면의 줄 순서도 함께 흔들린다.** 각 카테고리 안에서의 순서는 언제나 의도대로 유지되므로
- * 스키마를 바꾸지 않는 한 감수하는 부분이다 — 부르는 쪽은 **한 카테고리의 목록 전체**를 넘겨라
- * (일부만 넘기면 넘긴 것들이 0..k 로 앞당겨져 나머지와 뒤섞인다).
+ * ## 0..n 으로 다시 매기지 않는다 (2026-08-10 변경)
+ *
+ * `sort_order` 는 테이블 전체가 공유하는 컬럼 하나다(카테고리별 컬럼이 아니다). 예전 구현은
+ * `orderedIds[i]` 에 `i` 를 넣었는데, 그러면 어느 목록을 정렬하든 그 링크들이 **테이블 맨 앞
+ * 0..n 으로 끌려와** 나머지 200여 건과 뒤섞였다. 관리 화면처럼 '한 카테고리 전체'를 넘기는
+ * 호출부에서는 티가 안 났지만, 공개 화면의 드래그(J5)는 '매일 사용하는 사이트'처럼 **여러
+ * 카테고리가 섞인 목록**을 넘긴다 — 거기서 0..8 을 쓰면 고정된 9건이 통째로 앞으로 튀어나와
+ * 각자의 분류 화면에서 자리가 뒤집힌다.
+ *
+ * 그래서 지금은 이렇게 한다:
+ * 1. 넘어온 id 들이 **지금** 갖고 있는 `sort_order` 를 서버가 직접 읽는다.
+ * 2. 그 값들(= 자리)을 오름차순으로 세워, 받은 차례대로 하나씩 다시 나눠 준다.
+ * 3. 값이 실제로 달라지는 행만 update 한다.
+ *
+ * 귀결이 셋이다. ①목록 **밖**의 링크는 한 행도 건드리지 않는다 — 부분 목록을 넘겨도 안전하다.
+ * ②자리 집합이 그대로라 몇 번을 끌어 놓아도 이 목록이 테이블 안에서 차지하는 위치가 떠다니지
+ * 않는다. ③인접한 두 장을 바꾸면 update 는 딱 2건이다(예전엔 목록 길이만큼 나갔다).
+ *
+ * 자리를 **서버가 읽는다**는 점이 중요하다 — 화면이 보낸 숫자를 믿으면 남이 보낸 요청 하나로
+ * 아무 링크나 원하는 자리에 꽂을 수 있다. 화면은 '차례'만 말하고 '값'은 말하지 못한다.
+ *
+ * 없는 id 는 조용히 빠진다(그 사이 다른 창에서 지워진 링크). 하나도 못 찾으면 실패다.
  */
 export async function reorderBookmarks(orderedIds: string[]): Promise<ActionResult> {
   const supabase = await writeClient();
   if (supabase === null) return DENIED;
 
-  return applyOrder(supabase, 'bookmarks', orderedIds, 'any');
+  const ids = asIdList(orderedIds);
+  if (ids === null) return fail(INVALID_REQUEST);
+  if (ids.length === 0) return { ok: true };
+
+  const found = await supabase.from('bookmarks').select('id, sort_order').in('id', ids);
+  if (found.error !== null) return describeFailure('링크 순서 조회', found.error);
+
+  const current = new Map(
+    ((found.data ?? []) as OrderRow[]).map((row) => [row.id, row.sort_order] as const),
+  );
+  // 받은 차례를 그대로 두되 사라진 id 만 뺀다 — 남은 것들끼리의 상대 순서가 사용자가 본 그것이다.
+  const targets = ids.filter((id) => current.has(id));
+  if (targets.length === 0) return fail(BOOKMARK_NOT_FOUND);
+
+  // 이 목록이 쥐고 있는 자리들. 오름차순이 곧 '화면에서 위에서 아래로'다(getAllData 의 정렬).
+  const slots = targets.map((id) => current.get(id) ?? 0).sort((left, right) => left - right);
+
+  const changes = targets.flatMap((id, index) =>
+    current.get(id) === slots[index] ? [] : [{ id, sortOrder: slots[index] }],
+  );
+  // 이미 그 순서다(제자리에 놓았다) — 쓰지도, 화면을 다시 그리지도 않는다.
+  if (changes.length === 0) return { ok: true };
+
+  return writeOrder(supabase, 'bookmarks', changes, 'any');
 }
 
 /**
@@ -766,22 +820,11 @@ async function nextSortOrder(
 }
 
 /**
- * 목록 순서를 인덱스로 다시 매긴다.
+ * 목록 순서를 **인덱스로 다시 매긴다** — `orderedIds[i]` 가 자리 `i` 를 갖는다.
  *
- * **한 문장으로 못 한다** — PostgREST 에는 행마다 다른 값을 넣는 대량 update 가 없고, upsert 로
- * 흉내 내면 `name` 같은 not null 컬럼을 함께 실어야 해서 그 사이 다른 창에서 바뀐 이름을 덮어쓰거나
- * 방금 지워진 행을 되살린다. 그래서 `sort_order` 만 건드리는 update 를 id 수만큼 동시에 던진다.
- * 중간에 실패하면 순서가 일부만 반영되는데, 드래그를 다시 하면 그대로 복구된다(멱등).
- *
- * `Promise.all` 이 아니라 **`Promise.allSettled`** 인 이유: `fetch` 자체가 거부되면(네트워크 단절 등)
- * `all` 은 그 거부를 그대로 던져 **액션이 예외로 끝난다** — 화면은 `{ ok:false }` 를 기다리는데
- * Next 오류 경계가 뜬다. 거부도 다른 실패와 똑같이 접어서 돌려주고 진단만 로그로 남긴다.
- *
- * 동시 요청 수 = 목록 길이다. 부르는 쪽이 넘기는 것은 상위 카테고리 10여 개 또는 한 카테고리의
- * 링크 수십 개라 문제될 규모가 아니다 — 290건을 통째로 넘기는 호출부가 생기면 나눠 보내야 한다.
- *
- * 한 행도 바뀌지 않았으면 성공이라고 하지 않는다 — 정책이 통째로 막았거나 목록이 통째로 낡은
- * 경우를 "저장됨"으로 보고하면 화면이 거짓말을 하게 된다.
+ * 지금 이것을 쓰는 것은 `reorderCategories` 하나다. 상위 카테고리는 목록이 **하나뿐**이라
+ * 0..n 이 곧 전체 순서이고, 밖으로 밀려날 이웃이 없다. 링크는 사정이 달라 자리를 맞바꾸는
+ * 방식으로 옮겼다 — 근거는 `reorderBookmarks` JSDoc.
  *
  * @param scope `'top-level-only'` 면 각 update 에 `parent_id is null` 을 함께 건다. 상위 목록
  *   재정렬에 하위 id 가 섞여 들어오는 것을 **서버에서** 막는 장치다(그 행은 0건이 된다).
@@ -796,9 +839,50 @@ async function applyOrder(
   if (ids === null) return fail(INVALID_REQUEST);
   if (ids.length === 0) return { ok: true };
 
+  return writeOrder(
+    supabase,
+    table,
+    ids.map((id, index) => ({ id, sortOrder: index })),
+    scope,
+  );
+}
+
+/** `writeOrder` 가 받는 한 줄 — "이 id 를 이 자리에". */
+type OrderEntry = { id: string; sortOrder: number };
+
+/**
+ * 정해진 (id, 자리) 짝을 실제로 쓴다 — 위 `applyOrder`(0..n 다시 매기기)와 `reorderBookmarks`
+ * (자리 맞바꾸기)가 자리 계산만 다르고 **쓰는 방식은 이 함수 하나를 공유한다.** 부분 성공 처리와
+ * `allSettled` 근거가 두 벌로 갈라지지 않게 하기 위해서다.
+ *
+ * 자리 계산은 이 함수가 하지 않는다 — 들어온 짝을 그대로 믿는다. 검증(`asIdList`)도 부르는 쪽 몫이다.
+ *
+ * **한 문장으로 못 한다** — PostgREST 에는 행마다 다른 값을 넣는 대량 update 가 없고, upsert 로
+ * 흉내 내면 `name` 같은 not null 컬럼을 함께 실어야 해서 그 사이 다른 창에서 바뀐 이름을 덮어쓰거나
+ * 방금 지워진 행을 되살린다. 그래서 `sort_order` 만 건드리는 update 를 짝 수만큼 동시에 던진다.
+ * 중간에 실패하면 순서가 일부만 반영되는데, 드래그를 다시 하면 그대로 복구된다(멱등).
+ *
+ * `Promise.all` 이 아니라 **`Promise.allSettled`** 인 이유: `fetch` 자체가 거부되면(네트워크 단절 등)
+ * `all` 은 그 거부를 그대로 던져 **액션이 예외로 끝난다** — 화면은 `{ ok:false }` 를 기다리는데
+ * Next 오류 경계가 뜬다. 거부도 다른 실패와 똑같이 접어서 돌려주고 진단만 로그로 남긴다.
+ *
+ * 동시 요청 수 = 짝의 수다. 카테고리는 10여 개, 링크는 **실제로 자리가 달라지는 행만** 오므로
+ * (인접한 둘을 바꾸면 2건) 목록이 길어져도 요청이 함께 불어나지 않는다.
+ *
+ * 한 행도 바뀌지 않았으면 성공이라고 하지 않는다 — 정책이 통째로 막았거나 목록이 통째로 낡은
+ * 경우를 "저장됨"으로 보고하면 화면이 거짓말을 하게 된다.
+ */
+async function writeOrder(
+  supabase: WriteClient,
+  table: 'categories' | 'bookmarks',
+  entries: readonly OrderEntry[],
+  scope: 'top-level-only' | 'any',
+): Promise<ActionResult> {
+  if (entries.length === 0) return { ok: true };
+
   const settled = await Promise.allSettled(
-    ids.map((id, index) => {
-      const query = supabase.from(table).update({ sort_order: index }).eq('id', id);
+    entries.map(({ id, sortOrder }) => {
+      const query = supabase.from(table).update({ sort_order: sortOrder }).eq('id', id);
 
       return (scope === 'top-level-only' ? query.is('parent_id', null) : query).select('id');
     }),

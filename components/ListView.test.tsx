@@ -10,11 +10,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ListView, type ListViewProps } from '@/components/ListView';
 import { Toaster } from '@/components/Toast';
 import { recordClick } from '@/lib/clicks';
-import { deleteBookmark, updateBookmark } from '@/lib/mutations';
+import { deleteBookmark, reorderBookmarks, updateBookmark } from '@/lib/mutations';
 import type { BookmarkWithCount } from '@/lib/types';
 import { middleClick } from '@/test/events';
 import { setFavs, storedFavs } from '@/test/favs';
 import { openedTab, openedTabs, openedUrls, setupWindowOpen } from '@/test/open';
+import { pendingResult } from '@/test/pending';
 import { setupToastTimers } from '@/test/toast';
 
 /**
@@ -37,6 +38,7 @@ vi.mock('@/lib/mutations', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/mutations')>()),
   updateBookmark: vi.fn(),
   deleteBookmark: vi.fn(),
+  reorderBookmarks: vi.fn(),
 }));
 
 function makeBookmark(
@@ -1111,5 +1113,101 @@ describe('ListView — 카드 삭제 확인 (J3)', () => {
 
     expect(screen.queryAllByRole('button', { name: /.+ 삭제$/ })).toHaveLength(0);
     expect(overlays()).toHaveLength(0);
+  });
+});
+
+/**
+ * J5. 관리자가 공개 목록 화면에서 카드를 끌어 순서를 바꾼다.
+ *
+ * 이 화면의 고유한 계약은 둘이다: ①**하위 탭으로 좁혀 놓아도** 옮김은 전체 목록 위에서 일어난다
+ * ②저장할 곳이 서버가 아닌 화면(`/favorites`)이 있다.
+ */
+describe('ListView — 드래그 정렬 (J5)', () => {
+  /** 그리드에서 카드 요소를 제목으로 집는다 — 드래그 이벤트는 카드 자신에게 쏴야 한다. */
+  function card(container: HTMLElement, title: string): HTMLElement {
+    const grid = container.querySelector('.grid')!;
+    const found = [...grid.children].find(
+      (cell) =>
+        cell.getAttribute('data-testid') !== 'quick-add' && (cell.textContent ?? '').includes(title),
+    );
+    if (found === undefined) throw new Error(`카드를 찾지 못했다: ${title}`);
+
+    return found as HTMLElement;
+  }
+
+  async function drag(container: HTMLElement, from: string, to: string) {
+    fireEvent.dragStart(card(container, from));
+    fireEvent.dragOver(card(container, to));
+    await act(async () => {
+      fireEvent.drop(card(container, to));
+    });
+  }
+
+  beforeEach(() => {
+    vi.mocked(reorderBookmarks).mockClear();
+    vi.mocked(reorderBookmarks).mockResolvedValue({ ok: true });
+  });
+
+  it('비관리자 카드에는 드래그 속성이 실리지 않는다', () => {
+    const { container } = renderList();
+
+    expect(card(container, '직속')).not.toHaveAttribute('draggable');
+  });
+
+  it('관리자 카드는 끌 수 있다', () => {
+    const { container } = renderList({ isAdmin: true });
+
+    expect(card(container, '직속')).toHaveAttribute('draggable', 'true');
+  });
+
+  it('화면에 걸린 목록 전부를 넘긴다 — 보이는 일부가 아니다', async () => {
+    const { container } = renderList({ isAdmin: true, subTabs: SUB_TABS });
+
+    await drag(container, '영상A', '직속');
+
+    expect(reorderBookmarks).toHaveBeenCalledWith(['영상A', '직속', '대화A', '대화B']);
+  });
+
+  it('하위 탭으로 좁힌 채 끌어도 그 하위 안에서의 차례만 바뀐다', async () => {
+    // 응답을 매달아 둬야 낙관적 순서를 볼 수 있다 — 액션이 끝나면 React 가 낙관값을 걷고,
+    // 진짜 서버라면 그 자리에 revalidate 된 새 순서가 온다(test/pending.ts).
+    const pending = pendingResult();
+    vi.mocked(reorderBookmarks).mockReturnValue(pending.promise);
+
+    const { container } = renderList({ isAdmin: true, subTabs: SUB_TABS });
+    fireEvent.click(chip('대화·검색 2'));
+
+    await drag(container, '대화B', '대화A');
+
+    // 보이지 않는 '직속'·'영상A' 는 서로에 대해서도, 이 둘에 대해서도 자리가 그대로다.
+    expect(reorderBookmarks).toHaveBeenCalledWith(['직속', '대화B', '대화A', '영상A']);
+    // 걸러진 화면에도 새 차례가 곧바로 보인다.
+    expect(shownTitles(container)).toEqual(['대화B', '대화A']);
+
+    await pending.finish();
+  });
+
+  it("reorderStore='favorites' 면 서버로 보내지 않고 localStorage 차례를 다시 쓴다", async () => {
+    setFavs(['대화A', '직속', '영상A']);
+    const { container } = renderList({
+      isAdmin: true,
+      reorderStore: 'favorites',
+      bookmarks: [BOOKMARKS[1], BOOKMARKS[0], BOOKMARKS[3]],
+    });
+
+    await drag(container, '영상A', '대화A');
+
+    expect(reorderBookmarks).not.toHaveBeenCalled();
+    expect(storedFavs()).toEqual(['영상A', '대화A', '직속']);
+  });
+
+  it('끌기 시작이 없던 drop 은 무시한다 (바깥에서 끌어 온 것)', async () => {
+    const { container } = renderList({ isAdmin: true });
+
+    await act(async () => {
+      fireEvent.drop(card(container, '직속'));
+    });
+
+    expect(reorderBookmarks).not.toHaveBeenCalled();
   });
 });

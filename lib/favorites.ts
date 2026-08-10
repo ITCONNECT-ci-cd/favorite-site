@@ -29,6 +29,17 @@ export type Favorites = {
    */
   remove: (id: string) => void;
   isFaved: (id: string) => boolean;
+  /**
+   * 담긴 차례를 통째로 다시 쓴다 — 관리자가 홈의 즐겨찾기 섹션에서 카드를 끌어 놓을 때 쓴다(J5).
+   *
+   * 즐겨찾기의 순서는 **서버가 아니라 이 브라우저**가 든다(`pickFavorites` 가 `favs` 의 저장
+   * 순서를 그대로 따른다). 그래서 다른 목록처럼 `reorderBookmarks` 로 보내지 않고 여기서 끝난다.
+   *
+   * 목록에 없는 id 는 **뒤에 그대로 남긴다.** 지워진 링크의 id 가 localStorage 에 남아 있을 수
+   * 있고(`pickFavorites` 주석), 그것들은 화면에 보이지 않아 끌 수도 없다 — 새 차례에 없다는
+   * 이유로 지우면 드래그 한 번이 조용히 청소까지 해 버린다.
+   */
+  reorder: (orderedIds: readonly string[]) => void;
 };
 
 /**
@@ -181,7 +192,31 @@ export function useFavorites(): Favorites {
 
   const isFaved = useCallback((id: string) => favs.has(id), [favs]);
 
-  return { favs, toggle, remove, isFaved };
+  const reorder = useCallback((orderedIds: readonly string[]) => {
+    // 판정도 쓰기도 **스토어의 지금 값**에서 출발한다(`toggle`·`remove` 와 같은 이유).
+    const current = getSnapshot();
+
+    // 지금 담겨 있는 것만 새 차례로 세운다 — 화면이 보낸 목록에 낯선 id 가 섞여 와도 담기지 않는다.
+    const next = new Set(orderedIds.filter((id) => current.has(id)));
+    // 새 차례에 없던 것들은 뒤에 그대로 붙인다(위 JSDoc — 보이지 않는 id 를 조용히 지우지 않는다).
+    for (const id of current) next.add(id);
+
+    // 같은 차례면 아무것도 쓰지 않는다 — 다른 탭까지 헛되이 깨우지 않기 위해서다(`remove` 와 같은 판단).
+    if (sameOrder(current, next)) return;
+
+    commit(next);
+  }, []);
+
+  return { favs, toggle, remove, isFaved, reorder };
+}
+
+/** 두 집합이 **같은 값을 같은 차례로** 담고 있는가. Set 은 삽입 순서를 지키므로 순서 비교가 된다. */
+function sameOrder(left: ReadonlySet<string>, right: ReadonlySet<string>): boolean {
+  if (left.size !== right.size) return false;
+
+  const rightValues = [...right];
+
+  return [...left].every((value, index) => value === rightValues[index]);
 }
 
 /**

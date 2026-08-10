@@ -9,6 +9,7 @@ import { InlineEdit } from '@/components/card/InlineEdit';
 import { QuickAddCard } from '@/components/card/QuickAddCard';
 import type { QuickAddCategory } from '@/components/card/quick-add-options';
 import { useCardHandlers } from '@/components/useCardHandlers';
+import { useCardReorder } from '@/components/useCardReorder';
 import type { BookmarkWithCount } from '@/lib/types';
 
 /**
@@ -74,6 +75,15 @@ export type ListViewProps = {
    * 관리자 전용 마크업이 실린다.
    */
   quickAdd?: QuickAdd;
+  /**
+   * 드래그로 바꾼 순서를 **어디에 저장하는가** (J5).
+   *
+   * - `'server'`(기본) — `sort_order` 를 서버에 쓴다. 분류 화면·`/daily` 가 이것이다.
+   * - `'favorites'` — 이 브라우저의 localStorage 담긴 차례를 다시 쓴다. `/favorites` 전용이다.
+   *   그 화면의 순서는 애초에 서버가 모르므로(`pickFavorites`) 서버로 보내면 아무 일도
+   *   일어나지 않고, 대신 엉뚱한 분류들의 `sort_order` 만 흔든다.
+   */
+  reorderStore?: 'server' | 'favorites';
 };
 
 /** 칩 — 12.5px, 패딩 6px 12px, 라운드 7px (DESIGN_SPEC 1장 "칩 6~7px" · 4장). */
@@ -127,10 +137,22 @@ export function ListView({
   emptyMessage,
   isAdmin,
   quickAdd,
+  reorderStore = 'server',
 }: ListViewProps) {
   // 핀 토글(D6)·카드 열기(F3)·한 번에 열기(G4)는 홈과 글자 하나까지 같은 배선이라 훅 하나가
   // 들고 있다. `useFavorites` 도 그 안에서 뷰당 한 번만 불린다(lib/favorites.ts 사용 규칙).
-  const { favs, handleToggleFav, handleOpen, openMany } = useCardHandlers(bookmarks);
+  const { favs, handleToggleFav, handleOpen, openMany, reorderFavs } = useCardHandlers(bookmarks);
+
+  /**
+   * 관리자의 드래그 정렬 (J5). 밑값은 **화면에 걸린 목록 전부**(`bookmarks`)이지 하위 탭으로
+   * 좁힌 결과가 아니다 — 낙관적 옮김은 전체 배열 위에서 일어나고, 걸러 내기는 그 뒤에 한다
+   * (아래 `shown`). 그래야 하위 탭을 고른 채 끌어도 같은 하위 안에서의 차례만 정확히 바뀐다.
+   */
+  const reorder = useCardReorder(
+    bookmarks,
+    isAdmin,
+    reorderStore === 'favorites' ? reorderFavs : undefined,
+  );
 
   const tabs = subTabs ?? [];
   const [selected, setSelected] = useState(initialSubId);
@@ -200,10 +222,12 @@ export function ListView({
    */
   const activeId = tabs.some((tab) => tab.id === selected) ? selected : null;
   const activeTab = tabs.find((tab) => tab.id === activeId);
+  // 거르는 밑이 `bookmarks` 가 아니라 `reorder.order` 인 것은 낙관적 순서 때문이다 — 저장이
+  // 끝나기 전의 새 차례도 걸러진 화면에 그대로 보여야 한다(관리 화면 LinkTable 과 같은 처리).
   const shown =
     activeId === null
-      ? bookmarks
-      : bookmarks.filter((bookmark) => bookmark.category_id === activeId);
+      ? reorder.order
+      : reorder.order.filter((bookmark) => bookmark.category_id === activeId);
 
   // 보이는 것 중에서만 고른다 — 선택은 탭을 옮길 때 비워지지만(위 `checked` 주석), 목록 자체가
   // 갈리는 경우까지 여기서 잘라 낸다. 순서는 `shown`(sort_order) 을 따라 체크한 차례와 무관하다.
@@ -326,6 +350,8 @@ export function ListView({
                 onOpen={handleOpen}
                 // 관리자 전용 연필·휴지통 (J1).
                 isAdmin={isAdmin}
+                // 관리자 전용 드래그 정렬 (J5). 비관리자에게는 undefined 라 속성이 실리지 않는다.
+                drag={reorder.dragProps(bookmark.id)}
                 // 연필 → 이 카드의 본문·하단을 편집 폼으로 교체 (J2). 플래그와 노드를 함께 준다 —
                 // 하나만 주면 카드가 무시하도록 되어 있지만(폼 없는 빈 카드 금지) 애초에 어긋나지 않게 한다.
                 // 편집을 열면 묻고 있던 삭제는 닫는다 (프로토타입 928행 `startEdit`).

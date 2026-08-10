@@ -55,6 +55,9 @@ export function FavoritesView({ bookmarks, isAdmin }: FavoritesViewProps) {
       bookmarks={items}
       emptyMessage={EMPTY_MESSAGE}
       isAdmin={isAdmin}
+      /* 이 목록의 순서는 서버가 모른다 — 담긴 차례(localStorage)가 곧 순서다(pickFavorites).
+         서버로 보내면 아무 일도 일어나지 않고 엉뚱한 분류의 sort_order 만 흔든다. */
+      reorderStore="favorites"
     />
   );
 }

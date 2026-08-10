@@ -22,6 +22,7 @@ import {
   updateBookmark,
   type ActionResult,
 } from '@/lib/mutations';
+import { moveOnto } from '@/lib/reorder';
 import { hostOf } from '@/lib/url';
 
 /**
@@ -127,25 +128,6 @@ const PIN_OFF = 'bg-card text-ghost border-border-strong';
  */
 function cssUrl(src: string): string {
   return `url("${src.replace(/["\\]/g, '\\$&')}")`;
-}
-
-/**
- * 끌어 온 행을 대상 행 **자리에** 끼워 넣은 새 목록 (프로토타입 `dropOn` 의 `link` 갈래).
- *
- * 인덱스는 **빼내기 전에** 잡는다 — 그래서 뒤에서 앞으로 끌면 대상 행 앞에, 앞에서 뒤로 끌면
- * 대상 행 뒤에 놓인다. `components/admin/CategoryPanel.tsx` 의 같은 이름 함수와 같은 계산이지만
- * 그쪽은 내보내지 않고, 이 트랙에서 `lib/` 로 올릴 수 없어 한 벌 더 적었다.
- */
-function moveOnto(links: readonly AdminLink[], sourceId: string, targetId: string): AdminLink[] {
-  const next = [...links];
-  const from = next.findIndex((item) => item.id === sourceId);
-  const to = next.findIndex((item) => item.id === targetId);
-  if (from < 0 || to < 0) return next;
-
-  const moved = next.splice(from, 1);
-  next.splice(to, 0, ...moved);
-
-  return next;
 }
 
 /**

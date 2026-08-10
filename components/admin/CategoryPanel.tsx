@@ -17,6 +17,7 @@ import {
 import { toast } from '@/components/Toast';
 import { REQUEST_FAILED } from '@/lib/constants';
 import { createCategory, reorderCategories, type ActionResult } from '@/lib/mutations';
+import { moveOnto } from '@/lib/reorder';
 
 /**
  * 관리 화면의 좌측 패널이 그리는 상위 카테고리 한 줄.
@@ -149,30 +150,6 @@ const NAME_OFF = 'text-[#3a3833]';
 /** 개수·클릭 11px — 선택 행에서는 `#c9c5be`, 아니면 `#9a9791`. */
 const META_ON = 'text-check-off';
 const META_OFF = 'text-fainter';
-
-/**
- * 끌어 온 행을 대상 행 **자리에** 끼워 넣은 새 목록 (프로토타입 `dropOn` 의 `cat` 갈래 그대로).
- *
- * 인덱스는 **빼내기 전에** 잡는다 — 그래서 뒤에서 앞으로 끌면 대상 행 앞에, 앞에서 뒤로 끌면
- * 대상 행 뒤에 놓인다. 눈으로 보는 "그 자리를 차지한다"가 이 계산이다.
- */
-function moveOnto(
-  categories: readonly AdminCategory[],
-  sourceId: string,
-  targetId: string,
-): AdminCategory[] {
-  const next = [...categories];
-  const from = next.findIndex((category) => category.id === sourceId);
-  const to = next.findIndex((category) => category.id === targetId);
-  if (from < 0 || to < 0) return next;
-
-  // 두 문장으로 나눠 둔다 — 한 줄로 겹쳐 쓰면(`splice(to, 0, ...splice(from, 1))`) 결과가 인자
-  // 평가 순서에 달려 있어, 읽는 사람이 "빼내기가 먼저인가 to 가 먼저인가"를 매번 되짚어야 한다.
-  const moved = next.splice(from, 1);
-  next.splice(to, 0, ...moved);
-
-  return next;
-}
 
 /**
  * 좌측 상위 카테고리 패널 — DESIGN_SPEC 6장 "좌 270px", 프로토타입 302–321행.

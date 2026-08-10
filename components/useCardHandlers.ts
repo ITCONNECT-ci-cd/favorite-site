@@ -15,6 +15,11 @@ export type CardHandlers = {
   handleOpen: (id: string) => void;
   /** '한 번에 열기' (G4) — 대상 목록과 탭 그룹 명칭을 받는다 */
   openMany: (items: readonly BookmarkWithCount[], groupLabel: string) => void;
+  /**
+   * 즐겨찾기의 담긴 차례를 다시 쓴다 (J5 드래그 정렬) — 이 목록만 순서를 브라우저가 든다.
+   * `useFavorites` 를 화면이 또 부르지 않게 여기서 그대로 흘려 준다.
+   */
+  reorderFavs: (orderedIds: readonly string[]) => void;
 };
 
 /**
@@ -37,7 +42,7 @@ export type CardHandlers = {
  * @param bookmarks 그 화면이 아는 링크 전부. 카드가 돌려준 id 로 제목을 찾는 데만 쓴다.
  */
 export function useCardHandlers(bookmarks: readonly BookmarkWithCount[]): CardHandlers {
-  const { favs, toggle } = useFavorites();
+  const { favs, toggle, reorder: reorderFavs } = useFavorites();
 
   /**
    * 핀 토글 — 담고/빼고 토스트로 알린다(DESIGN_SPEC 7장). 방향은 `toggle` 이 돌려준다.
@@ -144,5 +149,5 @@ export function useCardHandlers(bookmarks: readonly BookmarkWithCount[]): CardHa
     toast(bulkOpenToastText({ opened, blocked, groupLabel }));
   }, []);
 
-  return { favs, handleToggleFav, handleOpen, openMany };
+  return { favs, handleToggleFav, handleOpen, openMany, reorderFavs };
 }
