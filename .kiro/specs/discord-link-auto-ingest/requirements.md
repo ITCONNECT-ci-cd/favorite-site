@@ -77,8 +77,11 @@
    동적 SQL 금지, `PUBLIC`·`anon`·`authenticated` EXECUTE 회수 조건을 만족한다.
 10. THE 등록_함수 SHALL 전용 `NOLOGIN` 소유자 권한으로 실행하고, DB_실행_역할에는 함수 본문이
    사용하는 테이블 권한을 직접 주지 않는다.
-11. THE 함수 소유자 SHALL 참조 schema·table·sequence를 소유하거나 DB_실행_역할의 membership이
-    되어서는 안 되며, verifier는 두 역할 사이를 포함한 예상 밖 role membership을 거부한다.
+11. THE 함수 소유자 SHALL 참조 schema·table·sequence를 소유하거나 DB_실행_역할의 effective
+    membership이 되어서는 안 되며, verifier는 두 역할 사이를 포함한 예상 밖 role membership을 거부한다.
+    Supabase PostgreSQL 17이 custom role 생성 때 강제로 만드는 `supabase_admin` grantor의
+    creator ADMIN-only 행은 `inherit_option=false AND set_option=false`인 정확한 형태만 허용하며,
+    권한 상속·`SET ROLE` 경로로 간주하지 않는다. 그 밖의 ADMIN/INHERIT/SET membership은 모두 거부한다.
 12. THE 등록_함수 SHALL `lock_timeout`을 함수 설정으로 고정하고, THE DB adapter SHALL query hard
     deadline을 강제한다. role-level timeout은 운영 기본값일 뿐 탈취 방어의 강제 경계로 간주하지 않는다.
 13. WHEN 운영자가 긴급 중지를 수행하면, THE 시스템 SHALL agent 감시 중지와 DB 역할 `NOLOGIN`·기존
@@ -131,9 +134,11 @@
    raw Unicode host를 거부한다. IDN은 punycode로 전달해야 한다.
 3. THE 정규화 함수 SHALL scheme과 host를 소문자로 만들고 `http:80`, `https:443` 기본 포트를
    제거하며 그 밖의 포트는 보존한다.
-4. THE 정규화 함수 SHALL `#`와 뒤 fragment를 제거한다.
-5. THE 정규화 함수 SHALL query parameter의 **raw ASCII 이름**을 대소문자 무시로 비교해
-   `utm_*`, `gclid`, `fbclid`, `igshid`를 제거한다. percent-encoded 이름은 추적 이름으로 보지 않는다.
+4. THE 정규화 함수 SHALL 일반 `#`와 뒤 anchor fragment를 제거하되, fragment가 정확히 `#/`로
+   시작하면 SPA route identity로 보고 `#`부터 끝까지 opaque text로 보존한다.
+5. THE 정규화 함수 SHALL fragment 앞 query parameter의 **raw ASCII 이름**을 대소문자 무시로 비교해
+   `utm_*`, `gclid`, `fbclid`, `igshid`를 제거한다. percent-encoded 이름은 추적 이름으로 보지 않고,
+   보존된 `#/` fragment 안의 `?` tail에는 tracking 제거·정렬을 적용하지 않는다.
 6. THE 정규화 함수 SHALL 남은 query parameter를 raw 이름의 `C` collation 오름차순으로 정렬하고,
    같은 이름의 원래 순서와 값 표기(`a`, `a=`, `a=x`)를 보존한다.
 7. THE 정규화 함수 SHALL root path `/`를 빈 path로 만들고, 그 밖의 path 끝에 연속된 `/`가 있으면
@@ -237,6 +242,14 @@
 7. THE 목록 SHALL 검색어·하위 카테고리·출처 필터를 AND로 적용한다.
 8. IF 필터 결과가 0건이면, THEN THE 화면 SHALL 표 header를 유지하고 검색·하위·출처 필터를
    조정하라는 안내를 표시한다.
+9. WHEN 관리자가 링크 순서를 저장하면, THE 서버 SHALL `admin_reorder_bookmarks(ordered_ids uuid[])`
+   한 statement로 전체 stable 순서를 잠그고 원자적으로 저장하며 성공 시 실제로 찾은 ID 수를 반환한다.
+10. THE 정렬 함수 SHALL null·빈 배열·null 원소·중복 ID를 `22023`으로 거부하고, 요청 ID가 현재 DB에
+    하나도 없으면 `P0002`로 거부한다. lock 전에 사라진 일부 ID는 조용히 제외한다.
+11. THE 정렬 함수 SHALL 현재 `(sort_order, id)` 전체 순서에서 발견된 요청 행들이 차지하던 global
+    position만 caller 배열 순서로 교체하고, 요청 밖 행의 상대 순서와 position을 보존한다.
+12. THE 정렬 함수 SHALL 같은 transaction에서 모든 bookmark를 고유한 `0..n-1` sort_order로 다시 매겨
+    기존 tie와 JS 다중 update의 부분 성공을 제거하고, 관리자 JWT·RLS를 모두 요구한다.
 
 ## Requirement 8: 자동 링크의 안전한 파비콘 채우기
 
@@ -272,6 +285,13 @@
     최소권한 `NOLOGIN` favicon owner가 소유한다.
 13. FOR ALL 이미 `favicon_url`이 non-null인 행, 후속 pass는 그 행을 선택·요청·수정하지 않는다.
     실패 행은 공정 순서로 재시도할 수 있으므로 pass 전체의 멱등성은 요구하지 않는다.
+14. WHEN finalize 응답이 transport에서 유실되어 commit 여부가 모호하면, THE 서버 SHALL
+    authenticated 관리자 전용 `admin_get_discord_favicon_reference(bookmark_id uuid)`로 현재
+    `favicon_url`과 아직 유효한 claim token을 재조회한다. 존재하는 bookmark는 정확히 1행,
+    없는 bookmark는 0행이며 null ID는 `22023`으로 거부한다.
+15. WHEN 24시간 Storage reconciliation이 참조 집합을 읽으면, THE 서버 SHALL bookmark
+    `source`와 관계없이 모든 non-null `favicon_url`을 보존하고, active claim token은 Discord provenance에서만
+    합성한다. 수동 전환·service repair된 live Storage URL을 orphan으로 삭제해서는 안 된다.
 
 ## Requirement 9: 출시 전 운영·네트워크 게이트
 
@@ -291,8 +311,8 @@
    `sslmode=require`를 강제한다. pooler를 쓰면 DB adapter는 named prepared statement를 사용하지 않는다.
 5. THE DB 역할 비밀번호와 HMAC secret SHALL 서로 다른 값으로 발급하고 마이그레이션·Git·Discord에
    기록하지 않으며 각 실행 환경의 secret store에서 회전한다.
-6. THE rollout SHALL 0002~0004 적용 확인 → preflight 0건·복구 지점 확인 → 관리자 쓰기 일시 중지 →
-   0005 적용·검증 → 앱 배포·수동 쓰기 smoke → 관리자 쓰기 재개 → agent credential 발급 → staging
+6. THE rollout SHALL 0002~0005 적용 확인 → preflight 0건·복구 지점 확인 → 관리자 쓰기 일시 중지 →
+   0006 적용·검증 → 앱 배포·수동 쓰기 smoke → 관리자 쓰기 재개 → agent credential 발급 → staging
    메시지 canary → 감시 활성화 순서로 진행한다.
 7. THE 운영자는 활성화 전에 역할 `NOLOGIN` + 세션 종료 kill switch와 앱 이전 버전 rollback을
    실제로 연습하고 결과를 기록한다.
@@ -308,6 +328,8 @@
    문자와 끝 문장부호를 제거한다.
 3. 한 메시지에서 최대 5개를 처리하고, 정규화했을 때 같은 URL은 첫 항목만 남긴다.
 4. Discord message ID는 JS number가 아니라 원문 문자열로 전달한다.
+5. Discord text batching을 비활성화해 각 gateway turn이 정확히 한 inbound message ID에 대응하게 한다.
+   연속 메시지를 하나의 turn으로 합치는 설정에서는 자동 등록을 활성화하지 않는다.
 
 ### 메타데이터와 분류
 

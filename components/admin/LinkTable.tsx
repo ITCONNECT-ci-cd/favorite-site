@@ -51,6 +51,7 @@ export type AdminLink = {
   faviconUrl: string | null;
   clickCount: number;
   isPinned: boolean;
+  source: 'manual' | 'discord';
 };
 
 /**
@@ -92,6 +93,10 @@ const HANDLE_OFF = 'cursor-default opacity-40';
 const NAME_CELL = 'order-1 flex items-center gap-[10px] w-[250px] flex-none min-w-0';
 /** 파비콘 타일 24px — 카드(2-1장)의 34px 타일과 달리 표 전용 크기다. 이미지는 15px 로 얹는다. */
 const FAVICON = 'w-[24px] h-[24px] flex-none rounded-[6px] bg-card border border-select-hover bg-[length:15px_15px] bg-center bg-no-repeat';
+const TITLE_FIELD =
+  'min-w-0 flex-1 bg-transparent text-[13px] font-semibold text-ink outline-none focus:ring-1 focus:ring-border-strong rounded-[3px]';
+const SOURCE_BADGE =
+  'flex-none rounded-[4px] border border-border px-[5px] py-[1px] text-[9.5px] font-semibold text-muted';
 
 /**
  * 설명 칸 — `flex: 1 1 240px; min-width: 240px` (DESIGN_SPEC 6장). 이 값이 **입력이 아니라 폼**에
@@ -227,8 +232,10 @@ function Table({
    */
   const [order, moveLink] = useOptimistic(
     links,
-    (current: readonly AdminLink[], move: { sourceId: string; targetId: string }) =>
-      moveOnto(current, move.sourceId, move.targetId),
+    (
+      current: readonly AdminLink[],
+      move: { sourceId: string; targetId: string; visibleIds: readonly string[] },
+    ) => moveVisibleOnto(current, move.visibleIds, move.sourceId, move.targetId),
   );
 
   /**
@@ -298,11 +305,12 @@ function Table({
        일부만 보내면 보낸 것들이 0..k 로 앞당겨져 나머지와 뒤섞인다(`reorderBookmarks` JSDoc).
        그래서 기준은 언제나 `order`(= 이 카테고리 트리의 링크 전부)이지 화면에 보이는 일부가
        아니다 — I5 가 검색·필터를 붙여도 이 줄은 걸러지지 않은 목록을 넘겨야 한다. */
-    const orderedIds = moveOnto(order, sourceId, targetId).map((link) => link.id);
+    const visibleIds = shown.map((link) => link.id);
+    const orderedIds = moveVisibleOnto(order, visibleIds, sourceId, targetId).map((link) => link.id);
 
     reordering.current = true;
     startTransition(async () => {
-      moveLink({ sourceId, targetId });
+      moveLink({ sourceId, targetId, visibleIds });
 
       // **트랜지션 안에서 던지면 가장 가까운 오류 경계로 올라간다** — 이 화면 위의 경계는
       // `app/global-error.tsx` 하나뿐이라 순서 저장 한 번이 거부된 것으로 관리 화면 전체가
@@ -336,7 +344,7 @@ function Table({
         /* 링크는 있는데 걸러 낸 결과가 비었다 — 위 문장은 여기서 **거짓말**이고(추가하라고 하면
            같은 이름의 링크가 하나 더 생긴다), 가리켜야 할 곳도 추가 줄이 아니라 바로 위 필터 줄이다. */
         <p className="px-[16px] py-[14px] text-[12px] text-fainter">
-          조건에 맞는 링크가 없습니다. 검색어나 하위 필터를 지워 보세요.
+          조건에 맞는 링크가 없습니다. 검색어·하위·출처 필터를 조정해 보세요.
         </p>
       ) : (
         /* 목록으로 낸다 — 스크린 리더가 몇 개인지, 지금 몇 번째인지 읽어 준다. 표(`role="table"`)로
@@ -364,6 +372,24 @@ function Table({
   );
 }
 
+/** 필터로 숨은 행은 원래 slot에 둔 채 보이는 행끼리만 자리를 바꾼다. */
+export function moveVisibleOnto<T extends { id: string }>(
+  all: readonly T[],
+  visibleIds: readonly string[],
+  sourceId: string,
+  targetId: string,
+): T[] {
+  const visible = new Set(visibleIds);
+  const orderedVisible = moveOnto(
+    all.filter((item) => visible.has(item.id)),
+    sourceId,
+    targetId,
+  );
+  let cursor = 0;
+
+  return all.map((item) => (visible.has(item.id) ? orderedVisible[cursor++] : item));
+}
+
 function Row({
   link,
   parent,
@@ -384,6 +410,9 @@ function Row({
   onDrop: (event: DragEvent<HTMLElement>) => void;
   onDragEnd: () => void;
 }) {
+  const [titleDraft, setTitleDraft] = useState(link.title);
+  const [titleSaved, setTitleSaved] = useState(link.title);
+  const [savingTitle, setSavingTitle] = useState(false);
   /**
    * 고치는 중인 설명. **읽는 시점은 마운트 한 번뿐이다** — 표가 열려 있는 동안 prop 이 새 값으로
    * 바뀌어도(다른 창의 수정이 revalidate 로 내려오는 경우) 여기서 적던 글자를 덮어쓰지 않는다
@@ -410,6 +439,7 @@ function Row({
    * 렌더의 클로저를 보므로 상태 가드는 아직 false 다(I1·J2·J3 와 같은 장치).
    */
   const savingDescRef = useRef(false);
+  const savingTitleRef = useRef(false);
   const movingRef = useRef(false);
   const pinningRef = useRef(false);
 
@@ -444,6 +474,34 @@ function Row({
    * 눈에는 이어져 보이고, 거절당했으면 원래 하위로 돌아간다(좌측 패널의 낙관 순서와 같은 성질).
    */
   const [shownSub, showSub] = useOptimistic(subValue, (_current: string, next: string) => next);
+
+  async function saveTitle(): Promise<void> {
+    if (savingTitleRef.current) return;
+
+    const clean = titleDraft.trim();
+    if (clean === titleSaved.trim()) return;
+
+    savingTitleRef.current = true;
+    setSavingTitle(true);
+
+    const result = await run(() => updateBookmark(link.id, { title: clean }), '제목 저장');
+
+    savingTitleRef.current = false;
+    setSavingTitle(false);
+
+    if (!result.ok) {
+      toast(result.error);
+      return;
+    }
+
+    setTitleSaved(clean);
+    toast(`${clean} 제목 저장됨`);
+  }
+
+  function handleTitleSubmit(event: FormEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    void saveTitle();
+  }
 
   async function saveDescription(): Promise<void> {
     if (savingDescRef.current) return;
@@ -554,11 +612,25 @@ function Row({
           className={FAVICON}
           style={icon === null ? undefined : { backgroundImage: cssUrl(icon) }}
         />
-        <span className="min-w-0">
-          <span className="block text-[13px] font-semibold text-ink truncate">{link.title}</span>
+        <form onSubmit={handleTitleSubmit} className="min-w-0 flex-1">
+          <span className="flex min-w-0 items-center gap-[5px]">
+            <input
+              aria-label={`${link.title} 제목`}
+              aria-busy={savingTitle}
+              readOnly={savingTitle}
+              maxLength={120}
+              value={titleDraft}
+              onChange={(event) => setTitleDraft(event.target.value)}
+              onBlur={() => void saveTitle()}
+              className={TITLE_FIELD}
+            />
+            <span data-testid="source-badge" className={SOURCE_BADGE}>
+              {link.source === 'discord' ? '자동' : '직접'}
+            </span>
+          </span>
           {/* 주소 표기는 카드 하단 줄과 같은 규칙이다(`hostOf` — 맨 앞 `www.` 만 뗀다). */}
           <span className="block text-[10.5px] text-muted truncate">{hostOf(link.url)}</span>
-        </span>
+        </form>
       </span>
 
       {/* 폼으로 낸다 — 칸에서 Enter 가 곧 저장이다(HTML 암묵적 제출). keydown 으로 직접 듣지
@@ -580,6 +652,7 @@ function Row({
           aria-label={`${link.title} 한 줄 설명`}
           aria-busy={savingDesc}
           readOnly={savingDesc}
+          maxLength={200}
           placeholder="설명을 직접 적으세요"
           value={draft}
           onChange={(event) => setDraft(event.target.value)}

@@ -7,11 +7,11 @@
  * 소비자(`components/admin/LinkTable.tsx`)가 부르는 바로 그 함수이고, 그 표에 값이 닿는지는
  * `LinkTable.test.tsx` 가 따로 본다.
  *
- * 서버 왕복이 없다 — 검색·칩·정렬은 이미 내려온 목록을 다시 늘어놓을 뿐이라 액션을 부르지
- * 않는다. 그래서 이 파일에는 `lib/mutations` 대역도, 토스트도, 빗장도 없다.
+ * 검색·칩·정렬 자체는 이미 내려온 목록만 다시 늘어놓는다. 같은 줄의 자동 favicon 유지보수 버튼은
+ * 별도 server action이라 대역으로 한 번 호출·중복 제출 배선을 확인한다.
  */
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   SelectedCategoryProvider,
@@ -21,6 +21,12 @@ import {
 import { FilterRow, LinkFilterProvider, useLinkFilter, visibleLinks } from '@/components/admin/FilterRow';
 import type { AdminLink, LinkRowMap } from '@/components/admin/LinkTable';
 import type { SubCategoryMap } from '@/components/admin/SubCategoryRow';
+import { DISCORD_FAVICON_PROVIDER_APPROVAL_REQUIRED } from '@/lib/constants';
+import { fillDiscordFavicons } from '@/lib/discord-favicon-fill';
+import { reconcileDiscordFaviconOrphans } from '@/lib/discord-favicon-reconcile';
+
+vi.mock('@/lib/discord-favicon-fill', () => ({ fillDiscordFavicons: vi.fn() }));
+vi.mock('@/lib/discord-favicon-reconcile', () => ({ reconcileDiscordFaviconOrphans: vi.fn() }));
 
 const CATEGORIES: AdminCategory[] = [
   { id: 'cat-ai', name: 'AI 도구 모음', linkCount: 5, clickTotal: 71 },
@@ -51,6 +57,7 @@ function link(overrides: Partial<AdminLink> & Pick<AdminLink, 'id' | 'title'>): 
     faviconUrl: null,
     clickCount: 0,
     isPinned: false,
+    source: 'manual',
     ...overrides,
   };
 }
@@ -68,10 +75,23 @@ const LINKS: LinkRowMap = {
       description: '검색형 AI',
       clickCount: 42,
     }),
-    link({ id: 'bm-2', title: 'ChatGPT', url: 'https://chat.openai.com/c/1', categoryId: 'sub-chat', clickCount: 7 }),
+    link({
+      id: 'bm-2',
+      title: 'ChatGPT',
+      url: 'https://chat.openai.com/c/1',
+      categoryId: 'sub-chat',
+      clickCount: 7,
+      source: 'discord',
+    }),
     link({ id: 'bm-3', title: 'Claude', url: 'https://claude.ai', description: '글쓰기', clickCount: 3 }),
     link({ id: 'bm-4', title: '미드저니', url: 'https://midjourney.com', categoryId: 'sub-img', clickCount: 19 }),
-    link({ id: 'bm-5', title: 'Gemini', url: 'https://gemini.google.com', categoryId: 'sub-chat' }),
+    link({
+      id: 'bm-5',
+      title: 'Gemini',
+      url: 'https://gemini.google.com',
+      categoryId: 'sub-chat',
+      source: 'discord',
+    }),
   ],
   'cat-mkt': [link({ id: 'bm-9', title: 'GA4', categoryId: 'cat-mkt' })],
 };
@@ -112,20 +132,32 @@ function SelectOther() {
 }
 
 /** 같은 나무를 다시 그릴 수 있게 따로 뺀다 — 위에서 내려온 목록만 바뀌는 상황을 `rerender` 로 만든다. */
-function tree(links: LinkRowMap, subs: SubCategoryMap) {
+function tree(
+  links: LinkRowMap,
+  subs: SubCategoryMap,
+  faviconProviderApproved: boolean = true,
+) {
   return (
     <SelectedCategoryProvider categories={CATEGORIES}>
       <LinkFilterProvider>
         <SelectOther />
-        <FilterRow linksByCategory={links} subsByCategory={subs} />
+        <FilterRow
+          linksByCategory={links}
+          subsByCategory={subs}
+          faviconProviderApproved={faviconProviderApproved}
+        />
         <Shown links={links} subs={subs} />
       </LinkFilterProvider>
     </SelectedCategoryProvider>
   );
 }
 
-function renderRow(links: LinkRowMap = LINKS, subs: SubCategoryMap = SUBS) {
-  return render(tree(links, subs));
+function renderRow(
+  links: LinkRowMap = LINKS,
+  subs: SubCategoryMap = SUBS,
+  faviconProviderApproved: boolean = true,
+) {
+  return render(tree(links, subs, faviconProviderApproved));
 }
 
 const filterRow = () => screen.getByTestId('filter-row');
@@ -134,6 +166,24 @@ const chipGroup = () => screen.getByRole('group', { name: '하위 카테고리 �
 const chips = () => within(chipGroup()).getAllByRole('button');
 const chip = (name: string) => screen.getByRole('button', { name });
 const sortSelect = () => screen.getByRole('combobox', { name: '정렬' });
+const sourceGroup = () => screen.getByRole('group', { name: '등록 출처 필터' });
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(fillDiscordFavicons).mockResolvedValue({
+    ok: true,
+    filled: 2,
+    failed: 1,
+    remaining: 3,
+  });
+  vi.mocked(reconcileDiscordFaviconOrphans).mockResolvedValue({
+    ok: true,
+    scanned: 4,
+    kept: 2,
+    invalid: 1,
+    deleted: 1,
+  });
+});
 
 /** 지금 보이는 목록 — 거르기·정렬 단언은 전부 이것을 본다. 하나도 안 남는 경우도 봐야 해서 query 다. */
 function shownTitles(): Array<string | null> {
@@ -250,6 +300,84 @@ describe('FilterRow — 줄의 모습 (프로토타입 367–381행)', () => {
       '이름순',
     ]);
     expect(sortSelect()).toHaveValue('order');
+  });
+
+  it('출처 필터는 전체가 기본이고 자동만으로 좁힐 수 있다', () => {
+    renderRow();
+
+    const sourceButtons = within(sourceGroup()).getAllByRole('button');
+    expect(sourceButtons.map((button) => button.textContent)).toEqual(['전체', '자동만']);
+    expect(sourceButtons[0]).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.click(within(sourceGroup()).getByRole('button', { name: '자동만' }));
+
+    expect(shownTitles()).toEqual(['ChatGPT', 'Gemini']);
+  });
+
+  it('자동 파비콘 버튼은 server action을 한 번 호출한다', async () => {
+    renderRow();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '자동 파비콘 채우기' }));
+    });
+
+    expect(fillDiscordFavicons).toHaveBeenCalledOnce();
+  });
+
+  it('privacy 승인 전에는 provider 버튼과 호출을 막되 reconciliation은 계속 사용할 수 있다', async () => {
+    renderRow(LINKS, SUBS, false);
+
+    const fillButton = screen.getByRole('button', { name: '자동 파비콘 채우기' });
+    expect(fillButton).toBeDisabled();
+    expect(fillButton).toHaveAttribute('title', DISCORD_FAVICON_PROVIDER_APPROVAL_REQUIRED);
+    expect(screen.getByRole('note')).toHaveTextContent(
+      DISCORD_FAVICON_PROVIDER_APPROVAL_REQUIRED,
+    );
+    expect(screen.getByRole('button', { name: '고아 객체 정리' })).toBeEnabled();
+
+    fireEvent.click(fillButton);
+    expect(fillDiscordFavicons).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '고아 객체 정리' }));
+    });
+    expect(reconcileDiscordFaviconOrphans).toHaveBeenCalledOnce();
+  });
+
+  it('고아 객체 정리 버튼은 24시간 reconciliation server action을 한 번 호출한다', async () => {
+    renderRow();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '고아 객체 정리' }));
+    });
+
+    expect(reconcileDiscordFaviconOrphans).toHaveBeenCalledOnce();
+  });
+
+  it('고아 객체 정리 중 연속 클릭은 한 작업으로 접는다', async () => {
+    let finish!: (value: {
+      ok: true;
+      scanned: number;
+      kept: number;
+      invalid: number;
+      deleted: number;
+    }) => void;
+    vi.mocked(reconcileDiscordFaviconOrphans).mockImplementation(
+      () => new Promise((resolve) => (finish = resolve)),
+    );
+    renderRow();
+
+    act(() => {
+      const button = screen.getByRole('button', { name: '고아 객체 정리' });
+      fireEvent.click(button);
+      fireEvent.click(button);
+    });
+
+    expect(reconcileDiscordFaviconOrphans).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      finish({ ok: true, scanned: 0, kept: 0, invalid: 0, deleted: 0 });
+    });
   });
 
   it('상위 카테고리가 하나도 없으면 줄 자체가 없다', () => {
@@ -609,17 +737,22 @@ describe('FilterRow — 문맥', () => {
    * 못해 이유가 화면 밖에 있는 빈 표를 만들지만, 정렬은 무엇도 감추지 않는 보기 취향이라 카테고리를
    * 넘어 그대로 간다(프로토타입 1101행도 하위 칩만 되돌린다).
    */
-  it('다른 카테고리를 고르면 검색·칩은 처음으로 돌아가고 정렬은 따라간다', () => {
+  it('다른 카테고리를 고르면 검색·칩·출처는 처음으로 돌아가고 정렬은 따라간다', () => {
     renderRow();
 
     type('글쓰기');
     fireEvent.click(chip('대화형 2'));
+    fireEvent.click(within(sourceGroup()).getByRole('button', { name: '자동만' }));
     sortBy('clicks');
 
     fireEvent.click(screen.getByRole('button', { name: '마케팅 고르기' }));
 
     expect(search()).toHaveValue('');
     expect(chip('전체 1')).toHaveAttribute('aria-pressed', 'true');
+    expect(within(sourceGroup()).getByRole('button', { name: '전체' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
     expect(sortSelect()).toHaveValue('clicks');
     expect(shownTitles()).toEqual(['GA4']);
   });

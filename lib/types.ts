@@ -4,7 +4,7 @@ export type Category = {
 export type Bookmark = {
   id: string; category_id: string | null; title: string; url: string;
   description: string | null; tags: string[]; favicon_url: string | null;
-  is_pinned: boolean; sort_order: number; created_at: string;
+  is_pinned: boolean; source: 'manual' | 'discord'; sort_order: number; created_at: string;
 };
 export type BookmarkWithCount = Bookmark & { click_count: number };
 

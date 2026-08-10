@@ -123,8 +123,11 @@ Next.js 배포 환경이 IPv6를 쓸 수 있으면 direct connection을 우선�
 | `discord_ingest_runtime` | `LOGIN`, `NOBYPASSRLS`, connection limit 2 | category 4개 column SELECT, `ingest_bookmark` EXECUTE |
 
 두 owner는 각 함수군만 소유하며 참조하는 schema·table·sequence는 소유하지 않고 서로의 ingest/favicon
-권한을 합치지 않는다. 역할 membership도 누구에게도 주지 않는다. verifier는 runtime→두 owner,
-owner 상호 간을 포함한 모든 예상 밖 `pg_has_role(..., 'MEMBER')`가 false인지 확인한다. 따라서
+권한을 합치지 않는다. 역할 사이의 effective membership도 주지 않는다. Supabase PostgreSQL 17은
+`CREATEROLE`로 custom role을 만들 때 `supabase_admin` grantor가 creator(`postgres`)에 ADMIN-only
+membership 행을 강제로 만들며 hosted migration 역할은 이를 회수할 수 없다. verifier는 이 행이 정확히
+`admin_option=true`, `inherit_option=false`, `set_option=false`인 경우만 platform 예외로 허용한다.
+runtime→두 owner, owner 상호 간, 또는 INHERIT/SET이 가능한 모든 membership은 거부한다. 따라서
 `NOBYPASSRLS`와 함께 table-owner 우회를 피한다.
 ingest owner에는 `categories` SELECT, `bookmarks` SELECT/INSERT와 receipt/rate/provenance 작업만,
 favicon owner에는 bookmark SELECT/`favicon_url` column UPDATE와 provenance 작업만 명시적으로 준다.
@@ -150,7 +153,10 @@ role-level 값은 정상 client의 운영 기본값이며 자격 증명 탈취 �
 
 ### 5.3 network와 rotation
 
-- DSN은 `sslmode=require`를 포함한다.
+- DSN은 `sslmode=require`를 포함한다. node-postgres 8.x + Supavisor에서 dashboard CA를 별도 주입하지
+  않는 Vercel 배포는 `uselibpqcompat=true&gssencmode=disable`을 함께 고정하고 exact DSN으로 production
+  probe한다. `verify-full`로 전환할 때는 Supabase Dashboard의 Server root certificate를 secret으로
+  주입한 뒤 certificate/hostname 검증을 배포 canary에서 먼저 통과시킨다.
 - Supabase Network Restrictions를 쓸 수 있으면 Next.js 배포의 고정 egress CIDR만 허용한다.
   [공식 문서](https://supabase.com/docs/guides/platform/network-restrictions)
 - DB 회전은 새 password 설정 → 새 DSN으로 app 재배포·smoke → 기존 session 종료 순서다. HMAC
@@ -190,7 +196,12 @@ role-level 값은 정상 client의 운영 기본값이며 자격 증명 탈취 �
 
 ## 6. 데이터 모델
 
-신규 마이그레이션 이름은 `supabase/migrations/0005_discord_link_auto_ingest.sql`로 고정한다.
+기존 `0005_lift_pin_limit.sql` 다음 신규 마이그레이션 이름은
+`supabase/migrations/0006_discord_link_auto_ingest.sql`로 고정한다.
+운영에 0006을 적용한 뒤 확인된 ambiguous favicon finalize read race는
+`0007_fence_favicon_reference_read.sql`에서 provenance `FOR UPDATE` fence로 보정한다. 상태 조회가 1초
+안에 in-flight finalize를 기다리지 못하면 transport 오류로 반환해 객체를 삭제하지 않고 reconciliation에
+맡긴다.
 
 ### 6.1 `public.bookmarks` 변경
 
@@ -286,14 +297,15 @@ index rebuild를 한 migration에서 수행해 서로 다른 정규화 버전의
 - authority: userinfo 없음, ASCII DNS/IPv4/localhost, optional port 1~65535
 - bracket IPv6와 raw Unicode host는 거부; agent는 IDN을 punycode로 전달
 - ASCII whitespace/control, `\\`, 잘못된 `%` escape 거부
-- path/query/fragment는 byte-oriented 원문을 보존하고 query만 규칙에 따라 재조립
+- path/query/fragment는 byte-oriented 원문을 보존하고 query만 규칙에 따라 재조립한다. 일반 anchor
+  fragment는 제거하지만 `#/`로 시작하는 SPA route는 `#`부터 끝까지 opaque하게 보존한다.
 - query 이름 판정은 percent decode하지 않은 raw ASCII 이름 기준
 
 ### 7.2 정규화 순서
 
 1. scheme·host lowercase
 2. default port 제거
-3. fragment 제거
+3. 일반 fragment 제거, 정확히 `#/`로 시작하는 SPA route는 opaque 보존
 4. tracking query 제거
 5. `COLLATE "C"`로 query name stable sort
 6. root/trailing slash run 제거
@@ -306,6 +318,8 @@ index rebuild를 한 migration에서 수행해 서로 다른 정규화 버전의
 | `http://EXAMPLE.com:80/a/?utm_source=x&b=2&a=1#top` | `http://example.com/a?a=1&b=2` |
 | `https://e.test/p///` | `https://e.test/p` |
 | `https://e.test/?a=2&a=1&b` | `https://e.test?a=2&a=1&b` |
+| `https://e.test/path/#section` | `https://e.test/path` |
+| `https://analytics.google.com/analytics/web/#/p123/reports?a=1` | `https://analytics.google.com/analytics/web#/p123/reports?a=1` |
 | `https://user:pw@e.test/` | invalid |
 | `https://[::1]/` | invalid |
 | `https://예시.한국/` | invalid; punycode 필요 |
@@ -414,6 +428,10 @@ timeout/cancellation/연결 단절로 transaction이 롤백되면 rate event도 
 - URL 문법/check constraint 위반도 generic DB 오류가 아닌 입력 수정 문구로 매핑한다.
 - patch whitelist에는 `source`를 추가하지 않는다. provenance는 private라 mutation client가 접근하지 않는다.
 - title/description 저장 실패 시 client draft가 유지되도록 description과 같은 baseline/ref 패턴을 쓴다.
+- 링크 순서는 JS slot-swap 여러 문장으로 쓰지 않는다. 동점이 있으면 동일 숫자에 여러 행을 다시 쓰게
+  되어 caller 순서를 표현할 수 없고 부분 성공도 남는다. `admin_reorder_bookmarks(ordered_ids uuid[])`가
+  bookmarks를 잠근 뒤 현재 `(sort_order,id)` 전체 position을 기준으로 요청 행만 자리 교환하고, 전체를
+  `0..n-1`로 한 번에 재번호화한다. 함수는 SECURITY INVOKER라 기존 관리자 RLS가 최종 쓰기 경계다.
 
 ### 9.3 LinkTable과 FilterRow
 
@@ -459,6 +477,12 @@ claim·finalize·failure·release 함수는 각각 `SECURITY DEFINER`, 고정 �
 참조, 자체 관리자 email 검사, 입력 검증, `PUBLIC`·`anon` EXECUTE 회수를 갖고 ingest owner와 분리된
 `discord_favicon_owner`가 소유한다. service-role client는 이 RPC나 bookmark table에 접근하지 않는다.
 
+finalize 응답이 transport에서 유실되면 action은 동일한 관리자 gate의
+`admin_get_discord_favicon_reference(bookmark_id uuid)`로 모호성을 해소한다. 존재하는 bookmark에
+대해 `(favicon_url, active_claim_token)` 한 행을 반환하고, 없으면 0행을 반환한다. token은
+provenance lease가 조회 시각에 아직 유효할 때만 노출한다. 이 RPC도 `SECURITY DEFINER`, 빈
+search path, `discord_favicon_owner` 소유, authenticated 관리자 전용이며 null ID는 `22023`이다.
+
 ### 10.2 safe collector
 
 자동 링크는 Discord 입력이므로 관리자 버튼이 있다고 신뢰 입력으로 승격되지 않는다. safe collector는
@@ -485,6 +509,11 @@ bookmark origin으로 직접 fetch하지 않는다.
 Storage upload 성공 뒤 조건부 finalize가 false거나 실패하면 자기 token 객체를 best-effort 삭제한다.
 삭제 실패는 orphan log로 남기고 item 실패로 센다. 일일 reconciliation은 24시간보다 오래되고 어떤
 bookmark도 참조하지 않으며 active claim token도 아닌 `discord/` 객체를 삭제한다.
+참조 집합은 authenticated 관리자 전용 `admin_list_discord_favicon_references()` RPC가
+`(bookmark_id, favicon_url, active_claim_token)`으로 제공한다. 모든 bookmark를 기준으로
+provenance를 left join해 source 전환·service repair 후에도 non-null Storage URL을 보존하고, active
+token은 유효한 Discord provenance lease에서만 합성한다. DB service-role 직접 SELECT/RPC는 열지
+않고, 관리자 action이 정제한 참조 집합만 Storage 전용 boundary에 넘긴다.
 
 service-role client는 일반 action/collector에 퍼뜨리지 않는다. Storage upload·삭제는 URL을 받지 않고
 검증된 bookmark UUID·claim token·bytes·MIME·AbortSignal만 받는 `server-only` 전용 boundary에 둔다.
@@ -520,27 +549,31 @@ DSN을 주지 않고 다음 두 HMAC-signed JSON operation만 제공한다.
 
 - category 목록은 메시지 처리 직전에 새로 읽는다.
 - 한 message의 URL마다 함수 한 번을 호출하되 최대 5개다.
-- message ID는 string으로 보존한다.
+- message ID는 gateway가 현재 turn에 bind한 string snowflake로 보존하며 tool 실행 직전 middleware가
+  model-supplied 값을 이 trusted 값으로 덮어쓴다.
+- Discord text batching delay는 `0`으로 고정해 서로 다른 inbound snowflake를 한 turn으로 합치지 않는다.
 - API/DB raw exception, HMAC secret, query text를 Discord에 내보내지 않는다.
 - user/site 문자열은 escape하고 `allowed_mentions=[]`로 응답한다.
 - web tool은 별도 sandbox이고 HMAC secret·서명 client process 환경을 볼 수 없어야 한다.
 - 격리 증거가 없으면 network fetch를 끄고 host/빈 설명 fallback을 쓴다.
 
-agent 구현은 이 repo CI에 없으므로 staging channel에서 고정 fixture URL과 9개 결과 mapping을 smoke하고
-실행 일시·agent version·prompt hash를 운영 기록에 남긴다.
+profile-local plugin과 MCP client는 repo test에 포함한다. staging channel에서는 고정 fixture URL과 9개
+결과 mapping, 연속 두 메시지의 서로 다른 receipt message ID를 smoke하고 실행 일시·agent version·prompt
+hash를 운영 기록에 남긴다.
 
 ## 12. 검증 전략
 
 ### 12.1 DB integration
 
-`supabase/tests/0005_discord_ingest_test.sql` 또는 동등한 real-Postgres test와
+`supabase/tests/0006_discord_ingest_test.sql` 또는 동등한 real-Postgres test와
 `scripts/verify-schema.ts` 확장을 함께 둔다. mock SQL text test만으로 권한·transaction·경합을
 통과 처리하지 않는다.
 
 필수 검증:
 
 - role attribute와 effective privilege whitelist, 모든 direct DML/read/RPC negative case
-- runtime→owner를 포함한 role membership 부재와 normalizer writer별 EXECUTE grant matrix
+- platform-mandated ADMIN-only creator 행 외 runtime→owner를 포함한 effective role membership 부재와
+  normalizer writer별 EXECUTE grant matrix
 - normalizer 고정 corpus와 seeded idempotence property
 - normalizer version 변경 시 generated column rewrite/index rebuild migration guard
 - 기존 manual insert/update도 normalized unique에 걸리는지
@@ -603,10 +636,10 @@ terminal status만 90일 저장하고, provenance message ID는 bookmark가 존�
 
 ### rollout
 
-1. live DB backup을 만들고, 보강된 verifier로 `0002`~`0004`의 catalog·ACL·대표 계약을 확인한다.
+1. live DB backup을 만들고, 보강된 verifier로 `0002`~`0005`의 catalog·ACL·대표 계약을 확인한다.
 2. 별도 preflight report가 0건이 되도록 승인된 remediation SQL로 기존 URL·문자열을 수정한다.
 3. maintenance window를 열고 관리자 생성·수정 작업을 잠시 중지한다.
-4. `0005`를 적용하고 DB integration/ACL/cron 검증을 전부 통과시킨다.
+4. `0006`을 적용하고 DB integration/ACL/cron 검증을 전부 통과시킨다.
 5. DB password·server-side DSN·server-side HMAC secret을 설정하되 아직 agent에는 secret을 주지 않은 채
    app code를 즉시 배포한다. manual 생성·수정·URL 중복 문구를 smoke한 뒤 관리자 쓰기를 재개한다.
    이전 app은 조회는 가능하지만 새 constraint 오류를 잘못 표시하므로 migration과 배포 사이를 길게

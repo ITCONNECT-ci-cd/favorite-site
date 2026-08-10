@@ -6,7 +6,7 @@ import { ADMIN_EMAIL } from '@/lib/admin-config';
 import { createServiceRoleClient } from '@/scripts/lib/service-client';
 
 /**
- * 실제 Supabase 프로젝트에 대고 자동 검증한다 — B2 완료 기준 6종 + 배포 요건 4종(총 10종).
+ * 실제 Supabase 프로젝트에 대고 자동 검증한다 — B2 완료 기준 6종 + 배포 요건 5종(총 11종).
  *
  * 실행: `npx tsx scripts/verify-schema.ts` (PowerShell, 저장소 루트에서)
  * 선행: `supabase/migrations/0001_init.sql` 적용 + `.env.local` 에 URL·anon·service role 키.
@@ -26,10 +26,12 @@ import { createServiceRoleClient } from '@/scripts/lib/service-client';
  *     `using (true)` 인 채로 남는데, ①~⑥ 은 그래도 전부 통과한다(anon·service role 만 쓰므로).
  *   ⑨ `0003_stats.sql` 을 실행했는가 — 통계 집계 함수(admin_stats_kpi 등)가 DB 에 있는가.
  *   ⑩ `0004_cleanup.sql` 을 실행했는가 — 방치 판정 함수(cleanup_abandoned)가 DB 에 있는가.
+ *   ⑪ `0006_discord_link_auto_ingest.sql` 을 실행했는가 — URL normalizer가 정확히 동작하고
+ *      anon에는 EXECUTE가 닫혀 있는가.
  *
  * ⑧⑨⑩ 은 같은 방식이다 — 각 파일이 만드는 함수 하나의 **존재**로 그 파일의 적용을 대표 확인한다
  * (같은 파일 안이라 하나가 있으면 전부 적용된 것이다). **아침 절차: 마이그레이션 0002·0003·0004·0005 를
- * SQL Editor 에서 전부 적용한 뒤 이 스크립트로 10종을 통과시킨다.** 하나라도 미적용이면 해당
+ * SQL Editor 에서 전부 적용한 뒤 이 스크립트로 11종을 통과시킨다.** 하나라도 미적용이면 해당
  * 검사가 시끄럽게 실패한다(fail-loud).
  *
  * 한 검사의 실패가 나머지를 가리지 않도록 전부 돌리고 마지막에 합산한다.
@@ -549,6 +551,45 @@ function checkCleanupApplied(service: SupabaseClient): Promise<Outcome> {
   });
 }
 
+/**
+ * ⑪ 0006 대표 계약 — service_role에만 열린 versioned normalizer의 결과와 anon EXECUTE 회수를 함께 본다.
+ *
+ * role membership, effective privilege whitelist, private schema와 pg_cron job처럼 Data API로 안전하게
+ * 읽을 수 없는 catalog 계약은 `scripts/verify-discord-ingest.ts --preflight`가 담당한다. 이 검사는 그
+ * verifier를 대체하지 않고, 일상적인 배포 확인에서 0006 자체가 통째로 빠진 상태를 즉시 잡는다.
+ */
+async function checkDiscordIngestApplied(
+  anon: SupabaseClient,
+  service: SupabaseClient,
+): Promise<Outcome> {
+  const input = 'http://EXAMPLE.com:80/a/?utm_source=x&b=2&a=1#top';
+  const expected = 'http://example.com/a?a=1&b=2';
+  const serviceResult = await service.rpc('normalize_bookmark_url_v1', { p_url: input });
+
+  if (serviceResult.error) {
+    if (isMissingFunction(serviceResult.error)) {
+      return fail(`0006 미적용 — normalize_bookmark_url_v1 가 없습니다 ${describe(serviceResult.error)}`);
+    }
+    return fail(`service normalizer 호출 실패: ${describe(serviceResult.error)}`);
+  }
+  if (serviceResult.data !== expected) {
+    return fail(`normalizer 결과 불일치: expected=${expected}, actual=${String(serviceResult.data)}`);
+  }
+
+  const anonResult = await anon.rpc('normalize_bookmark_url_v1', { p_url: input });
+  if (!anonResult.error) {
+    return fail('anon normalizer EXECUTE가 열려 있다 — 0006 최소권한 ACL이 깨졌다');
+  }
+  if (
+    anonResult.error.code !== '42501' ||
+    !/permission denied for function normalize_bookmark_url_v1/i.test(anonResult.error.message)
+  ) {
+    return fail(`anon 호출이 고정 ACL 사유가 아닌 오류로 실패했다: ${describe(anonResult.error)}`);
+  }
+
+  return pass(`normalizer exact result + anon EXECUTE 거부 ${describe(anonResult.error)} — 0006 적용됨`);
+}
+
 async function main(): Promise<void> {
   loadEnvLocal();
   const { url, anonKey } = resolveEnv();
@@ -573,10 +614,15 @@ async function main(): Promise<void> {
     { id: '⑧', label: 'rls: 쓰기 정책이 관리자 이메일로 좁혀짐 (0002 적용)', run: () => checkAdminPolicies(service) },
     { id: '⑨', label: 'rpc: 통계 집계 함수 admin_stats_kpi 존재 (0003 적용)', run: () => checkStatsApplied(service) },
     { id: '⑩', label: 'rpc: 방치 판정 함수 cleanup_abandoned 존재 (0004 적용)', run: () => checkCleanupApplied(service) },
+    {
+      id: '⑪',
+      label: 'rpc: URL normalizer 결과·anon EXECUTE 거부 (0006 적용)',
+      run: () => checkDiscordIngestApplied(anon, service),
+    },
   ];
 
-  console.log('스키마·설정 검증 — 0001 결과(①~⑥, ④는 0005 로 상한 해제), Auth 설정(⑦), 마이그레이션 0002·0003·0004 적용(⑧⑨⑩)을 확인합니다.');
-  console.log('적용 절차: SQL Editor 에서 0002·0003·0004·0005 를 전부 적용한 뒤 이 스크립트로 10종을 통과시킵니다.');
+  console.log('스키마·설정 검증 — 0001 결과(①~⑥, ④는 0005 로 상한 해제), Auth 설정(⑦), 마이그레이션 0002·0003·0004·0006 적용(⑧⑨⑩⑪)을 확인합니다.');
+  console.log('적용 절차: 0002~0006 을 적용한 뒤 이 스크립트로 11종을 통과시키고, verify-discord-ingest --preflight 로 ACL·Cron catalog를 확인합니다.');
   console.log(`대상: ${url}`);
   console.log('');
 
@@ -601,14 +647,14 @@ async function main(): Promise<void> {
     console.error(`${checks.length}종 중 ${failed}종 실패.`);
     console.error('  ①~⑥ 이 실패했다면: 0001_init.sql 이 그대로 적용됐는지 확인하세요 (단 ④ 는 0005_lift_pin_limit.sql 을 봅니다).');
     console.error('  ⑦ 이 실패했다면: 위 안내대로 대시보드에서 signup 을 끄세요 (코드로는 못 고칩니다).');
-    console.error('  ⑧⑨⑩ 이 실패했다면: 각각 0002·0003·0004 마이그레이션을 SQL Editor 에서 파일 전체 실행하세요.');
-    console.error('  ⑦~⑩ 은 저장소에서 고칠 수 없는 항목입니다 — 대시보드·SQL Editor 에서 사람이 해야 합니다.');
+    console.error('  ⑧⑨⑩⑪ 이 실패했다면: 각각 0002·0003·0004·0006 마이그레이션 적용 상태를 확인하세요.');
+    console.error('  ⑦~⑪ 은 저장소 코드만으로 고칠 수 없는 항목입니다 — Dashboard·remote migration 상태를 확인하세요.');
     console.error(`임시 행이 남았을 수 있습니다. 남았다면 title/name 이 '${MARKER}' 로 시작하는 행을 지우세요.`);
     process.exit(1);
   }
 
   console.log(
-    `${checks.length}종 전부 통과 — B2 완료 기준과 배포 전 설정 요건(signup·0002·0003·0004·0005)을 만족합니다.`,
+    `${checks.length}종 전부 통과 — B2 완료 기준과 배포 전 설정 요건(signup·0002·0003·0004·0005·0006 대표 계약)을 만족합니다. ACL·Cron 전체 계약은 verify-discord-ingest --preflight 결과를 함께 보세요.`,
   );
 }
 

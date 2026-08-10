@@ -23,13 +23,28 @@ import { requireEnv } from './env';
  * 안전하다 — 서버 컴포넌트가 못 쓴 쿠키는 이미 프록시가 써 둔 것이다.
  * 서버 액션·라우트 핸들러에서는 이야기가 다르다(아래 `setAll` 주석 참조).
  */
-export async function createServerSupabaseClient() {
+export async function createServerSupabaseClient(signal?: AbortSignal) {
   const cookieStore = await cookies();
 
   return createServerClient(
     requireEnv('NEXT_PUBLIC_SUPABASE_URL', process.env.NEXT_PUBLIC_SUPABASE_URL),
     requireEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
     {
+      ...(signal === undefined
+        ? {}
+        : {
+            global: {
+              fetch: (input: RequestInfo | URL, init?: RequestInit) => {
+                const requestSignal = init?.signal;
+                const combined =
+                  requestSignal === undefined || requestSignal === null
+                    ? signal
+                    : AbortSignal.any([signal, requestSignal]);
+
+                return fetch(input, { ...init, signal: combined });
+              },
+            },
+          }),
       cookies: {
         getAll: () => cookieStore.getAll(),
         // `SetAllCookies` 의 두 번째 인자는 auth 쿠키와 함께 응답에 실어야 하는 캐시 방지
@@ -139,8 +154,8 @@ export type AdminSession = {
  *
  * 요청 사이에는 어차피 남지 않는다 — 다음 요청은 처음부터 다시 검증한다.
  */
-export const getAdminSession = cache(async (): Promise<AdminSession | null> => {
-  const supabase = await createServerSupabaseClient();
+async function readAdminSession(signal?: AbortSignal): Promise<AdminSession | null> {
+  const supabase = await createServerSupabaseClient(signal);
 
   const { data, error } = await supabase.auth.getUser();
   if (error !== null || data.user === null) return null;
@@ -153,4 +168,11 @@ export const getAdminSession = cache(async (): Promise<AdminSession | null> => {
   if (typeof email !== 'string' || email.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) return null;
 
   return { userId: data.user.id, email };
-});
+}
+
+export const getAdminSession = cache(async (): Promise<AdminSession | null> => readAdminSession());
+
+/** Deadline이 있는 관리자 액션용 인증 관문. Auth 요청에도 동일 AbortSignal을 전달한다. */
+export async function getAdminSessionWithSignal(signal: AbortSignal): Promise<AdminSession | null> {
+  return readAdminSession(signal);
+}

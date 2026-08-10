@@ -52,6 +52,7 @@ function link(overrides: Partial<AdminLink> & Pick<AdminLink, 'id' | 'title'>): 
     faviconUrl: null,
     clickCount: 0,
     isPinned: false,
+    source: 'manual',
     ...overrides,
   };
 }
@@ -67,11 +68,18 @@ const LINKS: LinkRowMap = {
       faviconUrl: ICON_URL,
       clickCount: 42,
       isPinned: true,
+      source: 'discord',
     }),
     // 주소가 **주소로 해석되지 않는** 한 줄이다(스킴이 없다 — `hostOf` JSDoc 의 그 예). 표가 그
     // 경우에도 주소 줄을 비우지 않는지 아래에서 본다.
     link({ id: 'bm-2', title: 'ChatGPT', url: 'chat.openai.com/c/1', categoryId: 'sub-chat', clickCount: 7 }),
-    link({ id: 'bm-3', title: 'Claude', url: 'https://claude.ai', description: '글쓰기' }),
+    link({
+      id: 'bm-3',
+      title: 'Claude',
+      url: 'https://claude.ai',
+      description: '글쓰기',
+      source: 'discord',
+    }),
   ],
   'cat-mkt': [link({ id: 'bm-9', title: 'GA4', categoryId: 'cat-mkt' })],
 };
@@ -95,7 +103,7 @@ function SelectOther() {
  * 닿는가**뿐이다.
  */
 function SetFilter() {
-  const { setQuery, setSubFilter, setSort } = useLinkFilter();
+  const { setQuery, setSubFilter, setSourceFilter, setSort } = useLinkFilter();
 
   return (
     <>
@@ -113,6 +121,9 @@ function SetFilter() {
       </button>
       <button type="button" onClick={() => setSort('order')}>
         지정한 순서로 보기
+      </button>
+      <button type="button" onClick={() => setSourceFilter('discord')}>
+        자동만 보기
       </button>
     </>
   );
@@ -139,7 +150,8 @@ function setFilter(name: string): void {
 const head = () => screen.getByText('링크').parentElement as HTMLElement;
 const list = () => screen.getByRole('list', { name: '링크 목록' });
 const rows = () => within(list()).getAllByRole('listitem');
-const row = (title: string) => screen.getByText(title).closest('li') as HTMLElement;
+const titleField = (title: string) => screen.getByRole('textbox', { name: `${title} 제목` });
+const row = (title: string) => titleField(title).closest('li') as HTMLElement;
 const descField = (title: string) => screen.getByRole('textbox', { name: `${title} 한 줄 설명` });
 const subSelect = (title: string) => screen.getByRole('combobox', { name: `${title} 하위 카테고리` });
 const pinToggle = (title: string) => screen.getByRole('button', { name: `${title} 매일 고정` });
@@ -191,7 +203,7 @@ function expectOrder(titles: readonly string[]) {
 
   expect(items).toHaveLength(titles.length);
   titles.forEach((title, index) => {
-    expect(items[index]).toHaveTextContent(title);
+    expect(within(items[index]).getByRole('textbox', { name: `${title} 제목` })).toHaveValue(title);
   });
 }
 
@@ -321,9 +333,18 @@ describe('LinkTable — 행의 모습 (프로토타입 390–406행)', () => {
     expect(cell).toHaveClass('w-[250px]', 'flex-none', 'min-w-0');
     expect(within(cell).getByTestId('favicon')).toHaveClass('w-[24px]', 'h-[24px]', 'rounded-[6px]');
     expect(within(cell).getByTestId('favicon')).toHaveStyle({ backgroundImage: `url("${ICON_URL}")` });
-    expect(within(cell).getByText('Perplexity')).toHaveClass('text-[13px]', 'font-semibold', 'truncate');
+    expect(titleField('Perplexity')).toHaveClass('text-[13px]', 'font-semibold');
     // 주소는 `hostOf` 규칙 그대로다 — 카드 하단 줄과 같은 표기(`www.` 만 뗀다).
     expect(within(cell).getByText('perplexity.ai')).toHaveClass('text-[10.5px]', 'text-muted', 'truncate');
+  });
+
+  it('행마다 source badge를 정확히 하나 표시한다', () => {
+    renderTable();
+
+    expect(within(row('Perplexity')).getAllByTestId('source-badge')).toHaveLength(1);
+    expect(within(row('Perplexity')).getByTestId('source-badge')).toHaveTextContent('자동');
+    expect(within(row('ChatGPT')).getAllByTestId('source-badge')).toHaveLength(1);
+    expect(within(row('ChatGPT')).getByTestId('source-badge')).toHaveTextContent('직접');
   });
 
   it('파비콘이 없으면 배경 이미지를 걸지 않는다 (url("null") 금지)', () => {
@@ -376,6 +397,33 @@ describe('LinkTable — 행의 모습 (프로토타입 390–406행)', () => {
     expect(pinToggle('Claude')).toHaveClass('bg-card', 'text-ghost', 'border-border-strong');
     expect(pinToggle('Claude')).toHaveTextContent('☆');
     expect(pinToggle('Claude')).toHaveAttribute('aria-pressed', 'false');
+  });
+});
+
+describe('LinkTable — 제목 인라인 편집', () => {
+  it('120자 제한 입력을 떠날 때 바뀐 제목만 보낸다', async () => {
+    renderTable();
+
+    expect(titleField('Claude')).toHaveAttribute('maxlength', '120');
+    fireEvent.change(titleField('Claude'), { target: { value: 'Claude 문서' } });
+    await flush(() => {
+      fireEvent.blur(titleField('Claude'));
+    });
+
+    expect(updateBookmark).toHaveBeenCalledWith('bm-3', { title: 'Claude 문서' });
+  });
+
+  it('저장 실패 뒤에도 관리자가 적은 draft를 유지한다', async () => {
+    vi.mocked(updateBookmark).mockResolvedValue({ ok: false, error: '이름을 입력하세요.' });
+    renderTable();
+
+    fireEvent.change(titleField('Claude'), { target: { value: '고치던 제목' } });
+    await flush(() => {
+      fireEvent.blur(titleField('Claude'));
+    });
+
+    expect(titleField('Claude')).toHaveValue('고치던 제목');
+    expect(screen.getByRole('status')).toHaveTextContent('이름을 입력하세요.');
   });
 });
 
@@ -862,10 +910,18 @@ describe('LinkTable — 드래그 정렬', () => {
 
     await drag('Claude', 'Perplexity');
 
-    // 화면에서 사라져 있던 ChatGPT(bm-2)도 목록에 함께 실린다. 자리값은 그대로가 아니다 —
-    // `sort_order` 는 1 에서 2 가 된다. 지켜지는 것은 **상대 위치**다: 보이는 두 행은 사람이 놓은
-    // 대로 bm-3 → bm-1 이 되고, 숨은 행은 여전히 옮기지 않은 이웃(bm-1) 바로 뒤다.
-    expect(reorderBookmarks).toHaveBeenCalledWith(['bm-3', 'bm-1', 'bm-2']);
+    // 화면에서 사라져 있던 ChatGPT(bm-2)도 payload에는 함께 실리되 자기 slot(가운데)을 지킨다.
+    expect(reorderBookmarks).toHaveBeenCalledWith(['bm-3', 'bm-2', 'bm-1']);
+  });
+
+  it('자동만 필터에서 끌어도 숨은 manual 행의 slot을 보존한다', async () => {
+    renderTable();
+
+    setFilter('자동만 보기');
+    expectOrder(['Perplexity', 'Claude']);
+    await drag('Claude', 'Perplexity');
+
+    expect(reorderBookmarks).toHaveBeenCalledWith(['bm-3', 'bm-2', 'bm-1']);
   });
 
   it('걸러진 화면에도 새 순서가 곧바로 보인다', async () => {
@@ -937,7 +993,7 @@ describe('LinkTable — 필터·정렬을 따르는 목록', () => {
 
     expect(screen.queryByRole('list', { name: '링크 목록' })).not.toBeInTheDocument();
     expect(
-      screen.getByText('조건에 맞는 링크가 없습니다. 검색어나 하위 필터를 지워 보세요.'),
+      screen.getByText('조건에 맞는 링크가 없습니다. 검색어·하위·출처 필터를 조정해 보세요.'),
     ).toBeInTheDocument();
     expect(screen.queryByText(/아직 링크가 없습니다/)).not.toBeInTheDocument();
   });

@@ -33,6 +33,7 @@ function makeBookmark(over: Partial<Bookmark> & Pick<Bookmark, 'id'>): Bookmark 
     tags: [],
     favicon_url: null,
     is_pinned: false,
+    source: 'manual',
     sort_order: 0,
     created_at: '2024-01-01T00:00:00.000Z',
     ...over,
@@ -300,25 +301,41 @@ type QueryResult = {
  */
 function fakeSupabase(byTable: Record<string, QueryResult>) {
   const requestedTables: string[] = [];
+  const selectedColumns: Record<string, string[]> = {};
 
   const client = {
     from(table: string) {
       requestedTables.push(table);
       const result: QueryResult = byTable[table] ?? { data: [], error: null };
+      let from = 0;
+      let to = Number.MAX_SAFE_INTEGER;
       const builder = {
-        select: () => builder,
+        select: (columns: string) => {
+          (selectedColumns[table] ??= []).push(columns);
+          return builder;
+        },
         order: () => builder,
+        range: (nextFrom: number, nextTo: number) => {
+          from = nextFrom;
+          to = nextTo;
+          return builder;
+        },
         then: (
           onFulfilled: (value: QueryResult) => unknown,
           onRejected?: (reason: unknown) => unknown,
-        ) => Promise.resolve(result).then(onFulfilled, onRejected),
+        ) => {
+          const page = Array.isArray(result.data)
+            ? { ...result, data: result.data.slice(from, to + 1) }
+            : result;
+          return Promise.resolve(page).then(onFulfilled, onRejected);
+        },
       };
 
       return builder;
     },
   };
 
-  return { client, requestedTables };
+  return { client, requestedTables, selectedColumns };
 }
 
 function useFakeSupabase(byTable: Record<string, QueryResult>) {
@@ -341,6 +358,20 @@ describe('getAllData', () => {
     await getAllData();
 
     expect(fake.requestedTables).toEqual(['categories', 'bookmarks', 'bookmark_click_counts']);
+    expect(fake.selectedColumns.bookmarks[0]).toContain('source');
+  });
+
+  it('1000행 상한을 넘어도 다음 page를 읽어 1001건을 모두 돌려준다', async () => {
+    const bookmarks = Array.from({ length: 1001 }, (_, index) =>
+      makeBookmark({ id: `b-${String(index).padStart(4, '0')}` }),
+    );
+    const fake = useFakeSupabase({ bookmarks: { data: bookmarks, error: null } });
+
+    const data = await getAllData();
+
+    expect(data.bookmarks).toHaveLength(1001);
+    expect(data.bookmarks.at(-1)?.id).toBe('b-1000');
+    expect(fake.requestedTables.filter((table) => table === 'bookmarks')).toHaveLength(2);
   });
 
   it('뷰의 클릭 수를 북마크에 결합해 SiteData 를 만든다 (뷰에 없으면 0)', async () => {

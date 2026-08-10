@@ -30,13 +30,14 @@ const CATEGORY_COLUMNS = 'id, name, parent_id, sort_order';
  * `updated_at` 은 화면이 쓰지 않으므로 일부러 뺐다.
  */
 const BOOKMARK_COLUMNS =
-  'id, category_id, title, url, description, tags, favicon_url, is_pinned, sort_order, created_at';
+  'id, category_id, title, url, description, tags, favicon_url, is_pinned, source, sort_order, created_at';
 
 /** `bookmark_click_counts` 뷰에서 읽는 컬럼 — `ClickCountRow` 와 1:1 로 맞춘다. */
 const CLICK_COUNT_COLUMNS = 'bookmark_id, click_count';
 
 /**
- * 공개 화면이 쓰는 데이터를 한 번에 읽는다 — 전체 290행 규모라 페이지네이션 없이 통째로 받는다.
+ * 공개 화면이 쓰는 데이터를 읽는다. PostgREST의 행 상한에서 조용히 잘리지 않도록 각 relation을
+ * 1000행씩 끝까지 페이지네이션한다.
  *
  * **`cache()` 로 감싼 이유 — 요청 단위 중복 제거.** App Router 에서는 layout 이 받은 데이터를
  * children 에 넘길 수 없어, 사이드바(layout)와 본문(page)이 같은 요청에서 각각 이 함수를
@@ -51,10 +52,6 @@ const CLICK_COUNT_COLUMNS = 'bookmark_id, click_count';
  * 사내 트래픽·290행 규모에서 요청당 조회 비용은 무시할 수 있고, 클릭 수가 항상 최신인 이득이 있다.
  * 그러니 이 함수를 쓰는 페이지에 `export const revalidate = ...` 를 넣지 마라.
  *
- * ⚠️ **행 수 상한** — Supabase 의 PostgREST 는 응답을 기본 1000행에서 자른다(에러가 아니라
- * 조용히 잘린다). 현재 북마크 290 · 카테고리 22 로 여유가 있지만, 북마크가 1000을 넘기면
- * `.range()` 페이지네이션으로 나눠 받아야 한다.
- *
  * 정렬은 DB 에 맡긴다(`sort_order`, 동점이면 `id`). 하위 카테고리의 `sort_order` 는 부모 안에서만
  * 유일해 다른 부모의 하위끼리는 동점이 나는데, 타이브레이커가 없으면 그 순서가 매 요청 달라질 수
  * 있다(화면이 필요로 하는 '같은 부모 안에서의 순서'는 어느 쪽이든 지켜지지만, 흔들리면 진단이 어렵다).
@@ -62,18 +59,53 @@ const CLICK_COUNT_COLUMNS = 'bookmark_id, click_count';
 export const getAllData = cache(async (): Promise<SiteData> => {
   const supabase = await createServerSupabaseClient();
 
-  const [categoriesResult, bookmarksResult, countsResult] = await Promise.all([
-    supabase.from('categories').select(CATEGORY_COLUMNS).order('sort_order').order('id'),
-    supabase.from('bookmarks').select(BOOKMARK_COLUMNS).order('sort_order').order('id'),
-    supabase.from('bookmark_click_counts').select(CLICK_COUNT_COLUMNS),
+  const [categories, bookmarks, counts] = await Promise.all([
+    fetchAllPages<Category>('categories', (from, to) =>
+      supabase
+        .from('categories')
+        .select(CATEGORY_COLUMNS)
+        .order('sort_order')
+        .order('id')
+        .range(from, to),
+    ),
+    fetchAllPages<Bookmark>('bookmarks', (from, to) =>
+      supabase
+        .from('bookmarks')
+        .select(BOOKMARK_COLUMNS)
+        .order('sort_order')
+        .order('id')
+        .range(from, to),
+    ),
+    fetchAllPages<ClickCountRow>('bookmark_click_counts', (from, to) =>
+      supabase
+        .from('bookmark_click_counts')
+        .select(CLICK_COUNT_COLUMNS)
+        .order('bookmark_id')
+        .range(from, to),
+    ),
   ]);
-
-  const categories = unwrap<Category>('categories', categoriesResult);
-  const bookmarks = unwrap<Bookmark>('bookmarks', bookmarksResult);
-  const counts = unwrap<ClickCountRow>('bookmark_click_counts', countsResult);
 
   return { categories, bookmarks: attachCounts(bookmarks, counts) };
 });
+
+const PAGE_SIZE = 1000;
+
+type QueryPage = PromiseLike<{ data: unknown; error: QueryError | null }>;
+
+/** PostgREST의 inclusive `.range(from, to)`를 끝까지 순회한다. */
+async function fetchAllPages<T>(
+  table: string,
+  queryPage: (from: number, to: number) => QueryPage,
+): Promise<T[]> {
+  const rows: T[] = [];
+
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const page = unwrap<T>(table, await queryPage(from, from + PAGE_SIZE - 1));
+    rows.push(...page);
+
+    if (page.length < PAGE_SIZE) return rows;
+  }
+}
 
 /**
  * Supabase 응답에서 행 배열만 꺼낸다. 실패는 삼키지 않고 던진다 —
