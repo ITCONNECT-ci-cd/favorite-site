@@ -673,6 +673,67 @@ export async function deleteBookmarks(ids: string[]): Promise<ActionResult> {
   return succeed();
 }
 
+// ───────────────────────────────────────────────────────── 즐겨찾기 (2026-08-11)
+
+/**
+ * 링크를 즐겨찾기에 담거나 뺀다 — 홈의 세 묶음과 `/favorites` 가 보는 **공용 한 벌**이다.
+ *
+ * 2026-08-11 에 저장소를 브라우저 localStorage 에서 DB 로 옮기며 생겼다. 담긴 목록이 그 브라우저
+ * 안에만 있어 다른 컴퓨터에서는 홈이 거의 빈 화면이었다(설계:
+ * docs/superpowers/specs/2026-08-11-server-favorites-design.md).
+ *
+ * ## 토글이 아니라 **방향**을 받는다
+ *
+ * 화면은 서버가 내려준 `is_favorite` 을 이미 알고 있다. 방향을 받으면 서버에서 읽고-뒤집고-쓰는
+ * 경합 구간이 없어지고, 같은 요청이 두 번 와도 결과가 같다(멱등). 화면의 값이 낡아 방향이 이미
+ * 이뤄진 상태와 같더라도 그 자리에 머물 뿐 뒤집히지 않는다.
+ *
+ * ## 담을 때만 자리를 묻는다
+ *
+ * 새로 담긴 것은 **맨 뒤**여야 이미 세워 둔 차례가 흔들리지 않는다. 뺄 때는 `fav_order` 를
+ * 건드리지 않는다 — 남은 것들끼리의 상대 순서는 값이 남아 있어도 그대로이고, 다시 담기면
+ * 어차피 맨 뒤로 간다. 0 으로 밀어 두면 오히려 다시 담을 때 앞자리를 노리게 된다.
+ *
+ * @param id 링크 id
+ * @param next 담긴 상태로 만들 것인가
+ * @returns 링크가 없으면 실패. 담기지 않은 링크를 빼는 것은 성공이다(멱등)
+ */
+export async function setFavorite(id: string, next: boolean): Promise<ActionResult> {
+  const supabase = await writeClient();
+  if (supabase === null) return DENIED;
+
+  const target = id.trim();
+  if (target === '') return fail(INVALID_REQUEST);
+
+  const patch: { is_favorite: boolean; fav_order?: number } = { is_favorite: next };
+
+  if (next) {
+    const favOrder = await nextSortOrder(
+      supabase
+        .from('bookmarks')
+        .select('fav_order')
+        .eq('is_favorite', true)
+        .order('fav_order', { ascending: false })
+        .limit(1),
+      'fav_order',
+    );
+    if (typeof favOrder !== 'number') return describeFailure('즐겨찾기 자리 조회', favOrder);
+
+    patch.fav_order = favOrder;
+  }
+
+  const { data, error } = await supabase
+    .from('bookmarks')
+    .update(patch)
+    .eq('id', target)
+    .select('id');
+
+  if (error !== null) return describeFailure('즐겨찾기 저장', error);
+  if (countRows(data) === 0) return fail(BOOKMARK_NOT_FOUND);
+
+  return succeed();
+}
+
 /**
  * 링크 순서를 바꾼다 — **넘긴 목록이 지금 차지하고 있는 자리들만 서로 맞바꾼다.**
  *
@@ -792,18 +853,23 @@ function describeFailure(context: string, error: DbError): ActionResult {
 }
 
 /**
- * `sort_order` 내림차순 1행 조회를 받아 **다음 순서 값**을 준다(맨 뒤에 붙이기).
+ * 자리 컬럼 내림차순 1행 조회를 받아 **다음 순서 값**을 준다(맨 뒤에 붙이기).
  * 형제가 없으면 0. 조회가 실패하면 오류를 그대로 돌려주므로 호출부가 `typeof !== 'number'` 로 가른다.
+ *
+ * @param column 읽어 낼 자리 컬럼. 기본은 `sort_order`(분류 안에서의 차례)이고,
+ *   즐겨찾기에 담을 때는 `fav_order` 를 넘긴다 — 두 축은 서로 무관하다(`writeOrder` 와 같은 이유).
  */
 async function nextSortOrder(
   query: PromiseLike<{ data: unknown; error: DbError | null }>,
+  column: 'sort_order' | 'fav_order' = 'sort_order',
 ): Promise<number | DbError> {
   const { data, error } = await query;
   if (error !== null) return error;
 
-  const [first] = (data ?? []) as { sort_order?: number }[];
+  const [first] = (data ?? []) as Record<string, unknown>[];
+  const current = first?.[column];
 
-  return (typeof first?.sort_order === 'number' ? first.sort_order : -1) + 1;
+  return (typeof current === 'number' ? current : -1) + 1;
 }
 
 /**

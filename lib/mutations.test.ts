@@ -17,6 +17,7 @@ import {
   renameSubCategory,
   reorderBookmarks,
   reorderCategories,
+  setFavorite,
   updateBookmark,
   type ActionResult,
   type DbError,
@@ -145,6 +146,7 @@ const ALL_ACTIONS: Record<string, () => Promise<ActionResult>> = {
   deleteBookmark: () => deleteBookmark('bm-1'),
   deleteBookmarks: () => deleteBookmarks(['bm-1', 'bm-2']),
   reorderBookmarks: () => reorderBookmarks(['bm-1', 'bm-2']),
+  setFavorite: () => setFavorite('bm-1', true),
 };
 
 const ACTION_ENTRIES = Object.entries(ALL_ACTIONS);
@@ -158,11 +160,11 @@ beforeEach(() => {
 // ───────────────────────────────────────────────────────────── 계약 · 구조
 
 describe('모듈 계약', () => {
-  it('내보내는 액션 이름은 전수 테스트 목록과 정확히 같다 (13번째를 추가하면 여기서 걸린다)', async () => {
+  it('내보내는 액션 이름은 전수 테스트 목록과 정확히 같다 (14번째를 추가하면 여기서 걸린다)', async () => {
     const actions = await import('@/lib/mutations');
 
     expect(Object.keys(actions).sort()).toEqual(Object.keys(ALL_ACTIONS).sort());
-    expect(ACTION_ENTRIES).toHaveLength(12);
+    expect(ACTION_ENTRIES).toHaveLength(13);
   });
 
   it("첫 줄이 'use server' 다 — 이게 빠지면 그냥 서버 함수가 되어 화면에서 부를 수 없다", () => {
@@ -1352,5 +1354,72 @@ describe('오류 문구 — 내부 정보를 화면으로 흘리지 않는다', 
       ok: false,
       error: '요청이 올바르지 않습니다.',
     });
+  });
+});
+
+describe('setFavorite — 토글이 아니라 방향을 받는다', () => {
+  it('담을 때는 맨 뒤에 붙인다 — 지금 최대 fav_order + 1', async () => {
+    const { ops } = signedIn([{ data: [{ fav_order: 7 }], error: null }, OK]);
+
+    await expect(setFavorite('bm-1', true)).resolves.toEqual({ ok: true });
+
+    expect(ops).toHaveLength(2);
+    expect(argsOf(ops[1], 'update')).toEqual([{ is_favorite: true, fav_order: 8 }]);
+    expect(argsOf(ops[1], 'eq')).toEqual(['id', 'bm-1']);
+  });
+
+  it('아무것도 담겨 있지 않으면 첫 자리는 0 이다', async () => {
+    const { ops } = signedIn([NO_ROWS, OK]);
+
+    await expect(setFavorite('bm-1', true)).resolves.toEqual({ ok: true });
+
+    expect(argsOf(ops[1], 'update')).toEqual([{ is_favorite: true, fav_order: 0 }]);
+  });
+
+  it('뺄 때는 자리를 묻지 않는다 — 왕복 한 번이고 fav_order 를 건드리지 않는다', async () => {
+    const { ops } = signedIn([OK]);
+
+    await expect(setFavorite('bm-1', false)).resolves.toEqual({ ok: true });
+
+    expect(ops).toHaveLength(1);
+    expect(argsOf(ops[0], 'update')).toEqual([{ is_favorite: false }]);
+  });
+
+  it('같은 방향으로 두 번 불러도 결과가 같다 (멱등 — 화면이 낡아도 안전하다)', async () => {
+    signedIn([NO_ROWS, OK]);
+    await expect(setFavorite('bm-1', true)).resolves.toEqual({ ok: true });
+
+    signedIn([{ data: [{ fav_order: 0 }], error: null }, OK]);
+    await expect(setFavorite('bm-1', true)).resolves.toEqual({ ok: true });
+  });
+
+  it('없는 링크면 실패하고 화면을 다시 그리지 않는다', async () => {
+    signedIn([NO_ROWS, NO_ROWS]);
+
+    await expect(setFavorite('bm-없음', true)).resolves.toEqual({
+      ok: false,
+      error: '링크를 찾을 수 없습니다.',
+    });
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it('빈 id 는 DB 에 묻지도 않고 거부한다', async () => {
+    const { ops } = signedIn([]);
+
+    await expect(setFavorite('  ', true)).resolves.toEqual({
+      ok: false,
+      error: '요청이 올바르지 않습니다.',
+    });
+    expect(ops).toHaveLength(0);
+  });
+
+  it('자리 조회가 실패하면 그 실패를 돌려주고 쓰지 않는다', async () => {
+    const { ops } = signedIn([{ data: null, error: { message: 'boom', code: '42501' } }]);
+
+    await expect(setFavorite('bm-1', true)).resolves.toEqual({
+      ok: false,
+      error: '권한이 없습니다. 다시 로그인해 주세요.',
+    });
+    expect(ops).toHaveLength(1);
   });
 });
