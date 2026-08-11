@@ -206,6 +206,7 @@ export function LinkAddRow({ children }: { children?: ReactNode }) {
           placeholder="https://"
           value={url}
           readOnly={busy}
+          maxLength={2048}
           onChange={(event) => setUrl(event.target.value)}
           className={`${FIELD} min-w-[200px] flex-[1_1_220px]`}
         />
@@ -216,6 +217,7 @@ export function LinkAddRow({ children }: { children?: ReactNode }) {
           placeholder={autoTitle === null ? '이름 (비우면 주소에서)' : `이름 (비우면 ${autoTitle})`}
           value={title}
           readOnly={busy}
+          maxLength={120}
           onChange={(event) => setTitle(event.target.value)}
           className={`${FIELD} w-[180px] flex-none`}
         />
@@ -224,6 +226,7 @@ export function LinkAddRow({ children }: { children?: ReactNode }) {
           placeholder="한 줄 설명"
           value={description}
           readOnly={busy}
+          maxLength={200}
           onChange={(event) => setDescription(event.target.value)}
           className={`${FIELD} min-w-[180px] flex-[1_1_200px]`}
         />

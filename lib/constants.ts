@@ -54,3 +54,7 @@ export const EMPTY_LIST_MESSAGE = '이 분류에 링크가 없습니다.';
  * 저쪽 문구를 고치면 여기도 함께 고쳐라. 대조하는 테스트가 여럿이라 `grep` 으로 전수 확인하라.
  */
 export const REQUEST_FAILED = '처리하지 못했습니다. 잠시 후 다시 시도해 주세요.';
+
+/** 외부 Google favicon provider에 bookmark hostname을 보내기 전 운영 privacy 승인 gate 안내. */
+export const DISCORD_FAVICON_PROVIDER_APPROVAL_REQUIRED =
+  '외부 파비콘 제공자에 호스트명을 보내는 운영 승인이 필요합니다.';

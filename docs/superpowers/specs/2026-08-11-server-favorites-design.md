@@ -76,7 +76,7 @@
 
 ## 4. 아키텍처
 
-### 4.1 데이터 — 마이그레이션 `0006_server_favorites.sql`
+### 4.1 데이터 — 마이그레이션 `0008_server_favorites.sql`
 
 ```sql
 alter table bookmarks

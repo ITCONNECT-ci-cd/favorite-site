@@ -336,6 +336,7 @@ function QuickAddForm({ categories, defaultCategoryId, onDone }: QuickAddFormPro
         placeholder="https://"
         value={url}
         readOnly={busy}
+        maxLength={2048}
         onChange={(event) => setUrl(event.target.value)}
         className={URL_FIELD}
       />
@@ -346,6 +347,7 @@ function QuickAddForm({ categories, defaultCategoryId, onDone }: QuickAddFormPro
         placeholder="이름 (비우면 주소에서)"
         value={title}
         readOnly={busy}
+        maxLength={120}
         onChange={(event) => setTitle(event.target.value)}
         className={THIN_FIELD}
       />
@@ -354,6 +356,7 @@ function QuickAddForm({ categories, defaultCategoryId, onDone }: QuickAddFormPro
         placeholder="한 줄 설명"
         value={description}
         readOnly={busy}
+        maxLength={200}
         onChange={(event) => setDescription(event.target.value)}
         className={THIN_FIELD}
       />

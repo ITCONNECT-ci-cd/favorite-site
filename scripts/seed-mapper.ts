@@ -109,6 +109,7 @@ export function buildSeed(
     // 실제 URL 은 파비콘 업로드(B4) 후에 채운다.
     favicon_url: null,
     is_pinned: link.pinned,
+    source: 'manual',
     // links.json 에 order 필드가 없으므로 배열 인덱스를 그대로 쓴다.
     sort_order: index,
     created_at: new Date(link.added * 1000).toISOString(),
