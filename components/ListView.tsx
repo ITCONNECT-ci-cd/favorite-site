@@ -10,6 +10,7 @@ import { QuickAddCard } from '@/components/card/QuickAddCard';
 import type { QuickAddCategory } from '@/components/card/quick-add-options';
 import { useCardHandlers } from '@/components/useCardHandlers';
 import { useCardReorder } from '@/components/useCardReorder';
+import { reorderFavorites } from '@/lib/mutations';
 import type { BookmarkWithCount } from '@/lib/types';
 
 /**
@@ -75,12 +76,14 @@ export type ListViewProps = {
    */
   quickAdd?: QuickAdd;
   /**
-   * 드래그로 바꾼 순서를 **어디에 저장하는가** (J5).
+   * 드래그로 바꾼 순서를 **어느 축에 저장하는가** (J5).
    *
-   * - `'server'`(기본) — `sort_order` 를 서버에 쓴다. 분류 화면이 이것이다.
-   * - `'favorites'` — 이 브라우저의 localStorage 담긴 차례를 다시 쓴다. `/favorites` 전용이다.
-   *   그 화면의 순서는 애초에 서버가 모르므로(`pickFavorites`) 서버로 보내면 아무 일도
-   *   일어나지 않고, 대신 엉뚱한 분류들의 `sort_order` 만 흔든다.
+   * - `'server'`(기본) — `sort_order`. 분류 안에서의 차례이고, 분류 화면이 이것이다.
+   * - `'favorites'` — `fav_order`. `/favorites` 전용이다. 즐겨찾기의 차례는 분류의 차례와
+   *   **다른 축**이라, 이 화면의 드래그를 `sort_order` 로 보내면 엉뚱한 분류들의 순서가 흔들린다.
+   *
+   * 이름이 'store'인 것은 즐겨찾기가 브라우저에 있던 시절의 잔재다(2026-08-11 서버 이전).
+   * 지금은 둘 다 서버로 가고 컬럼만 다르다.
    */
   reorderStore?: 'server' | 'favorites';
 };
@@ -138,9 +141,8 @@ export function ListView({
   quickAdd,
   reorderStore = 'server',
 }: ListViewProps) {
-  // 핀 토글(D6)·카드 열기(F3)·한 번에 열기(G4)는 홈과 글자 하나까지 같은 배선이라 훅 하나가
-  // 들고 있다. `useFavorites` 도 그 안에서 뷰당 한 번만 불린다(lib/favorites.ts 사용 규칙).
-  const { favs, handleToggleFav, handleOpen, openMany, reorderFavs } = useCardHandlers(bookmarks);
+  // 핀 토글(D6)·카드 열기(F3)·한 번에 열기(G4)는 홈과 글자 하나까지 같은 배선이라 훅 하나가 든다.
+  const { handleToggleFav, handleOpen, openMany } = useCardHandlers(bookmarks);
 
   /**
    * 관리자의 드래그 정렬 (J5). 밑값은 **화면에 걸린 목록 전부**(`bookmarks`)이지 하위 탭으로
@@ -150,7 +152,7 @@ export function ListView({
   const reorder = useCardReorder(
     bookmarks,
     isAdmin,
-    reorderStore === 'favorites' ? reorderFavs : undefined,
+    reorderStore === 'favorites' ? reorderFavorites : undefined,
   );
 
   const tabs = subTabs ?? [];
@@ -344,7 +346,6 @@ export function ListView({
                 showCheck
                 checked={checked.has(bookmark.id)}
                 onToggleCheck={handleToggleCheck}
-                isFaved={favs.has(bookmark.id)}
                 onToggleFav={handleToggleFav}
                 onOpen={handleOpen}
                 // 관리자 전용 연필·휴지통 (J1).

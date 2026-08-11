@@ -116,6 +116,8 @@ type NameRow = { id: string; name: string };
 
 /** 링크 행에서 `reorderBookmarks` 가 보는 부분 — 지금 쥐고 있는 자리를 읽는다. */
 type OrderRow = { id: string; sort_order: number };
+/** `reorderFavorites` 가 읽는 자리 행 — 같은 모양이지만 축이 다르다(`fav_order`). */
+type FavOrderRow = { id: string; fav_order: number };
 
 // ───────────────────────────────────────────────────────── 사용자 문구
 //
@@ -673,6 +675,67 @@ export async function deleteBookmarks(ids: string[]): Promise<ActionResult> {
   return succeed();
 }
 
+// ───────────────────────────────────────────────────────── 즐겨찾기 (2026-08-11)
+
+/**
+ * 링크를 즐겨찾기에 담거나 뺀다 — 홈의 세 묶음과 `/favorites` 가 보는 **공용 한 벌**이다.
+ *
+ * 2026-08-11 에 저장소를 브라우저 localStorage 에서 DB 로 옮기며 생겼다. 담긴 목록이 그 브라우저
+ * 안에만 있어 다른 컴퓨터에서는 홈이 거의 빈 화면이었다(설계:
+ * docs/superpowers/specs/2026-08-11-server-favorites-design.md).
+ *
+ * ## 토글이 아니라 **방향**을 받는다
+ *
+ * 화면은 서버가 내려준 `is_favorite` 을 이미 알고 있다. 방향을 받으면 서버에서 읽고-뒤집고-쓰는
+ * 경합 구간이 없어지고, 같은 요청이 두 번 와도 결과가 같다(멱등). 화면의 값이 낡아 방향이 이미
+ * 이뤄진 상태와 같더라도 그 자리에 머물 뿐 뒤집히지 않는다.
+ *
+ * ## 담을 때만 자리를 묻는다
+ *
+ * 새로 담긴 것은 **맨 뒤**여야 이미 세워 둔 차례가 흔들리지 않는다. 뺄 때는 `fav_order` 를
+ * 건드리지 않는다 — 남은 것들끼리의 상대 순서는 값이 남아 있어도 그대로이고, 다시 담기면
+ * 어차피 맨 뒤로 간다. 0 으로 밀어 두면 오히려 다시 담을 때 앞자리를 노리게 된다.
+ *
+ * @param id 링크 id
+ * @param next 담긴 상태로 만들 것인가
+ * @returns 링크가 없으면 실패. 담기지 않은 링크를 빼는 것은 성공이다(멱등)
+ */
+export async function setFavorite(id: string, next: boolean): Promise<ActionResult> {
+  const supabase = await writeClient();
+  if (supabase === null) return DENIED;
+
+  const target = id.trim();
+  if (target === '') return fail(INVALID_REQUEST);
+
+  const patch: { is_favorite: boolean; fav_order?: number } = { is_favorite: next };
+
+  if (next) {
+    const favOrder = await nextSortOrder(
+      supabase
+        .from('bookmarks')
+        .select('fav_order')
+        .eq('is_favorite', true)
+        .order('fav_order', { ascending: false })
+        .limit(1),
+      'fav_order',
+    );
+    if (typeof favOrder !== 'number') return describeFailure('즐겨찾기 자리 조회', favOrder);
+
+    patch.fav_order = favOrder;
+  }
+
+  const { data, error } = await supabase
+    .from('bookmarks')
+    .update(patch)
+    .eq('id', target)
+    .select('id');
+
+  if (error !== null) return describeFailure('즐겨찾기 저장', error);
+  if (countRows(data) === 0) return fail(BOOKMARK_NOT_FOUND);
+
+  return succeed();
+}
+
 /**
  * 링크 순서를 바꾼다 — **넘긴 목록이 지금 차지하고 있는 자리들만 서로 맞바꾼다.**
  *
@@ -726,7 +789,50 @@ export async function reorderBookmarks(orderedIds: string[]): Promise<ActionResu
   // 이미 그 순서다(제자리에 놓았다) — 쓰지도, 화면을 다시 그리지도 않는다.
   if (changes.length === 0) return { ok: true };
 
-  return writeOrder(supabase, 'bookmarks', changes, 'any');
+  return writeOrder(supabase, 'bookmarks', 'sort_order', changes, 'any');
+}
+
+/**
+ * 즐겨찾기의 차례를 다시 쓴다 (J5 드래그 정렬) — `fav_order` 축이다.
+ *
+ * `reorderBookmarks` 와 **같은 방식**이다: 0..n 으로 다시 매기지 않고, 받은 id 들이 지금 쥐고
+ * 있는 자리 값들만 모아 새 차례대로 나눠 준다. 그 선택의 근거는 위 JSDoc 에 길게 적혀 있고
+ * 여기서도 그대로 필요하다 — 홈은 즐겨찾기를 **세 묶음으로 갈라 각각 따로** 끌기 때문에
+ * (`lib/fav-groups.ts`) 한 번의 드롭이 언제나 부분 목록을 보낸다. 0..n 으로 매기면 그 묶음이
+ * 다른 두 묶음의 자리를 통째로 빼앗아 홈의 차례가 뒤섞인다.
+ *
+ * 자리를 **서버가 읽는다**는 점도 같다 — 화면은 '차례'만 말하고 '값'은 말하지 못한다.
+ *
+ * 없는 id 는 조용히 빠진다(그 사이 지워졌거나 즐겨찾기에서 빠진 링크). 하나도 못 찾으면 실패다.
+ */
+export async function reorderFavorites(orderedIds: string[]): Promise<ActionResult> {
+  const supabase = await writeClient();
+  if (supabase === null) return DENIED;
+
+  const ids = asIdList(orderedIds);
+  if (ids === null) return fail(INVALID_REQUEST);
+  if (ids.length === 0) return { ok: true };
+
+  const found = await supabase.from('bookmarks').select('id, fav_order').in('id', ids);
+  if (found.error !== null) return describeFailure('즐겨찾기 순서 조회', found.error);
+
+  const current = new Map(
+    ((found.data ?? []) as FavOrderRow[]).map((row) => [row.id, row.fav_order] as const),
+  );
+  // 받은 차례를 그대로 두되 사라진 id 만 뺀다 — 남은 것들끼리의 상대 순서가 사용자가 본 그것이다.
+  const targets = ids.filter((id) => current.has(id));
+  if (targets.length === 0) return fail(BOOKMARK_NOT_FOUND);
+
+  // 이 목록이 쥐고 있는 자리들. 오름차순이 곧 '화면에서 위에서 아래로'다(pickFavorites 의 정렬).
+  const slots = targets.map((id) => current.get(id) ?? 0).sort((left, right) => left - right);
+
+  const changes = targets.flatMap((id, index) =>
+    current.get(id) === slots[index] ? [] : [{ id, sortOrder: slots[index] }],
+  );
+  // 이미 그 순서다(제자리에 놓았다) — 쓰지도, 화면을 다시 그리지도 않는다.
+  if (changes.length === 0) return { ok: true };
+
+  return writeOrder(supabase, 'bookmarks', 'fav_order', changes, 'any');
 }
 
 // ───────────────────────────────────────────────────────── 내부 helpers
@@ -792,18 +898,23 @@ function describeFailure(context: string, error: DbError): ActionResult {
 }
 
 /**
- * `sort_order` 내림차순 1행 조회를 받아 **다음 순서 값**을 준다(맨 뒤에 붙이기).
+ * 자리 컬럼 내림차순 1행 조회를 받아 **다음 순서 값**을 준다(맨 뒤에 붙이기).
  * 형제가 없으면 0. 조회가 실패하면 오류를 그대로 돌려주므로 호출부가 `typeof !== 'number'` 로 가른다.
+ *
+ * @param column 읽어 낼 자리 컬럼. 기본은 `sort_order`(분류 안에서의 차례)이고,
+ *   즐겨찾기에 담을 때는 `fav_order` 를 넘긴다 — 두 축은 서로 무관하다(`writeOrder` 와 같은 이유).
  */
 async function nextSortOrder(
   query: PromiseLike<{ data: unknown; error: DbError | null }>,
+  column: 'sort_order' | 'fav_order' = 'sort_order',
 ): Promise<number | DbError> {
   const { data, error } = await query;
   if (error !== null) return error;
 
-  const [first] = (data ?? []) as { sort_order?: number }[];
+  const [first] = (data ?? []) as Record<string, unknown>[];
+  const current = first?.[column];
 
-  return (typeof first?.sort_order === 'number' ? first.sort_order : -1) + 1;
+  return (typeof current === 'number' ? current : -1) + 1;
 }
 
 /**
@@ -829,6 +940,7 @@ async function applyOrder(
   return writeOrder(
     supabase,
     table,
+    'sort_order',
     ids.map((id, index) => ({ id, sortOrder: index })),
     scope,
   );
@@ -846,8 +958,12 @@ type OrderEntry = { id: string; sortOrder: number };
  *
  * **한 문장으로 못 한다** — PostgREST 에는 행마다 다른 값을 넣는 대량 update 가 없고, upsert 로
  * 흉내 내면 `name` 같은 not null 컬럼을 함께 실어야 해서 그 사이 다른 창에서 바뀐 이름을 덮어쓰거나
- * 방금 지워진 행을 되살린다. 그래서 `sort_order` 만 건드리는 update 를 짝 수만큼 동시에 던진다.
+ * 방금 지워진 행을 되살린다. 그래서 **자리 컬럼 하나만** 건드리는 update 를 짝 수만큼 동시에 던진다.
  * 중간에 실패하면 순서가 일부만 반영되는데, 드래그를 다시 하면 그대로 복구된다(멱등).
+ *
+ * **어느 컬럼에 쓰는지는 부르는 쪽이 정한다**(`column`). 이 제품에는 자리 축이 둘 있다 —
+ * `sort_order`(분류 안에서의 차례)와 `fav_order`(즐겨찾기 안에서의 차례). 두 축은 서로 무관하므로
+ * 한쪽을 쓰면서 다른 쪽을 건드리면 안 된다.
  *
  * `Promise.all` 이 아니라 **`Promise.allSettled`** 인 이유: `fetch` 자체가 거부되면(네트워크 단절 등)
  * `all` 은 그 거부를 그대로 던져 **액션이 예외로 끝난다** — 화면은 `{ ok:false }` 를 기다리는데
@@ -862,6 +978,7 @@ type OrderEntry = { id: string; sortOrder: number };
 async function writeOrder(
   supabase: WriteClient,
   table: 'categories' | 'bookmarks',
+  column: 'sort_order' | 'fav_order',
   entries: readonly OrderEntry[],
   scope: 'top-level-only' | 'any',
 ): Promise<ActionResult> {
@@ -869,7 +986,7 @@ async function writeOrder(
 
   const settled = await Promise.allSettled(
     entries.map(({ id, sortOrder }) => {
-      const query = supabase.from(table).update({ sort_order: sortOrder }).eq('id', id);
+      const query = supabase.from(table).update({ [column]: sortOrder }).eq('id', id);
 
       return (scope === 'top-level-only' ? query.is('parent_id', null) : query).select('id');
     }),
@@ -880,14 +997,17 @@ async function writeOrder(
 
   const rejected = settled.find((result): result is PromiseRejectedResult => result.status === 'rejected');
   if (rejected !== undefined) {
-    console.error(`[mutations] ${table} 순서 저장 실패 — 요청이 거부됐다`, rejected.reason);
+    console.error(`[mutations] ${table}.${column} 순서 저장 실패 — 요청이 거부됐다`, rejected.reason);
 
     return failAfterPartialChange(touched, fail(ORDER_FAILED));
   }
 
   const broken = answered.find((result) => result.error !== null);
   if (broken !== undefined && broken.error !== null) {
-    return failAfterPartialChange(touched, describeFailure(`${table} 순서 저장`, broken.error));
+    return failAfterPartialChange(
+      touched,
+      describeFailure(`${table}.${column} 순서 저장`, broken.error),
+    );
   }
 
   if (touched === 0) return fail(ORDER_FAILED);

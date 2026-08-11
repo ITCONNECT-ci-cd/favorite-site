@@ -33,6 +33,8 @@ function makeBookmark(over: Partial<Bookmark> & Pick<Bookmark, 'id'>): Bookmark 
     tags: [],
     favicon_url: null,
     is_pinned: false,
+    is_favorite: false,
+    fav_order: 0,
     sort_order: 0,
     created_at: '2024-01-01T00:00:00.000Z',
     ...over,
@@ -300,13 +302,19 @@ type QueryResult = {
  */
 function fakeSupabase(byTable: Record<string, QueryResult>) {
   const requestedTables: string[] = [];
+  /** 테이블별로 `select(...)` 에 넘어간 컬럼 문자열 그대로. */
+  const selectedColumns: Record<string, string> = {};
 
   const client = {
     from(table: string) {
       requestedTables.push(table);
       const result: QueryResult = byTable[table] ?? { data: [], error: null };
       const builder = {
-        select: () => builder,
+        select: (columns: string) => {
+          selectedColumns[table] = columns;
+
+          return builder;
+        },
         order: () => builder,
         then: (
           onFulfilled: (value: QueryResult) => unknown,
@@ -318,7 +326,7 @@ function fakeSupabase(byTable: Record<string, QueryResult>) {
     },
   };
 
-  return { client, requestedTables };
+  return { client, requestedTables, selectedColumns };
 }
 
 function useFakeSupabase(byTable: Record<string, QueryResult>) {
@@ -341,6 +349,17 @@ describe('getAllData', () => {
     await getAllData();
 
     expect(fake.requestedTables).toEqual(['categories', 'bookmarks', 'bookmark_click_counts']);
+  });
+
+  it('bookmarks 조회에 즐겨찾기 두 칸을 함께 요청한다', async () => {
+    // 빠뜨리면 행에 값이 실리지 않아 화면에서는 `undefined` 가 되고, 담긴 링크가 하나도 없는
+    // 것처럼 그려진다 — 조용히 틀리는 자리라 조회 시점에 못 박아 둔다.
+    const fake = useFakeSupabase({});
+
+    await getAllData();
+
+    expect(fake.selectedColumns.bookmarks).toContain('is_favorite');
+    expect(fake.selectedColumns.bookmarks).toContain('fav_order');
   });
 
   it('뷰의 클릭 수를 북마크에 결합해 SiteData 를 만든다 (뷰에 없으면 0)', async () => {

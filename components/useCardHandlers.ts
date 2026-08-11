@@ -3,23 +3,18 @@
 import { useCallback } from 'react';
 import { toast } from '@/components/Toast';
 import { bulkOpenToastText, openToastText, recordClick } from '@/lib/clicks';
-import { favToastText, useFavorites } from '@/lib/favorites';
+import { REQUEST_FAILED } from '@/lib/constants';
+import { favToastText } from '@/lib/favorites';
+import { setFavorite } from '@/lib/mutations';
 import type { BookmarkWithCount } from '@/lib/types';
 
 export type CardHandlers = {
-  /** 즐겨찾기에 담긴 id 집합 — 카드에 내려줄 켜짐 상태를 여기서 뽑는다. */
-  favs: ReadonlySet<string>;
-  /** 카드 핀 클릭 (D6) */
+  /** 카드 핀 클릭 (D6) — 관리자만 닿는다(LinkCard 가 비관리자에게는 핀을 그리지 않는다). */
   handleToggleFav: (id: string) => void;
   /** 카드 열기 — 사람이 카드 하나를 누른 경우 (F3) */
   handleOpen: (id: string) => void;
   /** '한 번에 열기' (G4) — 대상 목록과 탭 그룹 명칭을 받는다 */
   openMany: (items: readonly BookmarkWithCount[], groupLabel: string) => void;
-  /**
-   * 즐겨찾기의 담긴 차례를 다시 쓴다 (J5 드래그 정렬) — 이 목록만 순서를 브라우저가 든다.
-   * `useFavorites` 를 화면이 또 부르지 않게 여기서 그대로 흘려 준다.
-   */
-  reorderFavs: (orderedIds: readonly string[]) => void;
 };
 
 /**
@@ -28,9 +23,6 @@ export type CardHandlers = {
  * **왜 훅으로 뺐나**: 두 화면이 핀 토글(D6)·카드 열기(F3)·한 번에 열기(G4) 세 벌을 글자 하나까지
  * 같게 들고 있었다. 세 번째가 붙는 시점에 복제를 접었다 — 어느 한쪽만 고쳐 두 화면의 동작이
  * 갈라지는 것이 이 코드가 실제로 겪을 수 있는 유일한 고장이기 때문이다.
- *
- * `useFavorites` 는 여기서 **한 번만** 부른다. 화면이 자기 몫으로 또 부르지 않도록 결과(`favs`)를
- * 돌려준다 — 카드마다 부르면 렌더당 카드 수만큼 동기 localStorage 읽기가 생긴다(E1 사용 규칙).
  *
  * 토스트를 여기서 띄우는 것은 이 파일이 `components` 에 있기 때문이다. 문구 자체는 `lib` 의 순수
  * 함수(`favToastText`·`openToastText`·`bulkOpenToastText`)가 갖는다 — lib 이 components 를
@@ -42,23 +34,38 @@ export type CardHandlers = {
  * @param bookmarks 그 화면이 아는 링크 전부. 카드가 돌려준 id 로 제목을 찾는 데만 쓴다.
  */
 export function useCardHandlers(bookmarks: readonly BookmarkWithCount[]): CardHandlers {
-  const { favs, toggle, reorder: reorderFavs } = useFavorites();
-
   /**
-   * 핀 토글 — 담고/빼고 토스트로 알린다(DESIGN_SPEC 7장). 방향은 `toggle` 이 돌려준다.
+   * 핀 토글 — 담고/빼고 토스트로 알린다(DESIGN_SPEC 7장).
    *
-   * `/favorites` 에서는 뺀 카드가 곧바로 목록에서 사라진다 — 그 화면이 넘기는 `bookmarks` 자체가
-   * 담긴 것만 골라낸 배열이기 때문이다(FavoritesView).
+   * 방향은 **서버가 준 지금 값**을 뒤집어 정한다(`setFavorite` 이 토글이 아니라 방향을 받는
+   * 이유). 낙관적 갱신은 두지 않는다 — 연필·휴지통과 마찬가지로 왕복을 기다린 뒤
+   * `revalidatePath` 로 반영된다.
+   *
+   * **반드시 try/catch 로 감싼다.** 요청이 거부되면(네트워크 단절 등) 그 예외가 그대로 올라가
+   * 공개 화면 위의 유일한 경계인 `app/global-error.tsx` 가 화면 전체를 오류 화면으로 바꾼다.
+   *
+   * `/favorites` 에서는 뺀 카드가 다시 그려질 때 목록에서 사라진다 — 그 화면이 넘기는
+   * `bookmarks` 자체가 담긴 것만 골라낸 배열이기 때문이다.
    */
   const handleToggleFav = useCallback(
     (id: string) => {
-      // 카드가 돌려준 id 라 이 배열에 반드시 있다. 없더라도 토글은 하고 토스트만 건너뛴다.
+      // 카드가 돌려준 id 라 이 배열에 반드시 있다. 없으면 방향을 정할 근거가 없으므로 넘어간다.
       const bookmark = bookmarks.find((item) => item.id === id);
-      const faved = toggle(id);
+      if (bookmark === undefined) return;
 
-      if (bookmark !== undefined) toast(favToastText(bookmark.title, faved));
+      const next = !bookmark.is_favorite;
+
+      void (async () => {
+        try {
+          const result = await setFavorite(id, next);
+          toast(result.ok ? favToastText(bookmark.title, next) : result.error);
+        } catch (error) {
+          console.error('[useCardHandlers] 즐겨찾기 저장 요청이 거부됐다', error);
+          toast(REQUEST_FAILED);
+        }
+      })();
     },
-    [bookmarks, toggle],
+    [bookmarks],
   );
 
   /**
@@ -149,5 +156,5 @@ export function useCardHandlers(bookmarks: readonly BookmarkWithCount[]): CardHa
     toast(bulkOpenToastText({ opened, blocked, groupLabel }));
   }, []);
 
-  return { favs, handleToggleFav, handleOpen, openMany, reorderFavs };
+  return { handleToggleFav, handleOpen, openMany };
 }

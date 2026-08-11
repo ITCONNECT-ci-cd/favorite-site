@@ -17,6 +17,8 @@ import {
   renameSubCategory,
   reorderBookmarks,
   reorderCategories,
+  reorderFavorites,
+  setFavorite,
   updateBookmark,
   type ActionResult,
   type DbError,
@@ -145,6 +147,8 @@ const ALL_ACTIONS: Record<string, () => Promise<ActionResult>> = {
   deleteBookmark: () => deleteBookmark('bm-1'),
   deleteBookmarks: () => deleteBookmarks(['bm-1', 'bm-2']),
   reorderBookmarks: () => reorderBookmarks(['bm-1', 'bm-2']),
+  setFavorite: () => setFavorite('bm-1', true),
+  reorderFavorites: () => reorderFavorites(['bm-1', 'bm-2']),
 };
 
 const ACTION_ENTRIES = Object.entries(ALL_ACTIONS);
@@ -158,11 +162,11 @@ beforeEach(() => {
 // ───────────────────────────────────────────────────────────── 계약 · 구조
 
 describe('모듈 계약', () => {
-  it('내보내는 액션 이름은 전수 테스트 목록과 정확히 같다 (13번째를 추가하면 여기서 걸린다)', async () => {
+  it('내보내는 액션 이름은 전수 테스트 목록과 정확히 같다 (15번째를 추가하면 여기서 걸린다)', async () => {
     const actions = await import('@/lib/mutations');
 
     expect(Object.keys(actions).sort()).toEqual(Object.keys(ALL_ACTIONS).sort());
-    expect(ACTION_ENTRIES).toHaveLength(12);
+    expect(ACTION_ENTRIES).toHaveLength(14);
   });
 
   it("첫 줄이 'use server' 다 — 이게 빠지면 그냥 서버 함수가 되어 화면에서 부를 수 없다", () => {
@@ -1352,5 +1356,161 @@ describe('오류 문구 — 내부 정보를 화면으로 흘리지 않는다', 
       ok: false,
       error: '요청이 올바르지 않습니다.',
     });
+  });
+});
+
+describe('setFavorite — 토글이 아니라 방향을 받는다', () => {
+  it('담을 때는 맨 뒤에 붙인다 — 지금 최대 fav_order + 1', async () => {
+    const { ops } = signedIn([{ data: [{ fav_order: 7 }], error: null }, OK]);
+
+    await expect(setFavorite('bm-1', true)).resolves.toEqual({ ok: true });
+
+    expect(ops).toHaveLength(2);
+    expect(argsOf(ops[1], 'update')).toEqual([{ is_favorite: true, fav_order: 8 }]);
+    expect(argsOf(ops[1], 'eq')).toEqual(['id', 'bm-1']);
+  });
+
+  it('아무것도 담겨 있지 않으면 첫 자리는 0 이다', async () => {
+    const { ops } = signedIn([NO_ROWS, OK]);
+
+    await expect(setFavorite('bm-1', true)).resolves.toEqual({ ok: true });
+
+    expect(argsOf(ops[1], 'update')).toEqual([{ is_favorite: true, fav_order: 0 }]);
+  });
+
+  it('뺄 때는 자리를 묻지 않는다 — 왕복 한 번이고 fav_order 를 건드리지 않는다', async () => {
+    const { ops } = signedIn([OK]);
+
+    await expect(setFavorite('bm-1', false)).resolves.toEqual({ ok: true });
+
+    expect(ops).toHaveLength(1);
+    expect(argsOf(ops[0], 'update')).toEqual([{ is_favorite: false }]);
+  });
+
+  it('같은 방향으로 두 번 불러도 결과가 같다 (멱등 — 화면이 낡아도 안전하다)', async () => {
+    signedIn([NO_ROWS, OK]);
+    await expect(setFavorite('bm-1', true)).resolves.toEqual({ ok: true });
+
+    signedIn([{ data: [{ fav_order: 0 }], error: null }, OK]);
+    await expect(setFavorite('bm-1', true)).resolves.toEqual({ ok: true });
+  });
+
+  it('없는 링크면 실패하고 화면을 다시 그리지 않는다', async () => {
+    signedIn([NO_ROWS, NO_ROWS]);
+
+    await expect(setFavorite('bm-없음', true)).resolves.toEqual({
+      ok: false,
+      error: '링크를 찾을 수 없습니다.',
+    });
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it('빈 id 는 DB 에 묻지도 않고 거부한다', async () => {
+    const { ops } = signedIn([]);
+
+    await expect(setFavorite('  ', true)).resolves.toEqual({
+      ok: false,
+      error: '요청이 올바르지 않습니다.',
+    });
+    expect(ops).toHaveLength(0);
+  });
+
+  it('자리 조회가 실패하면 그 실패를 돌려주고 쓰지 않는다', async () => {
+    const { ops } = signedIn([{ data: null, error: { message: 'boom', code: '42501' } }]);
+
+    await expect(setFavorite('bm-1', true)).resolves.toEqual({
+      ok: false,
+      error: '권한이 없습니다. 다시 로그인해 주세요.',
+    });
+    expect(ops).toHaveLength(1);
+  });
+});
+
+/** 즐겨찾기 자리 조회 응답. `slots` 의 `fav_order` 판이다. */
+function favSlots(rows: { id: string; fav_order: number }[]) {
+  return { data: rows, error: null };
+}
+
+describe('reorderFavorites — 즐겨찾기 자리만 맞바꾼다', () => {
+  it('fav_order 를 쓴다 — sort_order 는 건드리지 않는다', async () => {
+    const { ops } = signedIn([
+      favSlots([
+        { id: 'a', fav_order: 3 },
+        { id: 'b', fav_order: 4 },
+      ]),
+      OK,
+      OK,
+    ]);
+
+    await expect(reorderFavorites(['b', 'a'])).resolves.toEqual({ ok: true });
+
+    expect(argsOf(ops[0], 'select')).toEqual(['id, fav_order']);
+    expect(ops.slice(1).map((op) => [argsOf(op, 'eq'), argsOf(op, 'update')])).toEqual([
+      [['id', 'b'], [{ fav_order: 3 }]],
+      [['id', 'a'], [{ fav_order: 4 }]],
+    ]);
+  });
+
+  it('한 묶음의 id 만 와도 그 묶음이 쥔 자리 안에서만 바뀐다', async () => {
+    // 홈은 즐겨찾기를 세 묶음으로 나눠 각각 따로 끈다 — 'AI 소식' 두 장만 보내는 상황이다.
+    const { ops } = signedIn([
+      favSlots([
+        { id: 'news-1', fav_order: 10 },
+        { id: 'news-2', fav_order: 40 },
+      ]),
+      OK,
+      OK,
+    ]);
+
+    await expect(reorderFavorites(['news-2', 'news-1'])).resolves.toEqual({ ok: true });
+
+    // 10 과 40 이라는 원래 자리가 유지된다 — 다른 묶음이 쓰는 사잇값(20·30)은 손대지 않는다.
+    expect(ops.slice(1).map((op) => argsOf(op, 'update'))).toEqual([
+      [{ fav_order: 10 }],
+      [{ fav_order: 40 }],
+    ]);
+  });
+
+  it('제자리에 놓으면 아무것도 쓰지 않고 화면도 다시 그리지 않는다', async () => {
+    const { ops } = signedIn([favSlots([{ id: 'a', fav_order: 2 }])]);
+
+    await expect(reorderFavorites(['a'])).resolves.toEqual({ ok: true });
+
+    expect(ops).toHaveLength(1);
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it('그 사이 지워진 id 는 조용히 빠지고 남은 것들끼리 자리를 맞바꾼다', async () => {
+    const { ops } = signedIn([
+      favSlots([
+        { id: 'a', fav_order: 1 },
+        { id: 'c', fav_order: 5 },
+      ]),
+      OK,
+      OK,
+    ]);
+
+    await expect(reorderFavorites(['c', 'b-지워짐', 'a'])).resolves.toEqual({ ok: true });
+
+    expect(ops.slice(1).map((op) => [argsOf(op, 'eq'), argsOf(op, 'update')])).toEqual([
+      [['id', 'c'], [{ fav_order: 1 }]],
+      [['id', 'a'], [{ fav_order: 5 }]],
+    ]);
+  });
+
+  it('하나도 못 찾으면 실패다', async () => {
+    signedIn([favSlots([])]);
+
+    await expect(reorderFavorites(['없음'])).resolves.toEqual({
+      ok: false,
+      error: '링크를 찾을 수 없습니다.',
+    });
+  });
+
+  it('빈 목록은 아무 일도 하지 않고 성공이다', async () => {
+    const { ops } = signedIn([]);
+
+    await expect(reorderFavorites([])).resolves.toEqual({ ok: true });
+    expect(ops).toHaveLength(0);
   });
 });
