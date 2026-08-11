@@ -7,6 +7,9 @@
  *
  * 라우트 그룹 분리(H2) 이후 이 레이아웃은 `<html>` 을 렌더하지 않으므로 RTL 로 그릴 수 있다.
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import type { ReactElement } from 'react';
 import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -25,6 +28,16 @@ vi.mock('@/lib/queries', async (importOriginal) => ({
 
 // 인증 관문(H1)의 결과에 따라 셸이 무엇을 그리는지만 본다 — 판정은 그 파일의 테스트 몫이다.
 vi.mock('@/lib/supabase/server', () => ({ getAdminSession: vi.fn() }));
+
+/**
+ * GA 컴포넌트는 `next/script` 로 스크립트를 얹기만 하고 마크업을 남기지 않아 jsdom 에서는
+ * 렌더 결과로 확인할 수 없다. 받은 측정 ID 를 속성으로 드러내는 스텁으로 바꿔 배선만 본다.
+ */
+vi.mock('@next/third-parties/google', () => ({
+  GoogleAnalytics: ({ gaId }: { gaId: string }) => (
+    <div data-testid="google-analytics" data-ga-id={gaId} />
+  ),
+}));
 
 const CHILD = '화면 본문';
 
@@ -149,5 +162,37 @@ describe('공개 셸 — 두 조회의 실패 경로', () => {
 
     expect(unhandled).toEqual([]);
     expect(screen.getByRole('heading', { name: '일시적인 오류가 발생했습니다' })).toBeInTheDocument();
+  });
+});
+
+/**
+ * Google Analytics (2026-08-11) — 방문자 분석은 **공개 화면만** 센다.
+ *
+ * 배선을 이 셸에 두는 것 자체가 그 경계다. `(public)` 그룹만 이 레이아웃을 상속하므로
+ * 관리 라우트(`app/admin/*`)는 자동으로 빠진다 — 별도 제외 처리가 없다.
+ */
+describe('공개 셸 — Google Analytics', () => {
+  it('측정 ID 를 실어 보낸다', async () => {
+    await renderShell();
+
+    // 진짜 컴포넌트는 `next/script` 로 스크립트를 얹으므로 jsdom 에는 아무 마크업도 남기지
+    // 않는다(Next 런타임 밖이라 그 부수효과가 돌지 않는다). 그래서 스텁으로 바꿔 **셸이 어떤
+    // 측정 ID 로 그 컴포넌트를 세우는지**를 본다 — 여기서 볼 수 있는 것은 그 배선뿐이고,
+    // 실제로 gtag 가 붙는지는 배포 뒤 GA 실시간 보고서로 확인한다.
+    expect(screen.getByTestId('google-analytics')).toHaveAttribute('data-ga-id', 'G-6F5JFJX448');
+  });
+
+  /**
+   * 루트 레이아웃(app/layout.tsx)으로 옮기면 `/admin` 까지 집계에 들어와 방문자 수치가 관리
+   * 작업으로 부푼다. "공개 화면만"이라는 결정이 파일 위치 하나에 걸려 있어 눈에 안 띄게
+   * 깨질 수 있으므로 소스에서 잠근다(app/not-found.test.tsx 와 같은 방식).
+   */
+  it('루트 레이아웃에는 두지 않는다 — 관리 화면이 집계에 섞이지 않게', () => {
+    const source = readFileSync(join(process.cwd(), 'app/layout.tsx'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+
+    expect(source).not.toContain('GoogleAnalytics');
+    expect(source).not.toContain('G-');
   });
 });
