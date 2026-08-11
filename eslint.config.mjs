@@ -60,6 +60,34 @@ const eslintConfig = defineConfig([
     },
   },
   {
+    // Discord 자동 favicon 경계는 SDK client를 만들지 않고 service-role key로 Storage REST만 호출한다.
+    // 그래서 전역 supabase/admin import 금지만으로는 자격의 사용 범위를 증명할 수 없다. 이 파일에서
+    // DB client·쓰기 액션을 끌어오는 모든 길을 별도로 막고, runtime/source 검사는 짝 테스트가 맡는다.
+    files: ["lib/discord-favicon-storage.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: [
+                "@supabase/**",
+                "**/supabase/admin",
+                "@/lib/supabase/admin",
+                "**/supabase/server",
+                "@/lib/supabase/server",
+                "**/lib/mutations",
+                "@/lib/mutations",
+              ],
+              message:
+                "이 모듈은 service-role Storage REST 전용 경계다. Supabase DB client와 mutation을 import하지 마라.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // 반대 방향의 같은 계약(lib/favicon-collect.ts 상단 "이중 방어 계약").
     // 이 모듈은 service role 을 **정당하게** 쓴다 — favicons 버킷에 storage 정책이 없어
     // 업로드가 그 키를 요구한다. 그래서 여기서는 supabase/admin 을 막지 않는다(이 블록이

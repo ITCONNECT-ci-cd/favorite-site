@@ -26,7 +26,7 @@
 
 | 파일 | 책임 |
 |---|---|
-| `supabase/migrations/0006_server_favorites.sql` | 컬럼 두 개 추가 |
+| `supabase/migrations/0008_server_favorites.sql` | 컬럼 두 개 추가 |
 | `scripts/import-favorites.ts` | 브라우저에서 뽑은 id 배열을 DB로 주입 |
 
 **수정**
@@ -60,14 +60,14 @@
 ## Task 1: 마이그레이션 0006
 
 **Files:**
-- Create: `supabase/migrations/0006_server_favorites.sql`
+- Create: `supabase/migrations/0008_server_favorites.sql`
 
 - [ ] **Step 1: 마이그레이션 파일 작성**
 
 기존 마이그레이션 규약(상단에 적용 방법·재실행 안전성·근거 주석)을 따른다.
 
 ```sql
--- 0006_server_favorites.sql — 즐겨찾기를 브라우저에서 DB 로 옮긴다
+-- 0008_server_favorites.sql — 즐겨찾기를 브라우저에서 DB 로 옮긴다
 --
 -- 적용 방법: Supabase SQL Editor 에 전체 붙여넣기 실행(1회). 재실행 안전(`if not exists`).
 --
@@ -124,7 +124,7 @@ Expected: 2행 (`is_favorite`/boolean/false, `fav_order`/integer/0)
 - [ ] **Step 4: 커밋**
 
 ```bash
-git add supabase/migrations/0006_server_favorites.sql
+git add supabase/migrations/0008_server_favorites.sql
 git commit -m "feat(db): 즐겨찾기를 담을 컬럼 두 개를 bookmarks 에 더한다"
 ```
 

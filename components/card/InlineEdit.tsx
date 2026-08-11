@@ -332,6 +332,7 @@ export function InlineEdit({ bookmark, onDone }: InlineEditProps) {
         placeholder="이름"
         value={title}
         readOnly={saving}
+        maxLength={120}
         onChange={(event) => setTitle(event.target.value)}
         className={TITLE_FIELD}
       />
@@ -340,6 +341,7 @@ export function InlineEdit({ bookmark, onDone }: InlineEditProps) {
         placeholder="한 줄 설명"
         value={description}
         readOnly={saving}
+        maxLength={200}
         onChange={(event) => setDescription(event.target.value)}
         className={DESC_FIELD}
       />

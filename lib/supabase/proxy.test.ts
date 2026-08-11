@@ -1,6 +1,7 @@
 // @vitest-environment node
 // 프록시는 요청/응답만 다룬다 — jsdom 을 띄우지 않는다.
 import { createServerClient } from '@supabase/ssr';
+import { unstable_doesMiddlewareMatch } from 'next/experimental/testing/server';
 import { NextRequest } from 'next/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -140,6 +141,33 @@ describe('루트 proxy.ts (Next 16 파일 컨벤션)', () => {
     expect(matcher).toContain('_next/image');
   });
 
+  it('Discord ingest 경로는 matcher 단계에서 완전히 제외해 getUser 를 호출하지 않는다', async () => {
+    // Next 16.3 bundled 문서는 `unstable_doesProxyMatch`라고 쓰지만 실제 package export는 여전히
+    // `unstable_doesMiddlewareMatch`다. 프레임워크의 matcher compiler로 실제 배포 판정을 검증한다.
+    const { getUser } = stubClient();
+    const url = 'https://example.com/api/discord-ingest';
+    const matched = unstable_doesMiddlewareMatch({ config, url });
+
+    // 실제 Next dispatcher처럼 match일 때만 proxy를 부른다. HMAC가 틀린 요청도 이 단계에서는 body를
+    // 읽지 않으므로, false이면 Supabase Auth outbound가 서명 검사 앞에 끼어들 수 없다.
+    if (matched) await proxy(new NextRequest(url));
+
+    expect(matched).toBe(false);
+    expect(getUser).not.toHaveBeenCalled();
+  });
+
+  it('Discord ingest 하위 path/trailing slash도 제외하지만 다른 API는 그대로 session 갱신 대상이다', () => {
+    expect(
+      unstable_doesMiddlewareMatch({ config, url: 'https://example.com/api/discord-ingest/' }),
+    ).toBe(false);
+    expect(
+      unstable_doesMiddlewareMatch({ config, url: 'https://example.com/api/discord-ingest/extra' }),
+    ).toBe(false);
+    expect(
+      unstable_doesMiddlewareMatch({ config, url: 'https://example.com/api/ai-search' }),
+    ).toBe(true);
+  });
+
   it('matcher 가 일반 경로에는 걸리고 정적 자산은 거른다', () => {
     // Next 는 matcher 를 경로 **전체**에 맞춘다. 문자열 자체에는 앵커가 없으므로
     // 여기서 붙여 줘야 실제 동작과 같아진다(안 붙이면 부분 일치라 전부 통과한다).
@@ -148,7 +176,10 @@ describe('루트 proxy.ts (Next 16 파일 컨벤션)', () => {
     expect(pattern.test('/admin')).toBe(true);
     expect(pattern.test('/')).toBe(true);
     expect(pattern.test('/category/abc')).toBe(true);
+    expect(pattern.test('/api/ai-search')).toBe(true);
 
+    expect(pattern.test('/api/discord-ingest')).toBe(false);
+    expect(pattern.test('/api/discord-ingest/')).toBe(false);
     expect(pattern.test('/_next/static/chunk.js')).toBe(false);
     expect(pattern.test('/_next/image')).toBe(false);
     expect(pattern.test('/logo.png')).toBe(false);

@@ -16,6 +16,9 @@ import { getAllData, rollupCounts } from '@/lib/queries';
 import { getAdminSession } from '@/lib/supabase/server';
 import type { BookmarkWithCount, Category } from '@/lib/types';
 
+/** 이 page가 사용하는 favicon Server Action의 플랫폼 상한. 내부 deadline은 50초로 더 짧다. */
+export const maxDuration = 60;
+
 /**
  * 관리자 — 카테고리 · 링크 (`/admin`, DESIGN_SPEC 6장).
  *
@@ -45,6 +48,8 @@ import type { BookmarkWithCount, Category } from '@/lib/types';
 export default async function AdminPage() {
   if ((await getAdminSession()) === null) return null;
 
+  // 공개 client component에는 secret이 아니라 exact-match로 파생한 승인 boolean만 넘긴다.
+  const faviconProviderApproved = process.env.DISCORD_FAVICON_PROVIDER_APPROVED === 'true';
   const { categories, bookmarks } = await getAllData();
   /* 하위 목록은 두 곳이 쓴다 — 하위 칩 줄(I2)과 링크 표의 하위 select(I4). 같은 값이므로 한 번만
      접는다. 두 벌을 따로 만들어도 화면은 같지만, 그러면 "칩과 select 가 같은 목록"이라는 사실이
@@ -93,7 +98,11 @@ export default async function AdminPage() {
               `SelectedCategoryProvider`). provider 는 DOM 을 만들지 않아 상자 안의 차례도 그대로다. */}
           <LinkAddRow>
             <LinkFilterProvider>
-              <FilterRow linksByCategory={links} subsByCategory={subs} />
+              <FilterRow
+                linksByCategory={links}
+                subsByCategory={subs}
+                faviconProviderApproved={faviconProviderApproved}
+              />
               <LinkTable linksByCategory={links} subsByCategory={subs} />
             </LinkFilterProvider>
           </LinkAddRow>
@@ -206,6 +215,7 @@ function linkRows(
       categoryId: bookmark.category_id,
       faviconUrl: bookmark.favicon_url,
       clickCount: bookmark.click_count,
+      source: bookmark.source,
     });
   }
 

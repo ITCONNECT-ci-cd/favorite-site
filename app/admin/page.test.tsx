@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { ReactElement } from 'react';
 import { render, screen, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import AdminPage from '@/app/admin/page';
 import CleanupPage from '@/app/admin/cleanup/page';
@@ -31,7 +31,12 @@ const CATEGORIES: Category[] = [
 ];
 
 /** 클릭 수는 `bookmark_click_counts` 뷰에서 붙어 온 값이다(getAllData → attachCounts). */
-function bookmark(id: string, categoryId: string | null, clicks: number): BookmarkWithCount {
+function bookmark(
+  id: string,
+  categoryId: string | null,
+  clicks: number,
+  source: 'manual' | 'discord' = 'manual',
+): BookmarkWithCount {
   return {
     id,
     category_id: categoryId,
@@ -41,6 +46,7 @@ function bookmark(id: string, categoryId: string | null, clicks: number): Bookma
     tags: [],
     favicon_url: null,
     is_pinned: false,
+    source,
     is_favorite: false,
     fav_order: 0,
     sort_order: 0,
@@ -51,7 +57,7 @@ function bookmark(id: string, categoryId: string | null, clicks: number): Bookma
 
 const BOOKMARKS: BookmarkWithCount[] = [
   bookmark('bm-1', 'cat-ai', 5), // 상위 직속
-  bookmark('bm-2', 'sub-chat', 7), // 하위 — 상위 합계에 포함된다
+  bookmark('bm-2', 'sub-chat', 7, 'discord'), // 하위 — 상위 합계에 포함된다
   bookmark('bm-3', 'sub-chat', 1),
   bookmark('bm-4', 'cat-mkt', 0),
 ];
@@ -75,7 +81,29 @@ beforeEach(() => {
   vi.mocked(getAllData).mockResolvedValue({ categories: CATEGORIES, bookmarks: BOOKMARKS });
 });
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 describe('AdminPage — 카테고리 · 링크 (I1 2단)', () => {
+  it.each([undefined, 'false', 'TRUE', '1'])(
+    'provider privacy env가 %s이면 자동 favicon 버튼을 비활성화한다',
+    async (approval) => {
+      vi.stubEnv('DISCORD_FAVICON_PROVIDER_APPROVED', approval);
+      render((await AdminPage()) as ReactElement);
+
+      expect(screen.getByRole('button', { name: '자동 파비콘 채우기' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: '고아 객체 정리' })).toBeEnabled();
+    },
+  );
+
+  it('provider privacy env가 exact true일 때만 자동 favicon 버튼을 연다', async () => {
+    vi.stubEnv('DISCORD_FAVICON_PROVIDER_APPROVED', 'true');
+    render((await AdminPage()) as ReactElement);
+
+    expect(screen.getByRole('button', { name: '자동 파비콘 채우기' })).toBeEnabled();
+  });
+
   it('랜드마크 하나 안에 좌 270px 패널과 우측 헤더 패널을 세운다', async () => {
     const { container } = render((await AdminPage()) as ReactElement);
 
@@ -198,21 +226,22 @@ describe('AdminPage — 카테고리 · 링크 (I1 2단)', () => {
 
     // AI 도구 모음: 직속 bm-1 + 하위(대화형) bm-2·bm-3. 마케팅의 bm-4 는 들어오지 않는다.
     expect(rows).toHaveLength(3);
-    expect(rows.map((row) => row.textContent)).toEqual([
-      expect.stringContaining('bm-1'),
-      expect.stringContaining('bm-2'),
-      expect.stringContaining('bm-3'),
-    ]);
-    expect(within(linkList()).queryByText('bm-4')).not.toBeInTheDocument();
+    expect(
+      rows.map((row) =>
+        (within(row).getByRole('textbox', { name: / 제목$/ }) as HTMLInputElement).value,
+      ),
+    ).toEqual(['bm-1', 'bm-2', 'bm-3']);
+    expect(within(linkList()).queryByRole('textbox', { name: 'bm-4 제목' })).not.toBeInTheDocument();
   });
 
-  it('행이 든 값은 표가 그리는 다섯 칸뿐이다 (클릭 수·하위 배정)', async () => {
+  it('행은 최신 표의 클릭 수·하위 배정과 자동 수집 출처를 함께 받는다', async () => {
     render((await AdminPage()) as ReactElement);
 
     const row = within(linkList()).getAllByRole('listitem')[1];
 
     expect(row).toHaveTextContent('7'); // bm-2 의 클릭 수 (뷰에서 붙어 온 값)
     expect(within(row).getByRole('combobox', { name: 'bm-2 하위 카테고리' })).toHaveValue('sub-chat');
+    expect(within(row).getByTestId('source-badge')).toHaveTextContent('자동');
   });
 
   it('하위 select 의 옵션은 하위 칩 줄과 같은 목록이다 (한 번 접어 둘이 나눠 쓴다)', async () => {

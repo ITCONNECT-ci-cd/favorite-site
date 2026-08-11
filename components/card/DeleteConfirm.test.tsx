@@ -44,6 +44,7 @@ const BOOKMARK: BookmarkWithCount = {
   tags: [],
   favicon_url: null,
   is_pinned: false,
+  source: 'manual',
   is_favorite: false,
   fav_order: 0,
   sort_order: 0,

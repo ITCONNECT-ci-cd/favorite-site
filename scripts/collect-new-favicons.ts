@@ -18,14 +18,21 @@ import type { Bookmark } from '@/lib/types';
 import { collectFavicons, formatTally, reportFailures } from './collect-favicons';
 import { createServiceRoleClient } from './lib/service-client';
 
-const COLUMNS = 'id, category_id, title, url, description, tags, favicon_url, is_pinned, sort_order, created_at';
+const COLUMNS =
+  'id, category_id, title, url, description, tags, favicon_url, is_pinned, source, sort_order, created_at';
 
 const apply = process.argv.includes('--apply');
 
 async function main(): Promise<void> {
   const supabase = createServiceRoleClient();
 
-  const found = await supabase.from('bookmarks').select(COLUMNS).is('favicon_url', null);
+  // Discord 행은 provider-only 안전 수집 경로가 전담한다. 이 legacy 도구는 bookmark origin에
+  // 직접 접속할 수 있으므로 수동 등록 행만 대상으로 제한한다.
+  const found = await supabase
+    .from('bookmarks')
+    .select(COLUMNS)
+    .eq('source', 'manual')
+    .is('favicon_url', null);
   if (found.error !== null) throw found.error;
 
   const rows = found.data as Bookmark[];

@@ -1,10 +1,26 @@
 'use client';
 
-import { createContext, useContext, useId, useMemo, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+  type ReactNode,
+} from 'react';
 
 import { useSelectedCategory, type AdminCategory } from '@/components/admin/CategoryPanel';
 import type { AdminLink, LinkRowMap } from '@/components/admin/LinkTable';
 import type { AdminSubCategory, SubCategoryMap } from '@/components/admin/SubCategoryRow';
+import { toast } from '@/components/Toast';
+import { fillDiscordFavicons } from '@/lib/discord-favicon-fill';
+import { reconcileDiscordFaviconOrphans } from '@/lib/discord-favicon-reconcile';
+import {
+  DISCORD_FAVICON_PROVIDER_APPROVAL_REQUIRED,
+  REQUEST_FAILED,
+} from '@/lib/constants';
 import { hostOf } from '@/lib/url';
 
 /**
@@ -15,6 +31,7 @@ import { hostOf } from '@/lib/url';
  * 드래그를 받지 않는다(components/admin/LinkTable.tsx `handleDrop`).
  */
 export type SortMode = 'order' | 'sub' | 'clicks' | 'name';
+export type SourceFilter = 'all' | 'discord';
 
 /** select 가 그릴 차례와 글자. 배열 순서가 곧 option 순서다. */
 const SORTS: ReadonlyArray<{ value: SortMode; label: string }> = [
@@ -50,6 +67,8 @@ export type LinkFilterValue = {
    */
   subFilter: string | null;
   setSubFilter: (next: string | null) => void;
+  sourceFilter: SourceFilter;
+  setSourceFilter: (next: SourceFilter) => void;
   sort: SortMode;
   setSort: (next: SortMode) => void;
 };
@@ -113,10 +132,20 @@ function FilterState({
 }) {
   const [query, setQuery] = useState('');
   const [subFilter, setSubFilter] = useState<string | null>(null);
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all');
 
   const value = useMemo<LinkFilterValue>(
-    () => ({ query, setQuery, subFilter, setSubFilter, sort, setSort }),
-    [query, subFilter, sort, setSort],
+    () => ({
+      query,
+      setQuery,
+      subFilter,
+      setSubFilter,
+      sourceFilter,
+      setSourceFilter,
+      sort,
+      setSort,
+    }),
+    [query, subFilter, sourceFilter, sort, setSort],
   );
 
   return <LinkFilterContext.Provider value={value}>{children}</LinkFilterContext.Provider>;
@@ -197,13 +226,16 @@ function inSubFilter(
 export function visibleLinks(
   links: readonly AdminLink[],
   subs: readonly AdminSubCategory[],
-  filter: Pick<LinkFilterValue, 'query' | 'subFilter' | 'sort'>,
+  filter: Pick<LinkFilterValue, 'query' | 'subFilter' | 'sourceFilter' | 'sort'>,
 ): readonly AdminLink[] {
   const query = filter.query.trim().toLowerCase();
   const nameOf = new Map(subs.map((sub) => [sub.id, sub.name]));
 
   const shown = links.filter(
-    (link) => inSubFilter(link, filter.subFilter, nameOf) && matches(link, query),
+    (link) =>
+      inSubFilter(link, filter.subFilter, nameOf) &&
+      matches(link, query) &&
+      (filter.sourceFilter === 'all' || link.source === 'discord'),
   );
 
   if (filter.sort === 'order') return shown;
@@ -280,9 +312,10 @@ const NO_SUBS: readonly AdminSubCategory[] = [];
 /**
  * 필터 줄 — DESIGN_SPEC 6장 "필터 줄", 프로토타입 367–381행.
  *
- * 목록 안에서 찾고(검색), 하위별로 좁히고(칩), 늘어놓는 차례를 고른다(정렬 4종). 셋 다 **화면
- * 안에서만** 일어난다 — 서버로 가는 것이 없으므로 실패도, 기다림도, 빗장도 없다. 어느 상위인지는
- * prop 이 아니라 좌측 패널과 공유하는 선택 상태에서 온다(`useSelectedCategory`).
+ * 목록 안에서 찾고(검색), 하위별로 좁히고(칩), 늘어놓는 차례를 고른다(정렬 4종). 이 필터들은 **화면
+ * 안에서만** 일어난다. 같은 줄의 자동 favicon 유지보수 버튼만 관리자 server action으로 왕복하며
+ * busy/중복 제출 빗장을 갖는다. 어느 상위인지는 prop 이 아니라 좌측 패널과 공유하는 선택 상태에서
+ * 온다(`useSelectedCategory`).
  *
  * ## 자리 — 링크 추가 줄과 같은 상자 안, 표 **앞**이다
  *
@@ -307,9 +340,12 @@ const NO_SUBS: readonly AdminSubCategory[] = [];
 export function FilterRow({
   linksByCategory,
   subsByCategory,
+  faviconProviderApproved = false,
 }: {
   linksByCategory: LinkRowMap;
   subsByCategory: SubCategoryMap;
+  /** 서버가 exact `DISCORD_FAVICON_PROVIDER_APPROVED=true`에서만 내려 주는 privacy 승인값. */
+  faviconProviderApproved?: boolean;
 }) {
   const { selected } = useSelectedCategory();
 
@@ -322,6 +358,7 @@ export function FilterRow({
       parent={selected}
       links={linksByCategory[selected.id] ?? NO_LINKS}
       subs={subsByCategory[selected.id] ?? NO_SUBS}
+      faviconProviderApproved={faviconProviderApproved}
     />
   );
 }
@@ -333,13 +370,71 @@ function Row({
   parent,
   links,
   subs,
+  faviconProviderApproved,
 }: {
   parent: AdminCategory;
   links: readonly AdminLink[];
   subs: readonly AdminSubCategory[];
+  faviconProviderApproved: boolean;
 }) {
-  const { query, setQuery, subFilter, setSubFilter, sort, setSort } = useLinkFilter();
+  const {
+    query,
+    setQuery,
+    subFilter,
+    setSubFilter,
+    sourceFilter,
+    setSourceFilter,
+    sort,
+    setSort,
+  } = useLinkFilter();
   const sortId = useId();
+  const approvalNoteId = useId();
+  const fillingRef = useRef(false);
+  const reconcilingRef = useRef(false);
+  const [filling, startFill] = useTransition();
+  const [reconciling, startReconcile] = useTransition();
+
+  function fillFavicons(): void {
+    if (!faviconProviderApproved || fillingRef.current || reconcilingRef.current) return;
+    fillingRef.current = true;
+
+    startFill(async () => {
+      try {
+        const result = await fillDiscordFavicons();
+        toast(
+          result.ok
+            ? `${result.filled}개 채움 · ${result.failed}개 실패 · ${result.remaining}개 남음`
+            : result.error,
+        );
+      } catch (error) {
+        console.error('[FilterRow] 자동 파비콘 요청 실패', error);
+        toast(REQUEST_FAILED);
+      } finally {
+        fillingRef.current = false;
+      }
+    });
+  }
+
+  function reconcileFavicons(): void {
+    if (fillingRef.current || reconcilingRef.current) return;
+    reconcilingRef.current = true;
+
+    startReconcile(async () => {
+      try {
+        const result = await reconcileDiscordFaviconOrphans();
+        toast(
+          result.ok
+            ? `${result.deleted}개 고아 정리 · ${result.kept}개 유지 · ${result.invalid}개 건너뜀`
+            : result.error,
+        );
+      } catch (error) {
+        console.error('[FilterRow] 파비콘 고아 정리 요청 실패', error);
+        toast(REQUEST_FAILED);
+      } finally {
+        reconcilingRef.current = false;
+      }
+    });
+  }
 
   /* 어느 칩에 몇 개인지 한 번만 센다 — 칩마다 목록을 다시 훑으면 하위가 늘수록 훑는 횟수가 함께
      는다. 키는 칩의 필터 값이라 상위 id 가 그대로 "하위 미지정" 개수가 되고, **목록에 없는 하위**를
@@ -405,6 +500,27 @@ function Row({
         })}
       </span>
 
+      <span role="group" aria-label="등록 출처 필터" className="flex gap-[5px] flex-none">
+        {([
+          ['all', '전체'],
+          ['discord', '자동만'],
+        ] as const).map(([value, label]) => {
+          const on = sourceFilter === value;
+
+          return (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={on}
+              onClick={() => setSourceFilter(value)}
+              className={`${CHIP} ${on ? CHIP_ON : CHIP_OFF}`}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </span>
+
       {/* 눈에 보이는 '정렬'을 그대로 select 의 이름으로 쓴다 — `aria-label` 을 따로 적으면 보이는
           글자와 읽히는 이름이 갈라질 수 있다. */}
       <label htmlFor={sortId} className={SORT_LABEL}>
@@ -426,6 +542,36 @@ function Row({
           </option>
         ))}
       </select>
+
+      <button
+        type="button"
+        aria-busy={filling}
+        aria-describedby={faviconProviderApproved ? undefined : approvalNoteId}
+        title={
+          faviconProviderApproved ? undefined : DISCORD_FAVICON_PROVIDER_APPROVAL_REQUIRED
+        }
+        disabled={!faviconProviderApproved || filling || reconciling}
+        onClick={fillFavicons}
+        className="h-[30px] flex-none rounded-[6px] border border-border-strong bg-card px-[10px] text-[11.5px] font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {filling ? '자동 파비콘 채우는 중…' : '자동 파비콘 채우기'}
+      </button>
+
+      {!faviconProviderApproved && (
+        <span id={approvalNoteId} role="note" className="max-w-[180px] text-[10.5px] text-fainter">
+          {DISCORD_FAVICON_PROVIDER_APPROVAL_REQUIRED}
+        </span>
+      )}
+
+      <button
+        type="button"
+        aria-busy={reconciling}
+        disabled={filling || reconciling}
+        onClick={reconcileFavicons}
+        className="h-[30px] flex-none rounded-[6px] border border-border-strong bg-card px-[10px] text-[11.5px] font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {reconciling ? '고아 객체 정리 중…' : '고아 객체 정리'}
+      </button>
     </div>
   );
 }

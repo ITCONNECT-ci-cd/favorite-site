@@ -16,6 +16,7 @@ function makeBookmark(id: string, is_favorite: boolean, fav_order: number): Book
     tags: [],
     favicon_url: null,
     is_pinned: false,
+    source: 'manual',
     is_favorite,
     fav_order,
     sort_order: 0,

@@ -18,6 +18,7 @@ const BOOKMARK: BookmarkWithCount = {
   tags: [],
   favicon_url: 'https://cdn.example.com/openai.png',
   is_pinned: true,
+  source: 'manual',
   is_favorite: false,
   fav_order: 0,
   sort_order: 0,

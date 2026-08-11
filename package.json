@@ -11,6 +11,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
+    "verify:discord-ingest": "tsx scripts/verify-discord-ingest.ts",
     "seed": "tsx scripts/seed.ts",
     "verify:deploy": "tsx scripts/verify-deploy.ts",
     "test": "vitest run",
@@ -21,16 +22,20 @@
     "@supabase/supabase-js": "^2.112.2",
     "client-only": "^0.0.1",
     "next": "16.3.0",
+    "pg": "^8.23.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "server-only": "^0.0.1"
+    "server-only": "^0.0.1",
+    "tldts": "^7.4.10"
   },
   "devDependencies": {
+    "@modelcontextprotocol/server": "^2.0.0",
     "@tailwindcss/postcss": "^4",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^7.0.0",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^20",
+    "@types/pg": "^8.21.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^6.0.5",
@@ -40,6 +45,7 @@
     "tailwindcss": "^4",
     "tsx": "^4.23.11",
     "typescript": "^5",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "zod": "^4.4.3"
   }
 }
