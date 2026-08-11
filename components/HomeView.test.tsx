@@ -6,12 +6,16 @@ import { HomeView } from '@/components/HomeView';
 import { Toaster } from '@/components/Toast';
 import { recordClick } from '@/lib/clicks';
 import { OPERATING_CATEGORY_NAME } from '@/lib/constants';
-import { useFavorites } from '@/lib/favorites';
-import { deleteBookmark, reorderBookmarks, updateBookmark } from '@/lib/mutations';
+import {
+  deleteBookmark,
+  reorderBookmarks,
+  reorderFavorites,
+  setFavorite,
+  updateBookmark,
+} from '@/lib/mutations';
 import { rollupCounts } from '@/lib/queries';
 import type { BookmarkWithCount, Category, SiteData } from '@/lib/types';
 import { middleClick } from '@/test/events';
-import { setFavs, storedFavs } from '@/test/favs';
 import { BOOKMARKS, CATEGORIES, siteData } from '@/test/fixtures/seed';
 import { openedTab, openedTabs, setupWindowOpen } from '@/test/open';
 import { pendingResult } from '@/test/pending';
@@ -39,6 +43,8 @@ vi.mock('@/lib/mutations', async (importOriginal) => ({
   updateBookmark: vi.fn(),
   deleteBookmark: vi.fn(),
   reorderBookmarks: vi.fn(),
+  setFavorite: vi.fn(),
+  reorderFavorites: vi.fn(),
 }));
 
 /**
@@ -106,28 +112,44 @@ const pins = (name: string) =>
 const openLink = (name: string, index = 0) => within(cards(name)[index]).getByRole('link');
 
 /**
- * 다른 화면(목록·카테고리)에서 담는 상황 모사.
- * 홈에는 담을 수단이 없다 — 즐겨찾기 묶음의 핀은 이미 담긴 카드에만 있고, 운영 중 섹션은 핀
- * 자체가 없다. 그래서 '담기 → 카드 등장'은 같은 스토어를 쓰는 바깥 인스턴스로 확인한다.
+ * 이 테스트가 '담긴 것'으로 삼을 id 들 — 아래 `data()` 가 이 값을 반영한 SiteData 를 만든다.
+ *
+ * 예전에는 같은 이름의 함수가 localStorage 를 심었다. 2026-08-11 에 즐겨찾기가 DB 로 옮겨오면서
+ * 담긴 표시는 **서버가 준 행**에 실려 오므로, 이제 심는 자리는 화면에 넘기는 데이터다.
  */
-function FavToggler({ id }: { id: string }) {
-  const { toggle } = useFavorites();
+let favIds: readonly string[] = [];
 
-  return (
-    <button type="button" onClick={() => toggle(id)}>
-      다른 화면에서 담기
-    </button>
-  );
+function setFavs(ids: readonly string[]): void {
+  favIds = ids;
+}
+
+/** `setFavs` 로 정한 차례를 `is_favorite`·`fav_order` 로 옮겨 담은 화면 입력. */
+function data(): SiteData {
+  const order = new Map(favIds.map((id, index) => [id, index] as const));
+  const base = siteData();
+
+  return {
+    ...base,
+    bookmarks: base.bookmarks.map((bookmark) => {
+      const favOrder = order.get(bookmark.id);
+
+      return favOrder === undefined
+        ? bookmark
+        : { ...bookmark, is_favorite: true, fav_order: favOrder };
+    }),
+  };
 }
 
 beforeEach(() => {
-  localStorage.clear();
+  favIds = [];
+  vi.mocked(setFavorite).mockResolvedValue({ ok: true });
+  vi.mocked(reorderFavorites).mockResolvedValue({ ok: true });
 });
 
 describe('HomeView — 섹션 구성', () => {
   it('즐겨찾기 묶음 · 현재 운영 중인 사이트 순으로 놓는다', () => {
     setFavs(MIXED_FAV_IDS);
-    render(<HomeView data={DATA} isAdmin={false} />);
+    render(<HomeView data={data()} isAdmin={false} />);
 
     // 'AI 소식'은 담긴 것이 없어 서지 않는다. 묶음 차례는 FAV_GROUPS 가 정한다.
     expect(screen.getAllByRole('heading').map((heading) => heading.textContent)).toEqual([
@@ -138,7 +160,7 @@ describe('HomeView — 섹션 구성', () => {
   });
 
   it('섹션 사이를 26px 띄운다 — 모바일은 20px (DESIGN_SPEC 1장 섹션 간격 · 프로토타입 sectionGap)', () => {
-    render(<HomeView data={DATA} isAdmin={false} />);
+    render(<HomeView data={data()} isAdmin={false} />);
 
     expect(screen.getByRole('main')).toHaveClass(
       'flex',
@@ -149,14 +171,14 @@ describe('HomeView — 섹션 구성', () => {
   });
 
   it('스펙 3장의 하단 안내 박스는 두지 않는다 (계획서 V6 편차 — 사용자 결정)', () => {
-    render(<HomeView data={DATA} isAdmin={false} />);
+    render(<HomeView data={data()} isAdmin={false} />);
 
     expect(screen.queryByText(/왼쪽 사이드바에서 분류별로/)).not.toBeInTheDocument();
   });
 
   it('홈에서는 체크 아이콘을 쓰지 않는다 (목록 화면 전용)', () => {
     setFavs(FAV_IDS);
-    render(<HomeView data={DATA} isAdmin={false} />);
+    render(<HomeView data={data()} isAdmin={false} />);
 
     expect(screen.queryAllByRole('button', { name: /.+ 선택$/ })).toHaveLength(0);
   });
@@ -165,25 +187,30 @@ describe('HomeView — 섹션 구성', () => {
 describe('HomeView — 즐겨찾기 묶음 (AI 소식 · AI 서비스 · 업무용 서비스)', () => {
   it('담긴 링크를 그 링크의 상위 분류가 정하는 묶음으로 나눠 놓는다', () => {
     setFavs(MIXED_FAV_IDS);
-    render(<HomeView data={DATA} isAdmin={false} />);
+    render(<HomeView data={data()} isAdmin={false} />);
 
     // 담은 차례(200 → 5 → 40)가 묶음 안에서 그대로 유지된다.
     expectCards('AI 서비스', [BOOKMARKS[5], BOOKMARKS[40]]);
     expectCards('업무용 서비스', [BOOKMARKS[200]]);
   });
 
-  it('담긴 차례는 묶음 안에서 그대로다 (localStorage 순서)', () => {
+  it('담긴 차례는 묶음 안에서 그대로다 (fav_order 순서)', () => {
     // 담은 차례를 뒤집어 담는다 — sort_order 로 다시 세우지 않는다는 것이 이 테스트의 전부다.
     setFavs([BOOKMARKS[40].id, BOOKMARKS[5].id]);
-    render(<HomeView data={DATA} isAdmin={false} />);
+    render(<HomeView data={data()} isAdmin={false} />);
 
     expectCards('AI 서비스', [BOOKMARKS[40], BOOKMARKS[5]]);
   });
 
   it("'뉴스·인사이트' 분류의 링크는 'AI 소식'으로 간다", () => {
     const news: Category = { id: 'cat-news', name: '뉴스·인사이트', parent_id: null, sort_order: 99 };
-    const article: BookmarkWithCount = { ...BOOKMARKS[7], id: 'bm-news', category_id: 'cat-news' };
-    setFavs([article.id]);
+    const article: BookmarkWithCount = {
+      ...BOOKMARKS[7],
+      id: 'bm-news',
+      category_id: 'cat-news',
+      is_favorite: true,
+      fav_order: 0,
+    };
     render(
       <HomeView
         data={{ categories: [...CATEGORIES, news], bookmarks: [...DATA.bookmarks, article] }}
@@ -198,7 +225,7 @@ describe('HomeView — 즐겨찾기 묶음 (AI 소식 · AI 서비스 · 업무�
 
   it('빈 묶음은 그리지 않는다 — 담긴 것이 있는 묶음만 선다', () => {
     setFavs([BOOKMARKS[5].id]);
-    render(<HomeView data={DATA} isAdmin={false} />);
+    render(<HomeView data={data()} isAdmin={false} />);
 
     expect(screen.getByRole('region', { name: 'AI 서비스' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'AI 소식' })).toBeNull();
@@ -207,19 +234,19 @@ describe('HomeView — 즐겨찾기 묶음 (AI 소식 · AI 서비스 · 업무�
 
   it('묶음마다 담긴 개수와 열기 버튼을 적는다', () => {
     setFavs(MIXED_FAV_IDS);
-    render(<HomeView data={DATA} isAdmin={false} />);
+    render(<HomeView data={data()} isAdmin={false} />);
 
     const header = section('AI 서비스');
 
     expect(
-      within(header).getByText('핀으로 담은 2개 · 이 브라우저에만 저장됩니다'),
+      within(header).getByText('핀으로 담은 2개'),
     ).toBeInTheDocument();
     expect(within(header).getByRole('button', { name: '2개 한 번에 열기' })).toBeInTheDocument();
   });
 
-  it('카드의 핀이 켜진 상태로 보인다', () => {
+  it('관리자에게는 카드의 핀이 켜진 상태로 보인다', () => {
     setFavs(MIXED_FAV_IDS);
-    render(<HomeView data={DATA} isAdmin={false} />);
+    render(<HomeView data={data()} isAdmin />);
 
     const pinButtons = [...pins('AI 서비스'), ...pins('업무용 서비스')];
 
@@ -227,19 +254,20 @@ describe('HomeView — 즐겨찾기 묶음 (AI 소식 · AI 서비스 · 업무�
     for (const pin of pinButtons) expect(pin).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('이제 없는 링크 id 가 favs 에 남아 있어도 건너뛴다', () => {
-    setFavs([BOOKMARKS[5].id, '사라진-링크', BOOKMARKS[40].id]);
-    render(<HomeView data={DATA} isAdmin={false} />);
+  it('방문자에게는 핀이 하나도 그려지지 않는다 (2026-08-11 — 담는 일은 관리자 몫)', () => {
+    setFavs(MIXED_FAV_IDS);
+    render(<HomeView data={data()} isAdmin={false} />);
 
+    // 카드는 그대로 보이되 담고 빼는 도구만 없다.
     expectCards('AI 서비스', [BOOKMARKS[5], BOOKMARKS[40]]);
-    expect(screen.getByText('핀으로 담은 2개 · 이 브라우저에만 저장됩니다')).toBeInTheDocument();
+    expect([...pins('AI 서비스'), ...pins('업무용 서비스')]).toHaveLength(0);
   });
 
   it('0개면 묶음 셋 대신 안내 한 장만 남는다', () => {
-    render(<HomeView data={DATA} isAdmin={false} />);
+    render(<HomeView data={data()} isAdmin={false} />);
 
     const empty = within(section('내 즐겨찾기')).getByText(
-      '다른 화면에서 카드 오른쪽 위의 핀을 누르면 이 자리에 모입니다. 담고 빼는 것은 전적으로 내 몫이고, 이 브라우저에만 저장됩니다.',
+      '다른 화면에서 카드 오른쪽 위의 핀을 누르면 이 자리에 모입니다. 담고 빼는 것은 관리자 몫이고, 담긴 목록은 모두에게 같습니다.',
     );
 
     // 점선 테두리 #d8d3cb · 배경 #f3f1ed · 라운드 10px · 패딩 16px · 11.5px #6d6a65
@@ -263,7 +291,7 @@ describe('HomeView — 즐겨찾기 묶음 (AI 소식 · AI 서비스 · 업무�
 
 describe('HomeView — 현재 운영 중인 사이트 섹션', () => {
   it('운영 중 카테고리 소속 16개를 sort_order 순으로 놓는다', () => {
-    render(<HomeView data={DATA} isAdmin={false} />);
+    render(<HomeView data={data()} isAdmin={false} />);
 
     const operating = BOOKMARKS.filter((bookmark) => bookmark.category_id === OPERATING_ID);
 
@@ -272,7 +300,7 @@ describe('HomeView — 현재 운영 중인 사이트 섹션', () => {
   });
 
   it('보조문에 실제 개수를 적는다', () => {
-    render(<HomeView data={DATA} isAdmin={false} />);
+    render(<HomeView data={data()} isAdmin={false} />);
 
     expect(
       within(section('현재 운영 중인 사이트')).getByText('회사가 직접 운영하는 서비스 16개'),
@@ -280,7 +308,7 @@ describe('HomeView — 현재 운영 중인 사이트 섹션', () => {
   });
 
   it('"전체 보기" 링크가 열기 버튼 왼쪽에서 그 카테고리로 간다', () => {
-    render(<HomeView data={DATA} isAdmin={false} />);
+    render(<HomeView data={data()} isAdmin={false} />);
 
     const header = section('현재 운영 중인 사이트');
     const all = within(header).getByRole('link', { name: '전체 보기' });
@@ -292,7 +320,7 @@ describe('HomeView — 현재 운영 중인 사이트 섹션', () => {
 
   it('카드에 핀을 노출하지 않는다', () => {
     setFavs([BOOKMARKS.find((bookmark) => bookmark.category_id === OPERATING_ID)!.id]);
-    render(<HomeView data={DATA} isAdmin={false} />);
+    render(<HomeView data={data()} isAdmin={false} />);
 
     expect(pins('현재 운영 중인 사이트')).toHaveLength(0);
   });
@@ -351,67 +379,66 @@ describe('HomeView — 현재 운영 중인 사이트 섹션', () => {
 describe('HomeView — 핀 토글 (D6)', () => {
   setupToastTimers();
 
-  it('즐겨찾기 카드의 핀을 누르면 그 카드가 곧바로 사라지고 해제 토스트가 뜬다', () => {
+  /** 핀은 관리자에게만 있다(2026-08-11) — 이 블록의 렌더는 전부 관리자 화면이다. */
+  function renderHome() {
     setFavs(FAV_IDS);
     render(
       <>
-        <HomeView data={DATA} isAdmin={false} />
+        <HomeView data={data()} isAdmin />
         <Toaster />
       </>,
     );
+  }
+
+  it('담긴 카드의 핀을 누르면 서버에 "빼기"를 보낸다', async () => {
+    renderHome();
 
     // FAV_IDS 순서라 첫 카드는 BOOKMARKS[40] 이다.
-    fireEvent.click(pins('AI 서비스')[0]);
+    await act(async () => {
+      fireEvent.click(pins('AI 서비스')[0]);
+    });
 
-    expectCards('AI 서비스', [BOOKMARKS[2], BOOKMARKS[5]]);
+    // 토글이 아니라 **방향**을 보낸다 — 화면이 아는 지금 값(true)을 뒤집은 false 다.
+    expect(setFavorite).toHaveBeenCalledWith(BOOKMARKS[40].id, false);
     expect(screen.getByText(`${BOOKMARKS[40].title} 즐겨찾기 해제`)).toBeInTheDocument();
-    expect(storedFavs()).toEqual([BOOKMARKS[2].id, BOOKMARKS[5].id]);
   });
 
-  it('보조문·열기 버튼의 개수도 함께 줄어든다', () => {
-    setFavs(FAV_IDS);
-    render(<HomeView data={DATA} isAdmin={false} />);
+  it('낙관적으로 지우지 않는다 — 목록은 서버가 다시 그릴 때 줄어든다', () => {
+    // 연필·휴지통과 같은 취급이다(액션의 revalidatePath 가 새 목록을 가져온다).
+    // 여기서 미리 지우면 저장이 실패했을 때 화면만 사라진 채로 남는다.
+    renderHome();
 
     fireEvent.click(pins('AI 서비스')[0]);
 
-    expect(
-      screen.getByText('핀으로 담은 2개 · 이 브라우저에만 저장됩니다'),
-    ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '2개 한 번에 열기' })).toBeInTheDocument();
+    expectCards('AI 서비스', [BOOKMARKS[40], BOOKMARKS[2], BOOKMARKS[5]]);
+    expect(screen.getByText('핀으로 담은 3개')).toBeInTheDocument();
   });
 
-  it('마지막 하나를 빼면 빈 즐겨찾기 안내로 바뀐다', () => {
-    setFavs([BOOKMARKS[5].id]);
-    render(<HomeView data={DATA} isAdmin={false} />);
+  it('저장이 실패하면 그 문구를 그대로 띄운다', async () => {
+    vi.mocked(setFavorite).mockResolvedValue({ ok: false, error: '권한이 없습니다.' });
+    renderHome();
 
-    fireEvent.click(within(section('AI 서비스')).getAllByRole('button', { name: /.+ 즐겨찾기$/ })[0]);
+    await act(async () => {
+      fireEvent.click(pins('AI 서비스')[0]);
+    });
 
-    expect(screen.queryByRole('region', { name: 'AI 서비스' })).toBeNull();
-    expect(
-      within(section('내 즐겨찾기')).getByText(
-        '다른 화면에서 카드 오른쪽 위의 핀을 누르면 이 자리에 모입니다. 담고 빼는 것은 전적으로 내 몫이고, 이 브라우저에만 저장됩니다.',
-      ),
-    ).toBeInTheDocument();
+    expect(screen.getByText('권한이 없습니다.')).toBeInTheDocument();
   });
 
-  it('다른 화면에서 담으면 즐겨찾기 섹션에 곧바로 나타난다', () => {
-    render(
-      <>
-        <HomeView data={DATA} isAdmin={false} />
-        <FavToggler id={BOOKMARKS[5].id} />
-      </>,
-    );
-    expect(screen.queryByRole('region', { name: 'AI 서비스' })).toBeNull();
+  it('요청이 거부돼도(네트워크 단절) 오류 화면으로 번지지 않는다', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(setFavorite).mockRejectedValue(new Error('offline'));
+    renderHome();
 
-    fireEvent.click(screen.getByRole('button', { name: '다른 화면에서 담기' }));
+    await act(async () => {
+      fireEvent.click(pins('AI 서비스')[0]);
+    });
 
-    expectCards('AI 서비스', [BOOKMARKS[5]]);
-    expect(pins('AI 서비스')[0]).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('처리하지 못했습니다. 잠시 후 다시 시도해 주세요.')).toBeInTheDocument();
   });
 
-  it('핀을 배선한 뒤에도 운영 중 섹션에는 핀이 없다 (관리자 영역)', () => {
-    setFavs(FAV_IDS);
-    render(<HomeView data={DATA} isAdmin={false} />);
+  it('운영 중 섹션에는 관리자에게도 핀이 없다', () => {
+    renderHome();
 
     expect(pins('AI 서비스')).toHaveLength(3);
     expect(pins('현재 운영 중인 사이트')).toHaveLength(0);
@@ -431,7 +458,7 @@ describe('HomeView — 카드 클릭 기록 (F3)', () => {
     setFavs(FAV_IDS);
     render(
       <>
-        <HomeView data={DATA} isAdmin={false} />
+        <HomeView data={data()} isAdmin={false} />
         <Toaster />
       </>,
     );
@@ -483,10 +510,19 @@ describe('HomeView — 카드 클릭 기록 (F3)', () => {
     expect(middleClick(openLink('현재 운영 중인 사이트'))).toBe(true);
   });
 
-  it('핀을 눌러도 클릭을 기록하지 않는다 (여는 동작이 아니다)', () => {
-    renderHome();
+  it('핀을 눌러도 클릭을 기록하지 않는다 (여는 동작이 아니다)', async () => {
+    // 핀은 관리자에게만 있으므로(2026-08-11) 이 한 자리만 관리자 화면으로 세운다.
+    setFavs(FAV_IDS);
+    render(
+      <>
+        <HomeView data={data()} isAdmin />
+        <Toaster />
+      </>,
+    );
 
-    fireEvent.click(pins('AI 서비스')[0]);
+    await act(async () => {
+      fireEvent.click(pins('AI 서비스')[0]);
+    });
 
     expect(recordClick).not.toHaveBeenCalled();
   });
@@ -510,7 +546,7 @@ describe('HomeView — 섹션 한 번에 열기 (G4)', () => {
     setFavs(FAV_IDS);
     render(
       <>
-        <HomeView data={DATA} isAdmin={false} />
+        <HomeView data={data()} isAdmin={false} />
         <Toaster />
       </>,
     );
@@ -557,18 +593,20 @@ describe('HomeView — 섹션 한 번에 열기 (G4)', () => {
   });
 
   it('즐겨찾기가 0개면 열기 버튼이 없어 누를 것도 없다 (DESIGN_SPEC 3장)', () => {
-    render(<HomeView data={DATA} isAdmin={false} />);
+    render(<HomeView data={data()} isAdmin={false} />);
 
     expect(
       within(section('내 즐겨찾기')).queryByRole('button', { name: /한 번에 열기$/ }),
     ).not.toBeInTheDocument();
   });
 
-  it('핀을 빼서 줄어든 목록만 연다 — 버튼 라벨과 실제로 여는 수가 같다', () => {
-    renderHome();
+  it('버튼 라벨과 실제로 여는 수가 같다', () => {
+    // 예전에는 핀을 눌러 목록을 줄인 뒤 확인했다. 즐겨찾기가 서버로 옮겨간 뒤(2026-08-11)
+    // 핀 한 번으로 목록이 줄지 않으므로(다시 그릴 때 준다) 처음부터 두 장만 담아 확인한다.
+    setFavs([BOOKMARKS[2].id, BOOKMARKS[5].id]);
+    render(<HomeView data={data()} isAdmin={false} />);
 
-    fireEvent.click(pins('AI 서비스')[0]);
-    vi.mocked(recordClick).mockClear();
+    expect(openAll('AI 서비스')).toHaveAccessibleName('2개 한 번에 열기');
 
     fireEvent.click(openAll('AI 서비스'));
 
@@ -646,7 +684,7 @@ describe('HomeView — 관리자 편집 노출 (J1)', () => {
 
   it('기본(비관리자)에는 연필·휴지통이 한 장도 없다', () => {
     setFavs(FAV_IDS);
-    render(<HomeView data={DATA} isAdmin={false} />);
+    render(<HomeView data={data()} isAdmin={false} />);
 
     expect(edits()).toHaveLength(0);
     expect(deletes()).toHaveLength(0);
@@ -654,7 +692,7 @@ describe('HomeView — 관리자 편집 노출 (J1)', () => {
 
   it('isAdmin 이면 모든 섹션의 카드에 연필·휴지통이 붙는다 (즐겨찾기 3 + 운영 16)', () => {
     setFavs(FAV_IDS);
-    render(<HomeView data={DATA} isAdmin />);
+    render(<HomeView data={data()} isAdmin />);
 
     const total = FAV_IDS.length + OPERATING_COUNT;
 
@@ -664,7 +702,7 @@ describe('HomeView — 관리자 편집 노출 (J1)', () => {
   });
 
   it('핀을 감춘 섹션(운영 중)에서도 관리자 아이콘은 나온다', () => {
-    render(<HomeView data={DATA} isAdmin />);
+    render(<HomeView data={data()} isAdmin />);
 
     const operating = within(section(OPERATING_CATEGORY_NAME));
 
@@ -684,14 +722,14 @@ describe('HomeView — 링크 추가 타일 (K1)', () => {
   it('비관리자에게는 마크업 자체가 없다', () => {
     // 늘 그려 두고 CSS 로 감추는 방식은 금지다(README 주의사항 7) — 응답에 실리지 않아야 한다.
     setFavs(FAV_IDS);
-    const { container } = render(<HomeView data={DATA} isAdmin={false} />);
+    const { container } = render(<HomeView data={data()} isAdmin={false} />);
 
     expect(screen.queryByRole('button', { name: '링크 추가' })).toBeNull();
     expect(container.querySelector('[data-testid="quick-add"]')).toBeNull();
   });
 
   it('관리자에게는 운영 중 섹션 그리드의 **맨 앞** 칸에 선다', () => {
-    render(<HomeView data={DATA} isAdmin />);
+    render(<HomeView data={data()} isAdmin />);
 
     const grid = body(OPERATING_CATEGORY_NAME);
 
@@ -705,14 +743,14 @@ describe('HomeView — 링크 추가 타일 (K1)', () => {
   it('즐겨찾기에는 두지 않는다 — 담는 일은 카드의 핀이 한다', () => {
     // 이 브라우저의 localStorage 에서 나온 목록이라, 거기서 만든 링크가 왜 그 자리에 안 보이는지
     setFavs(FAV_IDS);
-    render(<HomeView data={DATA} isAdmin />);
+    render(<HomeView data={data()} isAdmin />);
 
     expect(quickAddTile('AI 서비스')).toBeNull();
     expect(screen.getAllByRole('button', { name: '링크 추가' })).toHaveLength(1);
   });
 
   it('기본 분류는 그 섹션의 분류다 — 보고 있는 목록에 한 건 더 붙인다', () => {
-    render(<HomeView data={DATA} isAdmin />);
+    render(<HomeView data={data()} isAdmin />);
 
     fireEvent.click(quickAddTile(OPERATING_CATEGORY_NAME)!);
 
@@ -720,7 +758,7 @@ describe('HomeView — 링크 추가 타일 (K1)', () => {
   });
 
   it('분류 상자에는 모든 분류가 온다 — 홈에서 어느 분류로든 넣을 수 있다', () => {
-    render(<HomeView data={DATA} isAdmin />);
+    render(<HomeView data={data()} isAdmin />);
 
     fireEvent.click(quickAddTile(OPERATING_CATEGORY_NAME)!);
 
@@ -776,7 +814,7 @@ describe('HomeView — 카드 인라인 편집 (J2)', () => {
   function renderHome() {
     // SHARED 를 함께 담아 '업무용 서비스' 묶음과 운영 중 섹션에 같은 링크가 서게 한다.
     setFavs([...FAV_IDS, SHARED.id]);
-    render(<HomeView data={DATA} isAdmin />);
+    render(<HomeView data={data()} isAdmin />);
   }
 
   beforeEach(() => {
@@ -892,7 +930,7 @@ describe('HomeView — 카드 인라인 편집 (J2)', () => {
 
   it('비관리자 화면에는 폼을 여는 길이 없다', () => {
     setFavs(FAV_IDS);
-    render(<HomeView data={DATA} isAdmin={false} />);
+    render(<HomeView data={data()} isAdmin={false} />);
 
     expect(screen.queryAllByRole('button', { name: /.+ 수정$/ })).toHaveLength(0);
     expect(forms()).toHaveLength(0);
@@ -930,7 +968,7 @@ describe('HomeView — 카드 삭제 확인 (J3)', () => {
   function renderHome() {
     // SHARED 를 함께 담아 '업무용 서비스' 묶음과 운영 중 섹션에 같은 링크가 서게 한다.
     setFavs([...FAV_IDS, SHARED.id]);
-    render(<HomeView data={DATA} isAdmin />);
+    render(<HomeView data={data()} isAdmin />);
   }
 
   beforeEach(() => {
@@ -1019,9 +1057,10 @@ describe('HomeView — 카드 삭제 확인 (J3)', () => {
 
     expect(deleteBookmark).toHaveBeenCalledWith(FAV_FIRST.id);
     expect(overlays()).toHaveLength(0);
-    // 지운 링크는 즐겨찾기에서도 빠지므로(J3 DeleteConfirm 의 `remove`) 이 묶음에서 한 장 준다.
-    // 분류 화면의 목록 자체는 서버가 다시 그려 준다(액션의 revalidatePath).
-    expect(cards('AI 서비스')).toHaveLength(FAV_IDS.length - 1);
+    // 목록은 그대로다 — 삭제도 다른 편집과 같이 서버가 다시 그려 반영한다(액션의 revalidatePath).
+    // 즐겨찾기를 따로 청소하던 한 줄은 2026-08-11 서버 이전으로 없어졌다: 담긴 표시가 링크 행에
+    // 실려 있어(`is_favorite`) 행이 사라지면 함께 사라진다.
+    expect(cards('AI 서비스')).toHaveLength(FAV_IDS.length);
   });
 
   it('취소하면 아무것도 보내지 않고 오버레이가 닫힌다', () => {
@@ -1081,7 +1120,7 @@ describe('HomeView — 카드 삭제 확인 (J3)', () => {
 
   it('비관리자 화면에는 확인 오버레이를 여는 길이 없다', () => {
     setFavs(FAV_IDS);
-    render(<HomeView data={DATA} isAdmin={false} />);
+    render(<HomeView data={data()} isAdmin={false} />);
 
     expect(screen.queryAllByRole('button', { name: /.+ 삭제$/ })).toHaveLength(0);
     expect(overlays()).toHaveLength(0);
@@ -1115,7 +1154,7 @@ describe('HomeView — 드래그 정렬 (J5)', () => {
 
   it('비관리자 응답에는 드래그 속성이 한 조각도 실리지 않는다', () => {
     setFavs(FAV_IDS);
-    render(<HomeView data={DATA} isAdmin={false} />);
+    render(<HomeView data={data()} isAdmin={false} />);
 
     for (const card of cards(OPERATING_CATEGORY_NAME)) {
       expect(card).not.toHaveAttribute('draggable');
@@ -1125,7 +1164,7 @@ describe('HomeView — 드래그 정렬 (J5)', () => {
   });
 
   it('관리자 카드는 끌 수 있고, 그때만 앵커가 드래그 소스에서 빠진다', () => {
-    render(<HomeView data={DATA} isAdmin />);
+    render(<HomeView data={data()} isAdmin />);
 
     expect(cards(OPERATING_CATEGORY_NAME)[0]).toHaveAttribute('draggable', 'true');
     // 앵커를 그대로 두면 본문을 집었을 때 순서 바꾸기가 아니라 주소 끌기가 일어난다.
@@ -1137,7 +1176,7 @@ describe('HomeView — 드래그 정렬 (J5)', () => {
     const pending = pendingResult();
     vi.mocked(reorderBookmarks).mockReturnValue(pending.promise);
 
-    render(<HomeView data={DATA} isAdmin />);
+    render(<HomeView data={data()} isAdmin />);
     const items = DATA.bookmarks.filter((bookmark) => bookmark.category_id === OPERATING_ID);
 
     await drag(OPERATING_CATEGORY_NAME, 2, 0);
@@ -1148,7 +1187,7 @@ describe('HomeView — 드래그 정렬 (J5)', () => {
   });
 
   it("'운영 중' 섹션 — 그 분류의 목록만 넘긴다", async () => {
-    render(<HomeView data={DATA} isAdmin />);
+    render(<HomeView data={data()} isAdmin />);
     const items = DATA.bookmarks.filter((bookmark) => bookmark.category_id === OPERATING_ID);
 
     await drag(OPERATING_CATEGORY_NAME, 1, 0);
@@ -1158,18 +1197,19 @@ describe('HomeView — 드래그 정렬 (J5)', () => {
     );
   });
 
-  it('즐겨찾기 섹션은 서버로 보내지 않는다 — 순서를 이 브라우저가 든다', async () => {
+  it('즐겨찾기 묶음은 fav_order 축으로 보낸다 — sort_order 를 건드리지 않는다', async () => {
+    // 두 축은 다르다: 이 드래그가 `reorderBookmarks` 로 가면 엉뚱한 분류들의 순서가 흔들린다.
     setFavs(FAV_IDS);
-    render(<HomeView data={DATA} isAdmin />);
+    render(<HomeView data={data()} isAdmin />);
 
     await drag('AI 서비스', 2, 0);
 
     expect(reorderBookmarks).not.toHaveBeenCalled();
-    expect(storedFavs()).toEqual([FAV_IDS[2], FAV_IDS[0], FAV_IDS[1]]);
+    expect(reorderFavorites).toHaveBeenCalledWith([FAV_IDS[2], FAV_IDS[0], FAV_IDS[1]]);
   });
 
   it('끌기 시작이 없던 drop 은 무시한다 (바깥에서 끌어 온 것)', async () => {
-    render(<HomeView data={DATA} isAdmin />);
+    render(<HomeView data={data()} isAdmin />);
 
     await act(async () => {
       fireEvent.drop(cards(OPERATING_CATEGORY_NAME)[0]);
@@ -1186,7 +1226,7 @@ describe('HomeView — 드래그 정렬 (J5)', () => {
     });
     render(
       <>
-        <HomeView data={DATA} isAdmin />
+        <HomeView data={data()} isAdmin />
         <Toaster />
       </>,
     );

@@ -1,6 +1,6 @@
 import { MobileChips } from "@/components/MobileChips";
 import { PaletteHost } from "@/components/PaletteHost";
-import { SidebarContainer } from "@/components/SidebarContainer";
+import { Sidebar } from "@/components/Sidebar";
 import {
   faviconCount,
   findOperatingCategoryId,
@@ -175,10 +175,18 @@ export default async function PublicLayout({ children }: LayoutProps<"/">) {
    */
   const isAdmin = (await sessionPromise) !== null;
 
-  /** 셸이 내려보내는 값 셋 — 사이드바·헤더가 쓰는 숫자다. */
+  /** 셸이 내려보내는 값 넷 — 사이드바·헤더가 쓰는 숫자다. */
   const totalCount = bookmarks.length;
   const counts = rollupCounts(categories, bookmarks);
   const operatingCategoryId = findOperatingCategoryId(categories);
+  /**
+   * '내 즐겨찾기' 개수 — **서버가 센다**(2026-08-11 서버 이전).
+   *
+   * 예전에는 브라우저만 아는 값이라 클라이언트 래퍼(`SidebarContainer`)를 한 겹 거쳤고, 지워진
+   * 링크의 id 가 그 브라우저에 남아 숫자가 실제 목록보다 커지는 어긋남이 있었다. 이제 화면의
+   * 목록과 **같은 행에서** 세므로 두 숫자가 갈라질 자리가 없다.
+   */
+  const favCount = bookmarks.filter((bookmark) => bookmark.is_favorite).length;
 
   return (
     /* 셸 전체가 뷰포트 높이를 넘지 않는다 — 스크롤은 아래 콘텐츠 영역에서만 일어난다.
@@ -188,14 +196,14 @@ export default async function PublicLayout({ children }: LayoutProps<"/">) {
        body 의 surface 가 아니라 스펙의 페이지 배경이 드러나게 하기 위한 대비다. */
     <div className="flex h-full overflow-hidden bg-page">
       {/* 사이드바 (240px, bg-side, 우측 1px 테두리) — 내용물은 C3 Sidebar.
-          '내 즐겨찾기' 개수만 localStorage 소관이라 클라이언트 래퍼를 한 겹 거친다.
           <820px 에서는 통째로 숨고 그 자리를 아래 MobileChips 가 대신한다(D5). */}
       <aside className="hidden w-[240px] flex-none flex-col overflow-hidden border-r border-border bg-side min-[820px]:flex">
-        <SidebarContainer
+        <Sidebar
           categories={categories}
           counts={counts}
           totalCount={totalCount}
           operatingCategoryId={operatingCategoryId}
+          favCount={favCount}
         />
       </aside>
 

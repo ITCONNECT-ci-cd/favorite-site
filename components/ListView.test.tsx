@@ -10,10 +10,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ListView, type ListViewProps } from '@/components/ListView';
 import { Toaster } from '@/components/Toast';
 import { recordClick } from '@/lib/clicks';
-import { deleteBookmark, reorderBookmarks, updateBookmark } from '@/lib/mutations';
+import {
+  deleteBookmark,
+  reorderBookmarks,
+  reorderFavorites,
+  setFavorite,
+  updateBookmark,
+} from '@/lib/mutations';
 import type { BookmarkWithCount } from '@/lib/types';
 import { middleClick } from '@/test/events';
-import { setFavs, storedFavs } from '@/test/favs';
 import { openedTab, openedTabs, openedUrls, setupWindowOpen } from '@/test/open';
 import { pendingResult } from '@/test/pending';
 import { setupToastTimers } from '@/test/toast';
@@ -39,6 +44,8 @@ vi.mock('@/lib/mutations', async (importOriginal) => ({
   updateBookmark: vi.fn(),
   deleteBookmark: vi.fn(),
   reorderBookmarks: vi.fn(),
+  setFavorite: vi.fn(),
+  reorderFavorites: vi.fn(),
 }));
 
 function makeBookmark(
@@ -91,6 +98,22 @@ function renderList(props: Partial<ListViewProps> = {}) {
     rerender: (next: Partial<ListViewProps> = {}) =>
       view.rerender(<ListView {...merged} {...next} />),
   };
+}
+
+/**
+ * 담긴 상태로 세운 목록 — 즐겨찾기는 서버가 준 행에 실려 온다(2026-08-11 서버 이전).
+ * 받은 차례가 곧 `fav_order` 다.
+ */
+function favored(ids: readonly string[]): BookmarkWithCount[] {
+  const order = new Map(ids.map((id, index) => [id, index] as const));
+
+  return BOOKMARKS.map((bookmark) => {
+    const favOrder = order.get(bookmark.id);
+
+    return favOrder === undefined
+      ? bookmark
+      : { ...bookmark, is_favorite: true, fav_order: favOrder };
+  });
 }
 
 /** 이 파일이 쓰는 카드 제목 전부 — 목록에 없는 카드가 나오면 테스트가 조용히 넘어가지 않게 한다. */
@@ -277,15 +300,20 @@ describe('ListView — 본문 (홈과 같은 카드 그리드)', () => {
     expect(grid?.children).toHaveLength(4);
   });
 
-  it('목록 화면이라 카드마다 핀이 보인다', () => {
-    renderList();
+  it('관리자에게는 카드마다 핀이 보인다', () => {
+    renderList({ isAdmin: true });
 
     expect(screen.getAllByLabelText(/ 즐겨찾기$/)).toHaveLength(4);
   });
 
-  it('즐겨찾기에 담긴 카드에 isFaved 를 내려준다', () => {
-    setFavs(['대화B']);
+  it('방문자에게는 핀이 하나도 없다 (2026-08-11 — 담는 일은 관리자 몫)', () => {
     renderList();
+
+    expect(screen.queryAllByLabelText(/ 즐겨찾기$/)).toHaveLength(0);
+  });
+
+  it('담긴 카드의 핀만 켜져 있다 — 판정은 북마크의 is_favorite 이다', () => {
+    renderList({ bookmarks: favored(['대화B']), isAdmin: true });
 
     expect(screen.getByLabelText('대화B 즐겨찾기')).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByLabelText('대화A 즐겨찾기')).toHaveAttribute('aria-pressed', 'false');
@@ -303,50 +331,71 @@ describe('ListView — 핀 토글 (D6)', () => {
 
   const pin = (title: string) => screen.getByLabelText(`${title} 즐겨찾기`);
 
-  it('핀을 누르면 담기고 프로토타입 문구로 알린다', () => {
-    renderList();
+  beforeEach(() => {
+    // 이 파일에는 자동 초기화가 없다 — 호출 횟수를 보는 테스트가 있으므로 직접 비운다.
+    vi.mocked(setFavorite).mockReset();
+    vi.mocked(setFavorite).mockResolvedValue({ ok: true });
+  });
+
+  it('담기지 않은 카드의 핀을 누르면 서버에 "담기"를 보내고 프로토타입 문구로 알린다', async () => {
+    renderList({ isAdmin: true });
     render(<Toaster />);
 
-    fireEvent.click(pin('대화A'));
+    await act(async () => {
+      fireEvent.click(pin('대화A'));
+    });
 
-    expect(pin('대화A')).toHaveAttribute('aria-pressed', 'true');
+    expect(setFavorite).toHaveBeenCalledWith('대화A', true);
     expect(screen.getByText('대화A · 홈 즐겨찾기에 담김')).toBeInTheDocument();
-    expect(storedFavs()).toEqual(['대화A']);
   });
 
-  it('담긴 카드의 핀을 다시 누르면 빠지고 해제 문구로 알린다', () => {
-    setFavs(['대화A']);
-    renderList();
+  it('담긴 카드의 핀을 누르면 "빼기"를 보내고 해제 문구로 알린다', async () => {
+    renderList({ bookmarks: favored(['대화A']), isAdmin: true });
     render(<Toaster />);
 
     expect(pin('대화A')).toHaveAttribute('aria-pressed', 'true');
 
-    fireEvent.click(pin('대화A'));
+    await act(async () => {
+      fireEvent.click(pin('대화A'));
+    });
 
-    expect(pin('대화A')).toHaveAttribute('aria-pressed', 'false');
+    expect(setFavorite).toHaveBeenCalledWith('대화A', false);
     expect(screen.getByText('대화A 즐겨찾기 해제')).toBeInTheDocument();
-    expect(storedFavs()).toEqual([]);
   });
 
-  it('토글한 카드만 바뀐다 — 옆 카드는 그대로다', () => {
-    renderList();
+  it('낙관적으로 켜지 않는다 — 켜짐 여부는 서버가 다시 그릴 때 바뀐다', async () => {
+    renderList({ isAdmin: true });
 
-    fireEvent.click(pin('대화A'));
+    await act(async () => {
+      fireEvent.click(pin('대화A'));
+    });
 
-    expect(pin('대화A')).toHaveAttribute('aria-pressed', 'true');
-    for (const title of ['직속', '대화B', '영상A']) {
+    // 연필·휴지통과 같은 취급이다(액션의 revalidatePath 가 새 값을 가져온다).
+    for (const title of ['직속', '대화A', '대화B', '영상A']) {
       expect(pin(title)).toHaveAttribute('aria-pressed', 'false');
     }
   });
 
-  it('하위 탭으로 좁혀 놓은 화면에서도 토글된다', () => {
-    renderList({ subTabs: SUB_TABS });
+  it('한 번에 한 링크만 보낸다 — 옆 카드는 건드리지 않는다', async () => {
+    renderList({ isAdmin: true });
+
+    await act(async () => {
+      fireEvent.click(pin('대화A'));
+    });
+
+    expect(setFavorite).toHaveBeenCalledExactlyOnceWith('대화A', true);
+  });
+
+  it('하위 탭으로 좁혀 놓은 화면에서도 보낸다', async () => {
+    renderList({ subTabs: SUB_TABS, isAdmin: true });
     render(<Toaster />);
 
     fireEvent.click(chip('영상 1'));
-    fireEvent.click(pin('영상A'));
+    await act(async () => {
+      fireEvent.click(pin('영상A'));
+    });
 
-    expect(pin('영상A')).toHaveAttribute('aria-pressed', 'true');
+    expect(setFavorite).toHaveBeenCalledWith('영상A', true);
     expect(screen.getByText('영상A · 홈 즐겨찾기에 담김')).toBeInTheDocument();
     // 토글이 탭 선택을 되돌리지 않는다.
     expect(chip('영상 1')).toHaveAttribute('aria-pressed', 'true');
@@ -402,10 +451,14 @@ describe('ListView — 카드 클릭 기록 (F3)', () => {
     expect(middleClick(openLink('대화B'))).toBe(true);
   });
 
-  it('핀을 눌러도 클릭을 기록하지 않는다 (여는 동작이 아니다)', () => {
-    renderList();
+  it('핀을 눌러도 클릭을 기록하지 않는다 (여는 동작이 아니다)', async () => {
+    // 핀은 관리자에게만 있다(2026-08-11) — 이 한 자리만 관리자 화면으로 세운다.
+    vi.mocked(setFavorite).mockResolvedValue({ ok: true });
+    renderList({ isAdmin: true });
 
-    fireEvent.click(screen.getByLabelText('대화A 즐겨찾기'));
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('대화A 즐겨찾기'));
+    });
 
     expect(recordClick).not.toHaveBeenCalled();
   });
@@ -1189,18 +1242,20 @@ describe('ListView — 드래그 정렬 (J5)', () => {
     await pending.finish();
   });
 
-  it("reorderStore='favorites' 면 서버로 보내지 않고 localStorage 차례를 다시 쓴다", async () => {
-    setFavs(['대화A', '직속', '영상A']);
+  it("reorderStore='favorites' 면 fav_order 축으로 보낸다 — sort_order 를 건드리지 않는다", async () => {
+    vi.mocked(reorderFavorites).mockResolvedValue({ ok: true });
+    const favs = favored(['대화A', '직속', '영상A']);
     const { container } = renderList({
       isAdmin: true,
       reorderStore: 'favorites',
-      bookmarks: [BOOKMARKS[1], BOOKMARKS[0], BOOKMARKS[3]],
+      bookmarks: [favs[1], favs[0], favs[3]],
     });
 
     await drag(container, '영상A', '대화A');
 
+    // 두 축은 다르다 — sort_order 로 보내면 엉뚱한 분류들의 순서가 흔들린다.
     expect(reorderBookmarks).not.toHaveBeenCalled();
-    expect(storedFavs()).toEqual(['영상A', '대화A', '직속']);
+    expect(reorderFavorites).toHaveBeenCalledWith(['영상A', '대화A', '직속']);
   });
 
   it('끌기 시작이 없던 drop 은 무시한다 (바깥에서 끌어 온 것)', async () => {
