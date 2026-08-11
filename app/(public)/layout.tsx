@@ -1,3 +1,5 @@
+import { GoogleAnalytics } from "@next/third-parties/google";
+
 import { MobileChips } from "@/components/MobileChips";
 import { PaletteHost } from "@/components/PaletteHost";
 import { Sidebar } from "@/components/Sidebar";
@@ -8,6 +10,15 @@ import {
   rollupCounts,
 } from "@/lib/queries";
 import { getAdminSession } from "@/lib/supabase/server";
+
+/**
+ * GA4 측정 ID (2026-08-11). 브라우저 번들에 그대로 실리는 **공개 값**이라 커밋해도 안전하다 —
+ * 감춰야 하는 것은 Supabase service role 키 쪽이고 그것들만 env 로 간다(.env.example).
+ *
+ * `lib/constants.ts` 에 두지 않았다. 그 파일은 **여러 화면이 나눠 쓰는 공유 계약**을 모으는
+ * 자리이고 잠금 테스트가 붙어 있는데, 이 값을 쓰는 곳은 아래 한 줄뿐이다.
+ */
+const GA_MEASUREMENT_ID = "G-6F5JFJX448";
 
 /**
  * 셸을 그릴 데이터가 없을 때의 화면 — 사이드바·헤더 없이 이것만 렌더한다.
@@ -239,6 +250,18 @@ export default async function PublicLayout({ children }: LayoutProps<"/">) {
           {children}
         </div>
       </div>
+
+      {/* 방문자 분석 (2026-08-11) — **이 셸에 두는 것 자체가 "공개 화면만"이라는 경계다.**
+          `(public)` 그룹만 이 레이아웃을 상속하므로 관리 라우트(app/admin/*)는 자동으로 빠진다.
+          루트 레이아웃으로 올리면 관리 작업이 방문자 수치에 섞인다 — layout.test.tsx 가 잠근다.
+
+          위쪽 조회 실패 경로(ShellUnavailable)에는 실리지 않는다. 오류 화면 방문은 분석 대상이
+          아니고, 그 상태에서는 DB 가 죽어 있어 페이지뷰 수치가 뜻을 갖기 어렵다.
+
+          컴포넌트는 Next 가 제공하는 것을 쓴다(@next/third-parties) — 스크립트를 하이드레이션
+          이후에 불러오도록 최적화돼 있고 next 와 같은 버전으로 올라간다.
+          근거: node_modules/next/dist/docs/01-app/02-guides/third-party-libraries.md */}
+      <GoogleAnalytics gaId={GA_MEASUREMENT_ID} />
     </div>
   );
 }
