@@ -2,7 +2,7 @@ import { cache } from 'react';
 
 import { faviconSrc } from '@/lib/favicon';
 import { OPERATING_CATEGORY_NAME } from '@/lib/constants';
-import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createPublicSupabaseClient } from '@/lib/supabase/public';
 import type { Bookmark, BookmarkWithCount, Category, SiteData } from '@/lib/types';
 
 /** `bookmark_click_counts` 뷰의 한 행. 클릭이 한 번도 없는 북마크는 아예 행이 없다. */
@@ -45,20 +45,23 @@ const CLICK_COUNT_COLUMNS = 'bookmark_id, click_count';
  * 부른다. 감싸지 않으면 홈 한 번에 6쿼리가 나간다. 이건 **요청 안에서만** 사는 메모이제이션이라
  * 아래의 "요청마다 새로 읽는다"와 충돌하지 않는다 — 다음 요청은 다시 DB 를 친다.
  *
- * **이 페이지들은 의도적으로 매 요청 렌더된다(dynamic).** anon 클라이언트가 `cookies()` 를
- * 읽으므로 Next 는 라우트를 dynamic 으로 잡는다. ISR(`revalidate`) 로 60초 캐싱하는 선택지도
- * 있었지만, 3단계 J1 이 공개 화면 서버 컴포넌트에서 관리자 세션을 확인해 편집 버튼을
- * 조건부로 렌더해야 하고(클라이언트 플래그로 감추는 방식은 금지) 그 순간 어차피 모든 공개
- * 페이지가 쿠키를 읽어 dynamic 이 된다. 지금 캐싱을 켜 봐야 3단계에 걷어낼 일시적 최적화다.
- * 사내 트래픽·290행 규모에서 요청당 조회 비용은 무시할 수 있고, 클릭 수가 항상 최신인 이득이 있다.
- * 그러니 이 함수를 쓰는 페이지에 `export const revalidate = ...` 를 넣지 마라.
+ * **공개 읽기는 세션 쿠키와 분리한다.** categories·bookmarks·bookmark_click_counts 는 anon 역할로
+ * 읽을 수 있으므로 `createPublicSupabaseClient()` 를 쓴다. 요청 쿠키를 읽는 인증 client를 쓰면
+ * 프록시가 방금 갱신한 사용자 JWT가 공개 조회에도 붙어, Auth와 Data API의 시각이 어긋날 때
+ * `PGRST303: JWT issued at future` 로 첫 화면 전체가 실패한다. 관리자 판정은 각 화면과 layout의
+ * `getAdminSession()` 이 별도로 맡는다.
+ *
+ * 공개 페이지는 그 관리자 판정 때문에 계속 매 요청 렌더된다(dynamic). ISR(`revalidate`)을 켜면
+ * 관리자별 UI가 캐시될 위험이 있고 클릭 수도 늦게 반영되므로 이 함수를 쓰는 페이지에
+ * `export const revalidate = ...` 를 넣지 마라. React `cache()` 는 아래 조회를 요청 안에서만
+ * 중복 제거하며 다음 요청과 결과를 공유하지 않는다.
  *
  * 정렬은 DB 에 맡긴다(`sort_order`, 동점이면 `id`). 하위 카테고리의 `sort_order` 는 부모 안에서만
  * 유일해 다른 부모의 하위끼리는 동점이 나는데, 타이브레이커가 없으면 그 순서가 매 요청 달라질 수
  * 있다(화면이 필요로 하는 '같은 부모 안에서의 순서'는 어느 쪽이든 지켜지지만, 흔들리면 진단이 어렵다).
  */
 export const getAllData = cache(async (): Promise<SiteData> => {
-  const supabase = await createServerSupabaseClient();
+  const supabase = createPublicSupabaseClient();
 
   const [categories, bookmarks, counts] = await Promise.all([
     fetchAllPages<Category>('categories', (from, to) =>
@@ -90,8 +93,39 @@ export const getAllData = cache(async (): Promise<SiteData> => {
 });
 
 const PAGE_SIZE = 1000;
+const JWT_CLOCK_SKEW_RETRY_DELAY_MS = 1_500;
 
 type QueryPage = PromiseLike<{ data: unknown; error: QueryError | null }>;
+
+function isJwtIssuedAtFuture(error: QueryError | null): boolean {
+  return error?.code === 'PGRST303' && error.message === 'JWT issued at future';
+}
+
+async function waitForJwtClockSkew(): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, JWT_CLOCK_SKEW_RETRY_DELAY_MS));
+}
+
+/**
+ * Supabase가 새 JWT의 `iat`를 잠깐 미래로 판단하는 알려진 장애만 한 번 다시 읽는다.
+ *
+ * 모든 401/PGRST303을 재시도하면 만료·위조·잘못된 서명 같은 진짜 인증 오류를 숨긴다. 그래서
+ * 코드와 메시지가 둘 다 정확히 일치할 때만 1.5초 기다리고, 두 번째 결과는 성공·실패 그대로
+ * 상위에 넘긴다. 재시도 횟수를 늘리거나 일반 네트워크 재시도로 넓히지 마라.
+ */
+async function queryPageWithJwtClockSkewRetry(
+  table: string,
+  queryPage: () => QueryPage,
+): Promise<{ data: unknown; error: QueryError | null }> {
+  const first = await queryPage();
+  if (!isJwtIssuedAtFuture(first.error)) return first;
+
+  console.warn(
+    `[queries] Supabase ${table} JWT 발급 시각 검증 실패 — ${JWT_CLOCK_SKEW_RETRY_DELAY_MS}ms 후 1회 재시도`,
+  );
+  await waitForJwtClockSkew();
+
+  return queryPage();
+}
 
 /** PostgREST의 inclusive `.range(from, to)`를 끝까지 순회한다. */
 async function fetchAllPages<T>(
@@ -101,7 +135,10 @@ async function fetchAllPages<T>(
   const rows: T[] = [];
 
   for (let from = 0; ; from += PAGE_SIZE) {
-    const page = unwrap<T>(table, await queryPage(from, from + PAGE_SIZE - 1));
+    const result = await queryPageWithJwtClockSkewRetry(table, () =>
+      queryPage(from, from + PAGE_SIZE - 1),
+    );
+    const page = unwrap<T>(table, result);
     rows.push(...page);
 
     if (page.length < PAGE_SIZE) return rows;
