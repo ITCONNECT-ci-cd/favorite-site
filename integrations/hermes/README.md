@@ -13,6 +13,8 @@ Hermes binds the triggering Discord snowflake to a concurrency-safe session Cont
 
 Copy `favorite-message-context` to `$HERMES_HOME/plugins/favorite-message-context`, enable that plugin, add the stdio MCP server with the exact server key `favorite-ingest` using the repository-local `tsx` executable and `scripts/discord-favorite-mcp.ts`, and enable only the two MCP tools for the Discord platform. Hermes sanitizes that key into the runtime registry prefix `mcp__favorite_ingest__`; the plugin matches the exact `mcp__favorite_ingest__favorite_ingest` execution name. Use `favorite-channel-prompt.md` as the prompt for channel `1536239187517247488` and keep the existing user/channel allowlists and `allow_bots: none`.
 
+Run this integration on Hermes Agent `0.20.1` or newer. Earlier releases can leave a dead stdio MCP transport parked after a keepalive or child-process failure, so the cached tool names remain visible while calls fail. Current releases supervise the stdio command with `mcp_stdio_watchdog.py` and rebuild an expired transport before retrying the failed call once.
+
 Discord output must disable every mention parse path in profile configuration:
 
 ```yaml
@@ -29,6 +31,20 @@ For environments that configure the adapter through secrets instead, set all fou
 Set `HERMES_DISCORD_TEXT_BATCH_DELAY_SECONDS=0` for this profile. Hermes' default text batching can merge two nearby Discord messages into one turn while retaining only the first snowflake, which is incompatible with exact ingest provenance. The canary must send two messages back-to-back and verify that their receipts keep distinct message IDs.
 
 Do not turn on the free-response channel until the production API, runtime database role, HMAC secret, MCP probe, and mention-based canary all pass. Afterward keep global `require_mention: true` and add only the target channel to `free_response_channels`.
+
+## Runtime health and MCP recovery
+
+After every Hermes update or Favorite gateway restart, verify all of these layers:
+
+1. `favorite version` reports Hermes Agent `0.20.1` or newer.
+2. `favorite gateway status` reports the Favorite gateway running and its current log shows `registered 2 tool(s)` followed by a successful Discord connection.
+3. The gateway process has an `mcp_stdio_watchdog.py` descendant and that watchdog has the repository-local `tsx scripts/discord-favorite-mcp.ts` child.
+4. `favorite mcp test favorite-ingest` discovers exactly `favorite_list_categories` and `favorite_ingest`.
+5. A signed `favorite_list_categories` call reaches the production endpoint, and an actual URL posted in channel `1536239187517247488` receives either `저장 완료` or the idempotent `이미 저장된 링크입니다` response.
+
+The standalone MCP test does not prove that the long-running gateway still owns a live transport, and a saved tool-name cache does not prove that the child process exists. If the channel reports a save failure while the API checks pass, inspect the current gateway PID, its watchdog/child descendants, and only the log entries after that process started. Update Hermes before restarting the gateway when it is below the minimum version above.
+
+For a controlled reconnect drill, resolve the current watchdog's exact `tsx` child PID and terminate only that leaf process. The next Favorite tool call must log a session-expired transport reconnect, recreate the watchdog and child, retry once, and complete without restarting the gateway. If any of those checks fail, restart the Favorite gateway and keep the channel out of service until the full canary passes.
 
 ## Secret rotation
 
