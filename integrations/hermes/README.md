@@ -7,6 +7,8 @@ The `favorite` Hermes profile receives only two model-visible MCP tools:
 
 The MCP process reads `DISCORD_INGEST_API_URL` and `DISCORD_INGEST_HMAC_SECRET` from the profile secret environment, signs `timestamp + "." + rawBody` with HMAC-SHA-256, and calls the fixed HTTPS ingest endpoint. The secret is never a prompt or tool argument. The agent has no web, browser, file, terminal, code-execution, Discord-admin, or direct database tool.
 
+The production category tree must contain the root leaf `분류 대기`. The agent uses it only when the message and hostname do not support a reliable classification, preserving the link for later review instead of forcing it into an unrelated content category.
+
 Hermes binds the triggering Discord snowflake to a concurrency-safe session ContextVar before starting the agent. `favorite-message-context` reads only `HERMES_SESSION_MESSAGE_ID` through Hermes' public `gateway.session_context.get_session_env()` API. Its `pre_llm_call` hook injects the ID as ephemeral turn context, and its `tool_request` middleware replaces any model-supplied `favorite_ingest.messageId` with that trusted value immediately before execution. A missing or malformed binding fails MCP schema validation. The plugin does not query session history, read message content, or read credentials.
 
 ## Install/update

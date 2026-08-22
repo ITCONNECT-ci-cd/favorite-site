@@ -22,7 +22,7 @@ server.registerTool(
   {
     title: 'Favorite categories',
     description:
-      'Read the current category tree. Keep only leaf categories and choose the leaf named 기타 when uncertain. Call once immediately before processing each Discord message.',
+      'Read the current category tree. Keep only leaf categories and choose the leaf named 분류 대기 when the message and hostname are insufficient for a reliable classification. Call once immediately before processing each Discord message.',
     inputSchema: listCategoriesInputSchema,
     annotations: {
       readOnlyHint: true,
