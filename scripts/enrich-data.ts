@@ -1,5 +1,5 @@
 /**
- * 링크 249건의 **제목·설명·분류 교정표** — `scripts/enrich.ts` 가 이 표를 라이브 DB 에 적용한다.
+ * 링크의 **제목·설명·분류 교정표** — `scripts/enrich.ts` 가 이 표를 라이브 DB 에 적용한다.
  *
  * 2026-08-10 사용자 요청으로 만들었다. 고치는 것이 셋이다.
  *
@@ -1333,6 +1333,14 @@ export const ENRICHMENTS: Enrichment[] = [
     category: '업무 워크스페이스 > 사업·지원사업',
   },
 
+  // ───────────────────────────────── Discord 등록 후 분류·내용 보정
+  {
+    url: 'https://jiinsi.com/',
+    title: '지인시',
+    description: 'AI 기술·경제·논문 소식을 매일 큐레이션하는 뉴스레터',
+    category: '뉴스·인사이트 > AI 뉴스',
+  },
+
   // ───────────────────────────────── 현재 운영 중인 사이트
   {
     url: 'https://itconnect.dev/',
@@ -1363,6 +1371,24 @@ export const ENRICHMENTS: Enrichment[] = [
     url: 'https://keypaper.biz/',
     title: 'GrowthLab',
     description: '유튜브 채널·키워드를 분석해 성장 인사이트를 뽑는 스튜디오',
+  },
+  {
+    url: 'https://contents.itconnect.dev/',
+    title: 'AI 콘텐츠 자동 생성',
+    description: 'AI로 콘텐츠 기획과 제작을 자동화하는 서비스 · 개발 중',
+    category: '현재 운영 중인 사이트',
+  },
+  {
+    url: 'https://landingmaker.biz/',
+    title: 'LandingMaker',
+    description: 'AI로 페이지를 기획하고 제작 프로세스를 관리하는 서비스 · 개발 중',
+    category: '현재 운영 중인 사이트',
+  },
+  {
+    url: 'https://itconnect.co.kr/',
+    title: 'AI 사업계획서 작성',
+    description: 'AI와 함께 사업계획서를 단계별로 완성하는 서비스 · 개발 중',
+    category: '현재 운영 중인 사이트',
   },
   {
     url: 'https://profile.itconnect.dev/',

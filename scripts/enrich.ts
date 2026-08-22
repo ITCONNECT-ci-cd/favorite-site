@@ -1,5 +1,5 @@
 /**
- * 링크 249건의 제목·설명·분류를 `scripts/enrich-data.ts` 의 교정표대로 라이브 DB 에 적용한다.
+ * 링크의 제목·설명·분류를 `scripts/enrich-data.ts` 의 교정표대로 라이브 DB 에 적용한다.
  *
  * ```
  * npx tsx scripts/enrich.ts            # 드라이런 — 무엇이 바뀔지만 보여 준다
