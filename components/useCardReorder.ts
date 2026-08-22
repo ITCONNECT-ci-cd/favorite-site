@@ -4,7 +4,7 @@ import { startTransition, useOptimistic, useRef, type DragEvent } from 'react';
 
 import { toast } from '@/components/Toast';
 import { REQUEST_FAILED } from '@/lib/constants';
-import { reorderBookmarks } from '@/lib/mutations';
+import { reorderBookmarks, type ActionResult } from '@/lib/mutations';
 import { moveOnto } from '@/lib/reorder';
 
 /**
@@ -48,13 +48,18 @@ export type CardReorder<T> = {
  *
  * @param items 서버가 준 목록(정렬된 상태). 낙관적 순서의 밑값이다.
  * @param enabled 관리자인가 — 거짓이면 `dragProps` 가 언제나 `undefined` 다.
- * @param onCommit 저장할 차례를 넘긴다. 주지 않으면 `reorderBookmarks` 로 서버에 보낸다
- *   (즐겨찾기처럼 순서를 브라우저가 들고 있는 목록이 자기 저장소를 넘겨받는 자리다).
+ * @param commit 저장할 차례를 넘긴다. 주지 않으면 `reorderBookmarks`(분류 안의 `sort_order`)로
+ *   보낸다. 즐겨찾기 화면·홈의 즐겨찾기 묶음은 `reorderFavorites`(`fav_order`)를 넘긴다 —
+ *   **두 축은 다른 컬럼이다**(lib/mutations 의 두 액션 JSDoc).
+ *
+ *   예전에는 이 자리가 동기 콜백이었고(브라우저 localStorage 에 쓰던 시절) 실패할 수 없다는
+ *   전제로 오류 처리를 건너뛰는 별도 분기가 있었다. 2026-08-11 에 즐겨찾기가 서버로 옮겨오며
+ *   두 경로 다 실패할 수 있게 되어 하나로 합쳤다.
  */
 export function useCardReorder<T extends { id: string }>(
   items: readonly T[],
   enabled: boolean,
-  onCommit?: (orderedIds: string[]) => void,
+  commit: (orderedIds: string[]) => Promise<ActionResult> = reorderBookmarks,
 ): CardReorder<T> {
   /**
    * 저장이 끝나기 전에 보여 줄 순서. **완성된 배열이 아니라 리듀서로 든다** — 절대값으로 밀어
@@ -96,19 +101,12 @@ export function useCardReorder<T extends { id: string }>(
     startTransition(async () => {
       moveCard({ sourceId, targetId });
 
-      if (onCommit !== undefined) {
-        onCommit(orderedIds);
-        reordering.current = false;
-
-        return;
-      }
-
       // **트랜지션 안에서 던지면 가장 가까운 오류 경계로 올라간다** — 공개 화면 위의 경계는
       // `app/global-error.tsx` 하나뿐이라 순서 저장 한 번이 거부된 것으로 화면 전체가 오류
       // 화면이 된다. 잡아서 실패 결과로 접는다(관리 화면의 `run` 과 같은 계약).
       let failed: string | null = null;
       try {
-        const result = await reorderBookmarks(orderedIds);
+        const result = await commit(orderedIds);
         if (!result.ok) failed = result.error;
       } catch (error) {
         console.error('[useCardReorder] 순서 저장 요청이 거부됐다', error);

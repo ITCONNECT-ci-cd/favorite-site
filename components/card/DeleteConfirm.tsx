@@ -4,7 +4,6 @@ import { startTransition, useEffect, useId, useRef, useState, type KeyboardEvent
 
 import { toast } from '@/components/Toast';
 import { REQUEST_FAILED } from '@/lib/constants';
-import { useFavorites } from '@/lib/favorites';
 import { isFocusNowhere } from '@/lib/focus';
 import { deleteBookmark, type ActionResult } from '@/lib/mutations';
 import type { BookmarkWithCount } from '@/lib/types';
@@ -136,25 +135,6 @@ export function DeleteConfirm({ bookmark, onDone }: DeleteConfirmProps) {
   const [trigger] = useState<Element | null>(() => document.activeElement);
 
   /**
-   * 지운 링크를 **이 브라우저의 즐겨찾기에서도 뺀다** (아래 `confirm`).
-   *
-   * E1 의 사용 규칙을 어기는 것처럼 보이지만 아니다 — 그 규칙이 막는 것은 **살아 있는 인스턴스
-   * 수가 목록 길이를 따라가는 자리**(카테고리 화면 기준 118장)이고, 이 컴포넌트는 확인창이 열려
-   * 있는 동안에만, 많아야 두 자리에 산다(같은 링크가 홈 두 섹션에 놓인 경우). lib/favorites.ts 의
-   * 규칙 문언이 그 예외를 명시한다.
-   *
-   * 화면(HomeView·ListView)에서 하지 않는 이유는 `onDone` 이 성공과 취소를 구분하지 않기
-   * 때문이다. "그 링크는 이제 없다"를 아는 시점은 액션의 응답을 받은 여기 한 곳뿐이다.
-   *
-   * `toggle` 이 아니라 `remove` 인 것이 핵심이다. `toggle` 은 없으면 담는 함수라 부르는 쪽이
-   * 먼저 "담겨 있는가"를 봐야 했고, 그 판정을 렌더 클로저의 `favs` 로 하면 **낡은다** — 요청이
-   * 도는 사이 다른 탭이 즐겨찾기를 풀면 이미 떠난 `confirm` 은 옛 집합을 계속 보고, 없는 id 를
-   * 담아 방금 지운 링크를 되살린다. `remove` 는 방향이 정해져 있고 판정도 스토어의 지금 값으로
-   * 하므로 그 우회(ref 로 최신 집합을 따로 붙들던 것)가 통째로 사라졌다.
-   */
-  const { remove } = useFavorites();
-
-  /**
    * 뜨는 순간 포커스를 데려오고, 닫힐 때 열어 준 곳(휴지통)으로 돌려준다.
    *
    * **받는 쪽은 `취소`다.** 되돌릴 수 없는 동작을 묻는 자리라 기본 포커스는 덜 위험한 쪽에 둔다
@@ -240,13 +220,9 @@ export function DeleteConfirm({ bookmark, onDone }: DeleteConfirmProps) {
     // 성공하면 오버레이가 사라지므로 빗장을 되돌리지 않는다. 목록 갱신은 액션의
     // revalidatePath('/', 'layout') 가 하고, 이 오버레이는 닫히기만 한다.
     if (result.ok) {
-      // 사이드바의 '내 즐겨찾기' 개수는 저장된 id 를 그대로 세고(SidebarContainer), 화면의 목록은
-      // 실존 링크만 골라 센다(`pickFavorites`). 지운 링크의 id 를 남겨 두면 그 순간부터 두 숫자가
-      // 갈라지므로, 어긋남을 표시 단계에서 가리는 대신 **원인이 생기는 자리에서** 지운다.
-      //
-      // 담겨 있지 않으면 아무 일도 일어나지 않는다(멱등) — 담긴 상태를 여기서 확인하지 않는 것이
-      // `toggle` 대신 `remove` 를 쓰는 이유다(위 JSDoc).
-      remove(bookmark.id);
+      // 즐겨찾기를 따로 청소하지 않는다 — 담긴 표시가 링크 행에 실려 있어(`is_favorite`) 행이
+      // 지워지면 함께 사라진다. 예전에는 브라우저에 id 가 남아 사이드바 숫자가 실제 목록보다
+      // 커졌고, 그래서 여기서 그 id 를 지우는 한 줄이 있었다(2026-08-11 서버 이전으로 불필요).
 
       // 확인창이 닫히는 것과 카드가 사라지는 것을 **한 커밋으로 묶는다.** `await` 뒤의 상태
       // 갱신은 저절로 트랜지션에 들어가지 않는다(React 의 알려진 한계 — Next

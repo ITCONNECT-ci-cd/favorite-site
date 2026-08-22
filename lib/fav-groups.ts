@@ -62,7 +62,7 @@ export function topCategoryNames(categories: readonly Category[]): Map<string, s
 
 /**
  * 즐겨찾기 목록을 세 묶음으로 가른다. **담긴 차례는 묶음 안에서 그대로 유지된다** —
- * 즐겨찾기의 순서는 localStorage 가 들고 있고(`pickFavorites`) 여기서 다시 세우지 않는다.
+ * `pickFavorites`가 DB의 `fav_order`로 이미 세웠으므로 여기서 다시 정렬하지 않는다.
  *
  * 비어 있는 묶음도 키로 남는다 — 부르는 쪽이 `?? []` 를 몰라도 되게 하기 위해서다
  * (`rollupCounts` 와 같은 방침). 빈 묶음을 그릴지 말지는 화면이 정한다.

@@ -113,6 +113,10 @@ export function buildSeed(
     // links.json 에 order 필드가 없으므로 배열 인덱스를 그대로 쓴다.
     sort_order: index,
     created_at: new Date(link.added * 1000).toISOString(),
+    /* 즐겨찾기는 시드가 정하지 않는다 — 관리자가 화면에서 담는 것이고, 기존 목록은
+       scripts/import-favorites.ts 가 한 번 넣는다(2026-08-11 서버 이전). */
+    is_favorite: false,
+    fav_order: 0,
     iconFile: availableIconIds.has(link.id) ? `${link.id}.png` : null,
     legacyId: link.id,
   }));

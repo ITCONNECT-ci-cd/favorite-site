@@ -15,7 +15,10 @@ export type SidebarProps = {
   /** 카테고리 id → 링크 수. 상위는 하위 합산 롤업이며 계산은 D1 책임 — 여기선 표시만 한다. */
   counts: Readonly<Record<string, number>>;
   totalCount: number;
-  /** E1 useFavorites 파생 — C1의 클라이언트 래퍼가 공급, SSR 초기값 0. */
+  /**
+   * '내 즐겨찾기'에 담긴 링크 수 — 셸이 서버에서 센다(2026-08-11 서버 이전).
+   * 화면의 목록과 같은 행에서 나오므로 두 숫자가 갈라질 자리가 없다.
+   */
   favCount: number;
   /** '현재 운영 중인 사이트' 카테고리 id. 빠른 접근으로 올리고 분류 목록에서는 뺀다. */
   operatingCategoryId: string | null;

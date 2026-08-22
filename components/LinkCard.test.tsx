@@ -19,6 +19,8 @@ const BOOKMARK: BookmarkWithCount = {
   favicon_url: 'https://cdn.example.com/openai.png',
   is_pinned: true,
   source: 'manual',
+  is_favorite: false,
+  fav_order: 0,
   sort_order: 0,
   created_at: '2024-10-18T00:00:00.000Z',
   click_count: 3,
@@ -209,41 +211,53 @@ describe('LinkCard 열기', () => {
 });
 
 describe('LinkCard 핀', () => {
-  it('기본으로 핀을 보여준다', () => {
-    renderCard();
+  /** 핀은 관리 도구다(2026-08-11) — 이 블록의 렌더는 전부 관리자 응답이다. */
+  const renderPinCard = (props: Overrides = {}) => renderCard({ isAdmin: true, ...props });
+
+  it('관리자에게는 기본으로 핀을 보여준다', () => {
+    renderPinCard();
 
     expect(pinButton()).toBeInTheDocument();
+  });
+
+  it('비관리자 응답에는 핀 마크업이 아예 실리지 않는다 (감추는 것이 아니다)', () => {
+    // 즐겨찾기가 공용이 된 뒤 담는 일은 관리자 몫이다. 연필·휴지통과 같은 규칙 —
+    // 늘 그려 두고 CSS 로 감추면 방문자 응답에 관리 도구가 남는다(README 주의사항 7).
+    renderCard({ isAdmin: false });
+
+    expect(screen.queryByRole('button', { name: 'ChatGPT 즐겨찾기' })).not.toBeInTheDocument();
   });
 
   it('핀을 누르면 onToggleFav만 부르고 링크는 열지 않는다', () => {
     const onToggleFav = vi.fn();
     const onOpen = vi.fn();
-    renderCard({ onToggleFav, onOpen });
+    renderPinCard({ onToggleFav, onOpen });
 
     fireEvent.click(pinButton());
 
+    // 담긴 상태는 넘기지 않는다 — 카드가 받은 북마크에 이미 실려 있다.
     expect(onToggleFav).toHaveBeenCalledWith('bm-1');
     expect(onOpen).not.toHaveBeenCalled();
     // 앵커 밖의 형제 요소라 클릭이 앵커로 새지 않는다.
     expect(pinButton().closest('a')).toBeNull();
   });
 
-  it('showPin=false면 핀을 그리지 않는다 (홈의 매일·운영 중 섹션)', () => {
-    renderCard({ showPin: false });
+  it('showPin=false면 관리자에게도 핀을 그리지 않는다 (홈의 운영 중 섹션)', () => {
+    renderPinCard({ showPin: false });
 
     expect(screen.queryByRole('button', { name: 'ChatGPT 즐겨찾기' })).not.toBeInTheDocument();
   });
 
   it('꺼짐 상태는 흐린 회색이고 속이 비어 있다', () => {
-    renderCard();
+    renderPinCard({ bookmark: { is_favorite: false } });
 
     expect(pinButton()).toHaveClass('text-ghost');
     expect(pinButton()).toHaveAttribute('aria-pressed', 'false');
     expect(pinButton().querySelector('svg')).toHaveAttribute('fill', 'none');
   });
 
-  it('켜짐 상태는 진한 글자 + 선택 배경 + 채운 핀이다', () => {
-    renderCard({ isFaved: true });
+  it('켜짐 상태는 진한 글자 + 선택 배경 + 채운 핀이다 — 판정은 북마크의 is_favorite 이다', () => {
+    renderPinCard({ bookmark: { is_favorite: true } });
 
     expect(pinButton()).toHaveClass('text-ink', 'bg-select');
     expect(pinButton()).toHaveAttribute('aria-pressed', 'true');
@@ -291,7 +305,8 @@ describe('LinkCard 체크', () => {
   });
 
   it('상단 액션 순서는 체크 → 핀이다', () => {
-    const card = renderCard({ showCheck: true });
+    // 핀은 관리자에게만 보이므로(2026-08-11) 둘 다 서는 화면은 관리자 화면뿐이다.
+    const card = renderCard({ showCheck: true, isAdmin: true });
     const labels = [...card.querySelectorAll('button[aria-pressed]')].map((button) =>
       button.getAttribute('aria-label'),
     );
@@ -306,7 +321,7 @@ describe('LinkCard 테두리 3상태', () => {
   });
 
   it('즐겨찾기에 담긴 카드는 --color-fav-border다', () => {
-    const card = renderCard({ isFaved: true });
+    const card = renderCard({ bookmark: { is_favorite: true } });
 
     expect(card).toHaveClass('border-fav-border');
     expect(card).not.toHaveClass('border-card-border');
@@ -320,7 +335,7 @@ describe('LinkCard 테두리 3상태', () => {
   });
 
   it('체크가 즐겨찾기보다 우선한다', () => {
-    const card = renderCard({ showCheck: true, checked: true, isFaved: true });
+    const card = renderCard({ showCheck: true, checked: true, bookmark: { is_favorite: true } });
 
     expect(card).toHaveClass('border-ink');
     expect(card).not.toHaveClass('border-fav-border');
@@ -328,7 +343,7 @@ describe('LinkCard 테두리 3상태', () => {
 
   it('체크를 감춘 화면에서는 checked가 테두리를 바꾸지 못한다', () => {
     // 체크가 보이지 않는데 테두리만 검게 변하면 이유를 알 수 없는 상태가 된다.
-    const card = renderCard({ showCheck: false, checked: true, isFaved: true });
+    const card = renderCard({ showCheck: false, checked: true, bookmark: { is_favorite: true } });
 
     expect(card).toHaveClass('border-fav-border');
     expect(card).not.toHaveClass('border-ink');
@@ -760,7 +775,7 @@ describe('LinkCard 수치 (DESIGN_SPEC 2-1)', () => {
   });
 
   it('액션 버튼: 21×21px, radius 6px, 호버 배경 #efede8', () => {
-    renderCard({ showCheck: true });
+    renderCard({ showCheck: true, isAdmin: true });
 
     for (const button of [checkButton(), pinButton()]) {
       expect(button).toHaveClass(
@@ -774,7 +789,7 @@ describe('LinkCard 수치 (DESIGN_SPEC 2-1)', () => {
   });
 
   it('액션 버튼의 손가락 자리를 세로 44px 로 넓힌다 — 보이는 크기(21×21)는 그대로', () => {
-    renderCard({ showCheck: true });
+    renderCard({ showCheck: true, isAdmin: true });
 
     for (const button of [checkButton(), pinButton()]) {
       // ::before 로만 넓힌다 — 버튼 상자를 키우면 스펙 2-1의 21×21이 깨진다.

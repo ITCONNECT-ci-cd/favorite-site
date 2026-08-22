@@ -7,7 +7,6 @@ import {
   CLICK_DAILY_CAP,
   EMPTY_LIST_MESSAGE,
   FAVORITES_TITLE,
-  FAVS_KEY,
   NEWS_CATEGORY_NAME,
   OPERATING_CATEGORY_NAME,
   REQUEST_FAILED,
@@ -22,7 +21,7 @@ describe('공유 상수', () => {
 
   it('운영 중 카테고리 이름과 localStorage 키가 계약대로다', () => {
     expect(OPERATING_CATEGORY_NAME).toBe('현재 운영 중인 사이트');
-    expect(FAVS_KEY).toBe('linkdash:favs');
+    // 즐겨찾기 키(FAVS_KEY)는 없어졌다 — 2026-08-11 에 DB 로 옮겼다. 남은 키는 클릭 집계용 하나다.
     expect(VISITOR_KEY).toBe('linkdash:visitor');
   });
 

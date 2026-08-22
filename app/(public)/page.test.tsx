@@ -35,7 +35,6 @@ const edits = () => screen.queryAllByRole('button', { name: /.+ 수정$/ });
 const deletes = () => screen.queryAllByRole('button', { name: /.+ 삭제$/ });
 
 beforeEach(() => {
-  localStorage.clear();
   getAllData.mockReset();
   getAllData.mockResolvedValue(siteData() satisfies SiteData);
   vi.mocked(getAdminSession).mockReset();
@@ -46,7 +45,7 @@ describe('홈 — 데이터 배선', () => {
   it('getAllData 한 벌을 그대로 화면에 넘긴다 — 섹션이 선다', async () => {
     await renderPage();
 
-    // 즐겨찾기는 서버 렌더에서 비어 있어(localStorage) 안내 한 장만 선다.
+    // fixture의 서버 즐겨찾기가 비어 있어 안내 한 장만 선다.
     expect(screen.getByRole('heading', { name: '내 즐겨찾기' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '현재 운영 중인 사이트' })).toBeInTheDocument();
   });
@@ -77,7 +76,7 @@ describe('홈 — 관리자 편집 노출 (J1)', () => {
 
     await renderPage();
 
-    // 즐겨찾기 묶음은 비어 있다(localStorage 를 비운 상태) — 남은 섹션이 16장이다.
+    // fixture의 서버 즐겨찾기는 비어 있다 — 남은 운영 중 섹션이 16장이다.
     expect(edits()).toHaveLength(16);
     expect(deletes()).toHaveLength(16);
   });

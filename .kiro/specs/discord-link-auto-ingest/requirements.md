@@ -112,13 +112,15 @@
 7. THE 등록_함수 SHALL 설명을 trim한 뒤 비면 `null`을, 아니면 유니코드 코드 포인트 기준 앞
    200자만 저장한다.
 8. THE 등록_함수 SHALL 자동 링크의 `tags = '{}'`, `favicon_url = null`, `is_pinned = false`,
-   `source = 'discord'`로 정한다. 자동 태그 생성은 편집 UI가 생길 때까지 범위에서 제외한다.
+   `is_favorite = false`, `fav_order = 0`, `source = 'discord'`로 정한다. 자동 태그 생성은 편집 UI가
+   생길 때까지 범위에서 제외한다.
 9. IF `category_id`가 UUID가 아니거나 존재하지 않거나 그 카테고리를 부모로 하는 행이 있으면,
    THEN THE 등록_함수 SHALL 행을 만들지 않고 `invalid_category`를 반환한다.
 10. THE 등록_함수 SHALL 성공 시 같은 카테고리에 이미 커밋되어 보이는 최대 `sort_order + 1`을
     저장하고, 행이 없으면 `0`을 저장한다. 동점은 스키마상 허용하며 UI는 `id`로 안정 정렬한다.
 11. FOR ALL 성공 호출, commit 시점의 새 행은 http/https URL, 적합한 leaf 카테고리,
-    `is_pinned=false`, `source=discord`, `favicon_url=null` 불변식을 만족한다.
+    `is_pinned=false`, `is_favorite=false`, `fav_order=0`, `source=discord`, `favicon_url=null`
+    불변식을 만족한다.
 12. IF bookmark 또는 provenance 저장 중 오류가 나면, THEN THE 등록_함수 SHALL 둘 다 남기지 않고
     receipt claim을 해제한 뒤 `internal_error`를 반환한다.
 

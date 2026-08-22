@@ -11,14 +11,14 @@ import {
   rollupCounts,
   type ClickCountRow,
 } from '@/lib/queries';
-import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createPublicSupabaseClient } from '@/lib/supabase/public';
 import type { Bookmark, Category } from '@/lib/types';
 // 이 파일은 DB 행 그대로(클릭 수 없는 형태)를 본다 — 화면 테스트가 쓰는 BOOKMARKS 와는 다른 배열이다.
 import { BOOKMARK_ROWS as BOOKMARKS, CATEGORIES, subId, topId } from '@/test/fixtures/seed';
 
 // getAllData 는 순수 함수가 아니라 얇은 조회부다 — Supabase 클라이언트만 갈아 끼우고
 // "무엇을 물어보고 어떻게 합치는지"를 확인한다. 실제 DB 대조는 B5 시드 이후 몫.
-vi.mock('@/lib/supabase/server', () => ({ createServerSupabaseClient: vi.fn() }));
+vi.mock('@/lib/supabase/public', () => ({ createPublicSupabaseClient: vi.fn() }));
 
 function makeCategory(over: Partial<Category> & Pick<Category, 'id'>): Category {
   return { name: over.id, parent_id: null, sort_order: 0, ...over };
@@ -34,6 +34,8 @@ function makeBookmark(over: Partial<Bookmark> & Pick<Bookmark, 'id'>): Bookmark 
     favicon_url: null,
     is_pinned: false,
     source: 'manual',
+    is_favorite: false,
+    fav_order: 0,
     sort_order: 0,
     created_at: '2024-01-01T00:00:00.000Z',
     ...over,
@@ -299,19 +301,25 @@ type QueryResult = {
  * `supabase.from(t).select(...).order(...)` 체인을 흉내 내는 최소 thenable.
  * `select`·`order` 는 자기 자신을 돌려주고, await 되는 순간 미리 정한 결과를 낸다.
  */
-function fakeSupabase(byTable: Record<string, QueryResult>) {
+function fakeSupabase(byTable: Record<string, QueryResult | QueryResult[]>) {
   const requestedTables: string[] = [];
+  /** 테이블별로 `select(...)` 에 넘어간 컬럼 문자열들 — 부른 차례대로 쌓는다. */
   const selectedColumns: Record<string, string[]> = {};
 
   const client = {
     from(table: string) {
       requestedTables.push(table);
-      const result: QueryResult = byTable[table] ?? { data: [], error: null };
+      const configured = byTable[table] ?? { data: [], error: null };
+      const tableRequestIndex = requestedTables.filter((requested) => requested === table).length - 1;
+      const result: QueryResult = Array.isArray(configured)
+        ? (configured[tableRequestIndex] ?? configured.at(-1) ?? { data: [], error: null })
+        : configured;
       let from = 0;
       let to = Number.MAX_SAFE_INTEGER;
       const builder = {
         select: (columns: string) => {
           (selectedColumns[table] ??= []).push(columns);
+
           return builder;
         },
         order: () => builder,
@@ -338,10 +346,10 @@ function fakeSupabase(byTable: Record<string, QueryResult>) {
   return { client, requestedTables, selectedColumns };
 }
 
-function useFakeSupabase(byTable: Record<string, QueryResult>) {
+function useFakeSupabase(byTable: Record<string, QueryResult | QueryResult[]>) {
   const fake = fakeSupabase(byTable);
-  vi.mocked(createServerSupabaseClient).mockResolvedValue(
-    fake.client as unknown as Awaited<ReturnType<typeof createServerSupabaseClient>>,
+  vi.mocked(createPublicSupabaseClient).mockReturnValue(
+    fake.client as unknown as ReturnType<typeof createPublicSupabaseClient>,
   );
 
   return fake;
@@ -349,7 +357,15 @@ function useFakeSupabase(byTable: Record<string, QueryResult>) {
 
 describe('getAllData', () => {
   beforeEach(() => {
-    vi.mocked(createServerSupabaseClient).mockReset();
+    vi.mocked(createPublicSupabaseClient).mockReset();
+  });
+
+  it('세션 쿠키와 무관한 공개 전용 Supabase client를 사용한다', async () => {
+    useFakeSupabase({});
+
+    await getAllData();
+
+    expect(createPublicSupabaseClient).toHaveBeenCalledTimes(1);
   });
 
   it('categories·bookmarks·bookmark_click_counts 세 곳을 조회한다', async () => {
@@ -372,6 +388,17 @@ describe('getAllData', () => {
     expect(data.bookmarks).toHaveLength(1001);
     expect(data.bookmarks.at(-1)?.id).toBe('b-1000');
     expect(fake.requestedTables.filter((table) => table === 'bookmarks')).toHaveLength(2);
+  });
+
+  it('bookmarks 조회에 즐겨찾기 두 칸을 함께 요청한다', async () => {
+    // 빠뜨리면 행에 값이 실리지 않아 화면에서는 `undefined` 가 되고, 담긴 링크가 하나도 없는
+    // 것처럼 그려진다 — 조용히 틀리는 자리라 조회 시점에 못 박아 둔다.
+    const fake = useFakeSupabase({});
+
+    await getAllData();
+
+    expect(fake.selectedColumns.bookmarks[0]).toContain('is_favorite');
+    expect(fake.selectedColumns.bookmarks[0]).toContain('fav_order');
   });
 
   it('뷰의 클릭 수를 북마크에 결합해 SiteData 를 만든다 (뷰에 없으면 0)', async () => {
@@ -410,5 +437,51 @@ describe('getAllData', () => {
         'bookmark_click_counts (code 42501 · hint: grant select on bookmark_click_counts to anon)',
     );
     await expect(getAllData()).rejects.toMatchObject({ cause: error });
+  });
+
+  it('PGRST303 JWT issued at future만 1.5초 뒤 한 번 재시도한다', async () => {
+    const futureJwt = {
+      message: 'JWT issued at future',
+      code: 'PGRST303',
+      details: null,
+      hint: null,
+    };
+    const category = makeCategory({ id: 'recovered', name: '복구됨' });
+    const fake = useFakeSupabase({
+      categories: [
+        { data: null, error: futureJwt },
+        { data: [category], error: null },
+      ],
+    });
+    const timer = vi.spyOn(globalThis, 'setTimeout').mockImplementation((callback) => {
+      if (typeof callback === 'function') callback();
+      return 0 as unknown as ReturnType<typeof setTimeout>;
+    });
+
+    const data = await getAllData();
+
+    expect(data.categories).toEqual([category]);
+    expect(fake.requestedTables.filter((table) => table === 'categories')).toHaveLength(2);
+    expect(timer).toHaveBeenCalledTimes(1);
+    expect(timer).toHaveBeenCalledWith(expect.any(Function), 1_500);
+    timer.mockRestore();
+  });
+
+  it('다른 PGRST303 메시지는 재시도하지 않고 즉시 실패한다', async () => {
+    const error = {
+      message: 'JWT claims validation failed',
+      code: 'PGRST303',
+      details: null,
+      hint: null,
+    };
+    const fake = useFakeSupabase({ categories: { data: null, error } });
+    const timer = vi.spyOn(globalThis, 'setTimeout');
+
+    await expect(getAllData()).rejects.toThrow(
+      'Supabase categories 조회 실패: JWT claims validation failed (code PGRST303)',
+    );
+    expect(fake.requestedTables.filter((table) => table === 'categories')).toHaveLength(1);
+    expect(timer).not.toHaveBeenCalled();
+    timer.mockRestore();
   });
 });

@@ -14,11 +14,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DeleteConfirm } from '@/components/card/DeleteConfirm';
 import { Toaster } from '@/components/Toast';
-import { FAVS_KEY } from '@/lib/constants';
 import type { ActionResult } from '@/lib/mutations';
 import { deleteBookmark } from '@/lib/mutations';
 import type { BookmarkWithCount } from '@/lib/types';
-import { setFavs, storedFavs } from '@/test/favs';
 import { setupToastTimers } from '@/test/toast';
 
 vi.mock('@/lib/mutations', () => ({ deleteBookmark: vi.fn() }));
@@ -47,6 +45,8 @@ const BOOKMARK: BookmarkWithCount = {
   favicon_url: null,
   is_pinned: false,
   source: 'manual',
+  is_favorite: false,
+  fav_order: 0,
   sort_order: 0,
   created_at: '2024-01-01T00:00:00.000Z',
   click_count: 3,
@@ -295,75 +295,6 @@ describe('DeleteConfirm — 확인', () => {
   });
 });
 
-/**
- * 사이드바의 '내 즐겨찾기' 개수는 저장된 id 를 그대로 세고(SidebarContainer), 화면의 목록은
- * 실존 링크만 골라 센다(`pickFavorites`). 지운 링크의 id 가 localStorage 에 남으면 그 순간부터
- * 두 숫자가 갈라지므로, 원인이 생기는 이 자리에서 지운다.
- */
-describe('DeleteConfirm — 즐겨찾기 정합', () => {
-  // 실패 경로가 토스트를 띄우므로 타이머를 함께 흘려보낸다 (Toast.tsx 규약).
-  setupToastTimers();
-
-  it('삭제에 성공하면 이 브라우저의 즐겨찾기에서도 그 링크를 뺀다', async () => {
-    setFavs(['bm-1', 'bm-2']);
-    renderOverlay();
-
-    await confirmDelete();
-
-    expect(storedFavs()).toEqual(['bm-2']);
-  });
-
-  it('담겨 있지 않던 링크를 담지는 않는다 — `remove` 는 없으면 아무 일도 하지 않는다(멱등)', async () => {
-    setFavs(['bm-2']);
-    renderOverlay();
-
-    await confirmDelete();
-
-    expect(storedFavs()).toEqual(['bm-2']);
-  });
-
-  it('취소하면 즐겨찾기를 건드리지 않는다', () => {
-    setFavs(['bm-1']);
-    renderOverlay();
-
-    fireEvent.click(cancelButton());
-
-    expect(storedFavs()).toEqual(['bm-1']);
-  });
-
-  it('삭제에 실패하면 즐겨찾기를 건드리지 않는다 — 링크는 아직 살아 있다', async () => {
-    vi.mocked(deleteBookmark).mockResolvedValue({ ok: false, error: '링크를 찾을 수 없습니다.' });
-    setFavs(['bm-1']);
-    renderOverlay();
-
-    await confirmDelete();
-
-    expect(storedFavs()).toEqual(['bm-1']);
-  });
-
-  it('삭제 중에 다른 탭이 즐겨찾기를 풀면 그것을 되살리지 않는다 — 지금 값으로 판정한다', async () => {
-    setFavs(['bm-1']);
-    renderOverlay();
-
-    const finish = pending();
-    await confirmDelete();
-
-    // 요청이 도는 사이 다른 탭이 이 링크의 즐겨찾기를 풀었다 — 구독으로 새 값이 내려온다
-    // (useSyncExternalStore + storage 이벤트, lib/favorites.ts).
-    setFavs([]);
-    await act(async () => {
-      window.dispatchEvent(new StorageEvent('storage', { key: FAVS_KEY }));
-    });
-
-    await finish();
-
-    // 렌더 클로저가 든 낡은 스냅샷(담김)으로 판정하면 **없는 id 를 담아** 방금 지운 링크를
-    // 즐겨찾기에 되살린다 — 정합을 맞추려던 코드가 어긋남을 만드는 셈이다. `remove` 는 판정도
-    // 쓰기도 스토어의 지금 값에서 하므로 그 갈래가 없다(lib/favorites.ts).
-    expect(storedFavs()).toEqual([]);
-  });
-});
-
 describe('DeleteConfirm — 삭제 실패', () => {
   setupToastTimers();
 
@@ -460,15 +391,6 @@ describe('DeleteConfirm — 요청이 거부됐을 때', () => {
     expect(press('Escape')).toBe(false);
 
     expect(onDone).toHaveBeenCalledOnce();
-  });
-
-  it('즐겨찾기는 건드리지 않는다 — 링크가 지워졌는지조차 알 수 없다', async () => {
-    setFavs(['bm-1']);
-    renderOverlay();
-
-    await confirmDelete();
-
-    expect(storedFavs()).toEqual(['bm-1']);
   });
 
   it('다시 누르면 그때는 보낸다', async () => {

@@ -4,7 +4,7 @@ import { getAdminSession } from "@/lib/supabase/server";
 
 /**
  * 홈 (DESIGN_SPEC 3장). 데이터를 서버에서 한 번 읽어 화면(HomeView)에 넘기기만 한다 —
- * 섹션을 나누는 규칙은 즐겨찾기(localStorage)와 함께 봐야 하므로 클라이언트 쪽에 둔다.
+ * 즐겨찾기 분류와 드래그·편집 상태를 한 화면에서 다루므로 섹션 구성은 클라이언트 쪽에 둔다.
  *
  * **연필·휴지통의 노출 여부도 여기서 정한다** (J1): 세션 판정은 서버에서만 하고, 화면은
  * boolean 하나만 받는다. 셸(layout)이 이미 같은 함수를 부르지만 layout 은 받은 값을 children 에

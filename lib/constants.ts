@@ -29,7 +29,7 @@ export const AI_TOOLS_CATEGORY_NAME = 'AI 도구 모음';
 export const FAVORITES_TITLE = '내 즐겨찾기';
 export const CLICK_COOLDOWN_MS = 30_000;
 export const CLICK_DAILY_CAP = 10;
-export const FAVS_KEY = 'linkdash:favs';        // string[] (bookmark id)
+// FAVS_KEY 는 없어졌다 — 즐겨찾기는 2026-08-11 에 DB(bookmarks.is_favorite·fav_order)로 옮겼다.
 export const VISITOR_KEY = 'linkdash:visitor';  // uuid
 export const BREAKPOINT_NARROW = 820;
 

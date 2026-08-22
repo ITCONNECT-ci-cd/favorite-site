@@ -16,6 +16,7 @@ import { useCardReorder } from '@/components/useCardReorder';
 import { FAVORITES_TITLE, OPERATING_CATEGORY_NAME } from '@/lib/constants';
 import { FAV_GROUPS, groupFavorites } from '@/lib/fav-groups';
 import { pickFavorites } from '@/lib/favorites';
+import { reorderFavorites } from '@/lib/mutations';
 import type { BookmarkWithCount, Category, SiteData } from '@/lib/types';
 
 export type HomeViewProps = {
@@ -44,14 +45,14 @@ export type HomeViewProps = {
  * 화면에 똑같은 안내가 셋 쌓이면 그건 안내가 아니라 벽이다.
  */
 const EMPTY_FAVS_TEXT =
-  '다른 화면에서 카드 오른쪽 위의 핀을 누르면 이 자리에 모입니다. 담고 빼는 것은 전적으로 내 몫이고, 이 브라우저에만 저장됩니다.';
+  '다른 화면에서 카드 오른쪽 위의 핀을 누르면 이 자리에 모입니다. 담고 빼는 것은 관리자 몫이고, 담긴 목록은 모두에게 같습니다.';
 
 /**
  * '현재 운영 중인 사이트' 상위 카테고리와 그 하위까지의 id 집합. 없으면 null(섹션을 접는다).
  *
- * 판정은 D1 `findOperatingCategoryId` 와 같다(상위 중 이름이 상수와 같은 것). 그 함수를 그대로
- * 쓰지 못하는 것은 `lib/queries` 가 `next/headers` 를 끌고 와 클라이언트 컴포넌트에서 import 할
- * 수 없기 때문이다 — 홈은 즐겨찾기(localStorage) 때문에 클라이언트 컴포넌트여야 한다.
+ * 판정은 D1 `findOperatingCategoryId` 와 같다(상위 중 이름이 상수와 같은 것). 홈은 드래그 정렬과
+ * 인라인 편집 상태 때문에 클라이언트 컴포넌트이고, 서버 전용 조회 모듈의 helper를 import할 수
+ * 없으므로 이 작은 판정만 여기 둔다.
  *
  * 하위까지 포함하는 것은 사이드바 개수(D1 rollupCounts — 하위 합산)와 이 섹션의 "N개"가
  * 어긋나지 않게 하기 위해서다. 시드 실측으로는 이 카테고리에 하위가 없어 둘 다 16개다.
@@ -81,10 +82,10 @@ function findOperatingIds(categories: readonly Category[]): { id: string; ids: S
  * 스펙 3장 "하단 안내"(`나머지 N개는 왼쪽 사이드바에서…` 점선 박스)는 **의도적으로 빼 둔 것**이다
  * (계획서 V6 편차 — 사용자 결정). 스펙만 보고 되살리지 마라.
  *
- * 즐겨찾기는 브라우저에만 있으므로 뷰 전체가 클라이언트 컴포넌트다. 핀 토글(D6)·카드 열기(F3)·
- * 한 번에 열기(G4) 배선은 목록 화면과 공유하는 `useCardHandlers` 가 들고 있고, 그 훅이
- * `useFavorites` 를 **한 번만** 불러 결과를 돌려준다 — 카드마다 부르면 렌더 때마다 카드 수만큼
- * 동기 localStorage 읽기가 생긴다(E1 규약).
+ * 담긴 목록은 **서버가 준다**(2026-08-11 서버 이전 — `bookmarks.is_favorite`·`fav_order`).
+ * 그래도 뷰 전체가 클라이언트 컴포넌트인 것은 드래그 정렬·인라인 편집·삭제 확인이 상태를
+ * 들기 때문이다. 핀 토글(D6)·카드 열기(F3)·한 번에 열기(G4) 배선은 목록 화면과 공유하는
+ * `useCardHandlers` 가 들고 있다.
  *
  * 모든 섹션이 같은 배선을 쓴다: 즐겨찾기든 분류에서 온 것이든 클릭 집계 대상인 것은 같다.
  *
@@ -97,7 +98,7 @@ function findOperatingIds(categories: readonly Category[]): { id: string; ids: S
  */
 export function HomeView({ data, isAdmin }: HomeViewProps) {
   const { categories, bookmarks } = data;
-  const { favs, handleToggleFav, handleOpen, openMany, reorderFavs } = useCardHandlers(bookmarks);
+  const { handleToggleFav, handleOpen, openMany } = useCardHandlers(bookmarks);
 
   /**
    * 지금 편집 중인 카드 (J2). **'동시에 한 장만'은 이 값이 하나뿐이라는 데서 그대로 나온다** —
@@ -164,7 +165,7 @@ export function HomeView({ data, isAdmin }: HomeViewProps) {
   }
 
   // 담은 순서 유지 · 죽은 id 제외는 `/favorites` 와 같은 규칙이라 lib/favorites 의 순수 함수를 쓴다.
-  const favItems = pickFavorites(bookmarks, favs);
+  const favItems = pickFavorites(bookmarks);
 
   /**
    * 즐겨찾기를 세 묶음으로 가른다 (2026-08-10). 판정은 링크가 속한 **상위 분류**가 하고
@@ -183,18 +184,17 @@ export function HomeView({ data, isAdmin }: HomeViewProps) {
   /* 섹션마다 드래그 정렬을 **따로** 든다 (J5) — 낙관적 순서도 '요청 중' 빗장도 목록 하나에 대한
      것이라, 하나로 묶으면 한 섹션을 끌던 도중의 빗장이 다른 섹션의 드롭까지 삼킨다.
 
-     즐겨찾기 세 묶음은 저장소가 다르다: 순서를 서버가 아니라 이 브라우저가 들고 있으므로
-     (`pickFavorites` 가 localStorage 의 담긴 차례를 그대로 따른다) `reorderBookmarks` 대신
-     `reorderFavs` 를 넘긴다. **한 묶음의 차례만 넘겨도 안전하다** — `useFavorites().reorder` 는
-     받은 id 들을 앞으로 세우고 나머지는 있던 차례 그대로 뒤에 붙이므로, 다른 두 묶음의 상대
-     순서가 흔들리지 않는다(그 함수의 JSDoc).
+     즐겨찾기 세 묶음은 축이 다르다: 순서가 `sort_order`(분류 안의 차례)가 아니라 `fav_order` 에
+     있으므로 `reorderBookmarks` 대신 `reorderFavorites` 를 넘긴다. **한 묶음의 차례만 넘겨도
+     안전하다** — 그 액션은 받은 id 들이 지금 쥐고 있는 자리들만 서로 맞바꾸므로 다른 두 묶음이
+     쓰는 사잇값을 건드리지 않는다(그 함수의 JSDoc).
 
      훅은 `FAV_GROUPS` 가 상수 튜플이라 **언제나 세 번, 같은 차례로** 불린다 — 목록 길이에 따라
      호출 수가 달라지면 훅 규칙이 깨진다. */
   const favOrders = {
-    'AI 소식': useCardReorder(favGroups['AI 소식'], isAdmin, reorderFavs),
-    'AI 서비스': useCardReorder(favGroups['AI 서비스'], isAdmin, reorderFavs),
-    '업무용 서비스': useCardReorder(favGroups['업무용 서비스'], isAdmin, reorderFavs),
+    'AI 소식': useCardReorder(favGroups['AI 소식'], isAdmin, reorderFavorites),
+    'AI 서비스': useCardReorder(favGroups['AI 서비스'], isAdmin, reorderFavorites),
+    '업무용 서비스': useCardReorder(favGroups['업무용 서비스'], isAdmin, reorderFavorites),
   };
   const operatingOrder = useCardReorder(operatingItems, isAdmin);
 
@@ -218,19 +218,18 @@ export function HomeView({ data, isAdmin }: HomeViewProps) {
             <section key={group} aria-label={group}>
               <SectionHeader
                 title={group}
-                note={`핀으로 담은 ${items.length}개 · 이 브라우저에만 저장됩니다`}
+                note={`핀으로 담은 ${items.length}개`}
                 openLabel={`${items.length}개 한 번에 열기`}
                 onOpenAll={() => openMany(items, group)}
               />
 
               <CardGrid>
-                {/* favs 에서 뽑은 카드라 핀은 언제나 켜짐이고, 누르면 빼는 동작뿐이다
-                    (빼는 순간 이 묶음에서 사라져 카드도 함께 없어진다). */}
+                {/* 담긴 것만 골라낸 목록이라 핀은 언제나 켜짐이고(카드가 `is_favorite` 을 읽는다)
+                    누르면 빼는 동작뿐이다 — 빼면 다시 그려질 때 이 묶음에서 사라진다. */}
                 {order.order.map((bookmark) => (
                   <LinkCard
                     key={bookmark.id}
                     bookmark={bookmark}
-                    isFaved
                     onToggleFav={handleToggleFav}
                     onOpen={handleOpen}
                     isAdmin={isAdmin}
@@ -264,9 +263,9 @@ export function HomeView({ data, isAdmin }: HomeViewProps) {
 
           {/* '+ 링크 추가' 타일 (K1) — **홈에서는 이 섹션에만** 둔다.
 
-              앞의 즐겨찾기 묶음들은 **파생 목록**이라 추가가 의미와 어긋난다: 이 브라우저의
-              localStorage 에서 오고(담는 일은 카드의 핀이 한다) 어느 묶음에 들어갈지는 분류가
-              정한다 — 거기에 링크를 만들면 왜 그 자리에 나타나지 않는지 설명할 수 없다.
+              앞의 즐겨찾기 묶음들은 **파생 목록**이라 추가가 의미와 어긋난다: DB의
+              `is_favorite`에서 오고(담는 일은 관리자 카드의 핀이 한다) 어느 묶음에 들어갈지는
+              분류가 정한다 — 거기에 링크를 만들면 왜 그 자리에 나타나지 않는지 설명할 수 없다.
               이 섹션만이 실제 분류('현재 운영 중인 사이트') 하나를 그대로 비추는 목록이라
               새 카드가 곧바로 제자리에 선다.
 

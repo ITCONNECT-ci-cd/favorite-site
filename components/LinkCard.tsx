@@ -16,13 +16,22 @@ import { hostOf } from '@/lib/url';
 
 export type LinkCardProps = {
   bookmark: BookmarkWithCount;
-  /** 핀 노출 — 홈의 '매일'·'운영 중' 섹션만 false */
+  /**
+   * 핀 노출 — 홈의 '운영 중' 섹션만 false.
+   *
+   * **`isAdmin` 과 함께여야 실제로 그려진다.** 즐겨찾기가 공용이 된 뒤(2026-08-11 서버 이전)
+   * 핀은 개인 도구가 아니라 연필·휴지통과 같은 편집 도구다 — 방문자에게는 담을 권한이 없다.
+   */
   showPin?: boolean;
   /** 체크 노출 — 목록 화면(카테고리·매일·즐겨찾기)만 true */
   showCheck?: boolean;
   checked?: boolean;
   onToggleCheck?: (id: string) => void;
-  isFaved?: boolean;
+  /**
+   * 핀 클릭 — 그 카드의 id 를 돌려준다. **담긴 상태는 넘기지 않는다**: 카드가 이미 받은
+   * `bookmark.is_favorite` 이 곧 그 값이라(2026-08-11 서버 이전) 따로 내려주면 두 값이 어긋날
+   * 자리만 생긴다.
+   */
   onToggleFav?: (id: string) => void;
   /**
    * **서버가** 관리자 세션을 확인했을 때만 true (J1).
@@ -238,7 +247,6 @@ export function LinkCard({
   showCheck = false,
   checked = false,
   onToggleCheck,
-  isFaved = false,
   onToggleFav,
   isAdmin = false,
   onEdit,
@@ -250,6 +258,8 @@ export function LinkCard({
   drag,
 }: LinkCardProps) {
   const { id, title, url, description } = bookmark;
+  // 담긴 상태는 서버가 준 행에 실려 온다 — 화면이 따로 들고 다니지 않는다(2026-08-11 서버 이전).
+  const isFaved = bookmark.is_favorite;
   const icon = faviconSrc(bookmark);
   const isDraggable = drag !== undefined;
 
@@ -329,7 +339,9 @@ export function LinkCard({
             </button>
           )}
 
-          {showPin && (
+          {/* 핀도 관리 도구다 (2026-08-11) — `isAdmin &&` 는 아래 연필·휴지통과 같은 이유로
+              **그리지 않는** 장치다. 비관리자 응답에는 이 마크업이 실리지 않는다. */}
+          {showPin && isAdmin && (
             <button
               type="button"
               aria-label={`${title} 즐겨찾기`}

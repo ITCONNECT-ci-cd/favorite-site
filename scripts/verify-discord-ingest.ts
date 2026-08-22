@@ -692,11 +692,14 @@ async function runLocalIntegration(client: Client): Promise<void> {
       description: string | null;
       favicon_url: string | null;
       is_pinned: boolean;
+      is_favorite: boolean;
+      fav_order: number;
       tags: string[];
       provenance_count: number;
     }>(`
       select bookmark.normalized_url, bookmark.source, bookmark.title, bookmark.description,
-             bookmark.favicon_url, bookmark.is_pinned, bookmark.tags,
+             bookmark.favicon_url, bookmark.is_pinned, bookmark.is_favorite,
+             bookmark.fav_order, bookmark.tags,
              (select pg_catalog.count(*)::integer
                 from private.discord_ingest_provenance as provenance
                where provenance.bookmark_id = bookmark.id) as provenance_count
@@ -705,7 +708,14 @@ async function runLocalIntegration(client: Client): Promise<void> {
     assert(stored.rows[0]?.normalized_url === 'https://example.com/verify?a=1&b=2', '저장 normalized_url이 틀렸습니다.');
     assert(stored.rows[0]?.source === 'discord' && stored.rows[0]?.provenance_count === 1, 'bookmark/provenance 원자성이 틀렸습니다.');
     assert(stored.rows[0]?.title === '검증 제목' && stored.rows[0]?.description === '검증 설명', 'trim 저장 계약이 틀렸습니다.');
-    assert(stored.rows[0]?.favicon_url === null && !stored.rows[0]?.is_pinned && stored.rows[0]?.tags.length === 0, '자동 bookmark 고정값이 틀렸습니다.');
+    assert(
+      stored.rows[0]?.favicon_url === null
+        && !stored.rows[0]?.is_pinned
+        && !stored.rows[0]?.is_favorite
+        && stored.rows[0]?.fav_order === 0
+        && stored.rows[0]?.tags.length === 0,
+      '자동 bookmark 고정값이 틀렸습니다.',
+    );
 
     const reorderFixtures = await client.query<{ id: string; title: string }>(`
       insert into public.bookmarks (category_id, title, url, sort_order)
