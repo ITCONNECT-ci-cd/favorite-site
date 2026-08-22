@@ -10,7 +10,7 @@ const EXPECTED = [
     category: '뉴스·인사이트 > AI 뉴스',
   },
   {
-    url: 'https://contents.itconnect.dev/',
+    url: 'https://content.itconnect.dev/',
     title: 'AI 콘텐츠 자동 생성',
     description: 'AI로 콘텐츠 기획과 제작을 자동화하는 서비스 · 개발 중',
     category: '현재 운영 중인 사이트',
