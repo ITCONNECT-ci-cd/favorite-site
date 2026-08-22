@@ -1,15 +1,10 @@
 'use server';
 
-import { isIP } from 'node:net';
-
-import { getDomain } from 'tldts';
-
-import { parseBookmarkUrlV1 } from '@/lib/bookmark-url';
 import { DISCORD_FAVICON_PROVIDER_APPROVAL_REQUIRED } from '@/lib/constants';
 import {
-  sniffDiscordIcon,
-  type DiscordIconKind,
-} from '@/lib/discord-favicon-image';
+  discordFaviconProviderTarget,
+  fetchDiscordFaviconProvider,
+} from '@/lib/discord-favicon-provider';
 import {
   deleteDiscordFavicon,
   uploadDiscordFavicon,
@@ -24,10 +19,8 @@ const START_STOP_BEFORE_MS = 6_000;
 const WORK_ABORT_BEFORE_MS = 5_000;
 const ITEM_BUDGET_MS = 10_000;
 const UPLOAD_BUDGET_MS = 4_000;
-const MAX_ICON_BYTES = 1_000_000;
 const MAX_CLAIMS = 10;
 const CONCURRENCY = 3;
-const PROVIDER_HOSTS = new Set(['www.google.com']);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type Claim = { bookmark_id: string; claimed_url: string; claim_token: string };
@@ -119,10 +112,10 @@ async function processClaim(
 
   try {
     const itemSignal = limitedSignal(workSignal, Math.min(ITEM_BUDGET_MS, workAbortsAt - Date.now()));
-    const target = providerTarget(claim.claimed_url);
+    const target = discordFaviconProviderTarget(claim.claimed_url);
     if (target === null) throw new Error('unsafe favicon target');
 
-    const icon = await fetchProviderIcon(target, itemSignal);
+    const icon = await fetchDiscordFaviconProvider(target, itemSignal);
     const uploadSignal = limitedSignal(itemSignal, Math.min(UPLOAD_BUDGET_MS, workAbortsAt - Date.now()));
     const stored = await uploadDiscordFavicon(
       claim.bookmark_id,
@@ -224,109 +217,6 @@ async function resolveAmbiguousFinalize(
     console.warn('Discord 파비콘 authoritative 상태 조회 실패', safeError(error));
     return 'unknown';
   }
-}
-
-type ProviderTarget = { origin: string; host: string };
-
-function providerTarget(rawUrl: string): ProviderTarget | null {
-  if (rawUrl.length > 2048 || /[^\x00-\x7f]/.test(rawUrl)) return null;
-
-  const parsed = parseBookmarkUrlV1(rawUrl.trim());
-  if (parsed === null || isIP(parsed.host) !== 0) return null;
-
-  const host = parsed.host.toLowerCase();
-  if (
-    host === 'localhost' ||
-    host.endsWith('.localhost') ||
-    /\.(?:local|internal|home|lan|test|invalid|example|onion|arpa)$/.test(host)
-  ) {
-    return null;
-  }
-  if (getDomain(host, { allowPrivateDomains: false }) === null) return null;
-
-  const port = parsed.port === null ? '' : `:${parsed.port}`;
-  return { host, origin: `${parsed.scheme}://${host}${port}` };
-}
-
-async function fetchProviderIcon(
-  target: ProviderTarget,
-  signal: AbortSignal,
-): Promise<{ body: Uint8Array; kind: DiscordIconKind }> {
-  let endpoint = new URL('https://www.google.com/s2/favicons');
-  endpoint.searchParams.set('domain_url', target.origin);
-  endpoint.searchParams.set('sz', '64');
-
-  for (let redirects = 0; redirects <= 3; redirects += 1) {
-    const response = await fetch(endpoint, {
-      cache: 'no-store',
-      redirect: 'manual',
-      signal,
-    });
-
-    if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get('location');
-      if (location === null || redirects === 3) throw new Error('provider redirect rejected');
-
-      const next = new URL(location, endpoint);
-      if (next.protocol !== 'https:' || !isProviderHost(next.hostname)) {
-        throw new Error('provider redirect host rejected');
-      }
-      endpoint = next;
-      continue;
-    }
-
-    if (!response.ok) throw new Error(`provider HTTP ${response.status}`);
-
-    const declared = Number(response.headers.get('content-length'));
-    if (Number.isFinite(declared) && declared > MAX_ICON_BYTES) {
-      await response.body?.cancel().catch(() => {});
-      throw new Error('provider body too large');
-    }
-
-    const body = await readLimitedBody(response, signal);
-    const kind = sniffDiscordIcon(body);
-    if (kind === null) throw new Error('provider response is not a supported image');
-
-    return { body, kind };
-  }
-
-  throw new Error('provider redirect loop');
-}
-
-function isProviderHost(host: string): boolean {
-  return PROVIDER_HOSTS.has(host) || host === 'gstatic.com' || host.endsWith('.gstatic.com');
-}
-
-async function readLimitedBody(response: Response, signal: AbortSignal): Promise<Uint8Array> {
-  if (response.body === null) throw new Error('empty provider response');
-
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-
-  try {
-    while (true) {
-      if (signal.aborted) throw signal.reason;
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.byteLength;
-      if (total > MAX_ICON_BYTES) throw new Error('provider body too large');
-      chunks.push(value);
-    }
-  } catch (error) {
-    await reader.cancel().catch(() => {});
-    throw error;
-  }
-
-  if (total === 0) throw new Error('empty provider response');
-
-  const body = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    body.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return body;
 }
 
 async function pendingCount(client: UserClient, deadline: number, fallback: number): Promise<number> {

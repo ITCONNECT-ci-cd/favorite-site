@@ -6,8 +6,12 @@ const db = vi.hoisted(() => ({
   ingest: vi.fn(),
   listCategories: vi.fn(),
 }));
+const nextServer = vi.hoisted(() => ({ after: vi.fn() }));
+const enrichment = vi.hoisted(() => ({ enrichDiscordIngest: vi.fn() }));
 
 vi.mock('@/lib/discord-ingest-db', () => db);
+vi.mock('@/lib/discord-ingest-enrichment', () => enrichment);
+vi.mock('next/server', () => nextServer);
 
 const route = await import('./route');
 
@@ -20,6 +24,9 @@ beforeEach(() => {
   vi.stubEnv('DISCORD_INGEST_HMAC_SECRET', SECRET);
   db.ingest.mockReset();
   db.listCategories.mockReset();
+  nextServer.after.mockReset();
+  enrichment.enrichDiscordIngest.mockReset();
+  enrichment.enrichDiscordIngest.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -32,7 +39,7 @@ describe('POST /api/discord-ingest — route config', () => {
   it('Node runtime, dynamic execution, bounded duration을 명시한다', () => {
     expect(route.runtime).toBe('nodejs');
     expect(route.dynamic).toBe('force-dynamic');
-    expect(route.maxDuration).toBe(10);
+    expect(route.maxDuration).toBe(20);
   });
 });
 
@@ -88,6 +95,41 @@ describe('POST /api/discord-ingest — 인증/입력 경계', () => {
       categoryName: '기타',
       retryAt: null,
     });
+    expect(nextServer.after).toHaveBeenCalledTimes(1);
+    expect(enrichment.enrichDiscordIngest).not.toHaveBeenCalled();
+
+    const callback = nextServer.after.mock.calls[0][0] as () => Promise<void>;
+    await callback();
+    expect(enrichment.enrichDiscordIngest).toHaveBeenCalledWith({
+      bookmarkId: 'bookmark-1',
+      url: operation.url,
+      title: '제목',
+      description: operation.description,
+    });
+  });
+
+  it('성공이 아닌 결과에는 응답 후 수집 작업을 예약하지 않는다', async () => {
+    db.ingest.mockResolvedValue({
+      resultCode: 'duplicate_url',
+      bookmarkId: null,
+      title: '기존 제목',
+      categoryName: '기타',
+      retryAt: null,
+    });
+    const raw = JSON.stringify({
+      operation: 'ingest',
+      url: 'https://e.test/',
+      title: 'e.test',
+      description: '',
+      categoryId: 'cat-1',
+      messageId: '1536248705844248606',
+    });
+
+    const response = await route.POST(signedRequest(raw));
+
+    expect(response.status).toBe(200);
+    expect(nextServer.after).not.toHaveBeenCalled();
+    expect(enrichment.enrichDiscordIngest).not.toHaveBeenCalled();
   });
 
   it.each([

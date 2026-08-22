@@ -28,6 +28,8 @@ const actionSource = readFileSync(new URL('./discord-favicon-reconcile.ts', impo
 const storageSource = readFileSync(new URL('./discord-favicon-storage.ts', import.meta.url), 'utf8');
 const fillSource = readFileSync(new URL('./discord-favicon-fill.ts', import.meta.url), 'utf8');
 const imageSource = readFileSync(new URL('./discord-favicon-image.ts', import.meta.url), 'utf8');
+const providerSource = readFileSync(new URL('./discord-favicon-provider.ts', import.meta.url), 'utf8');
+const enrichmentSource = readFileSync(new URL('./discord-ingest-enrichment.ts', import.meta.url), 'utf8');
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -150,6 +152,8 @@ describe('service-role credential boundary guard', () => {
     const sources = new Map([
       ['fill', fillSource],
       ['image', imageSource],
+      ['provider', providerSource],
+      ['enrichment', enrichmentSource],
       ['reconcile', actionSource],
       ['storage', storageSource],
     ]);

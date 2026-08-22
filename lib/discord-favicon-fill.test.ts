@@ -154,6 +154,27 @@ describe('fillDiscordFavicons', () => {
     });
   });
 
+  it('exact subdomain을 provider가 모르면 등록 도메인 provider로만 fallback한다', async () => {
+    const fake = fakeClient({
+      admin_claim_discord_favicons: { data: [claim()], error: null },
+      admin_finalize_discord_favicon: { data: true, error: null },
+      admin_count_pending_discord_favicons: { data: 0, error: null },
+    });
+    vi.mocked(createServerSupabaseClient).mockResolvedValue(fake.client as never);
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(PNG, { status: 404 }))
+      .mockResolvedValueOnce(new Response(PNG, { status: 200 }));
+
+    await expect(fillDiscordFavicons()).resolves.toMatchObject({ ok: true, filled: 1 });
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const exact = new URL(String(vi.mocked(fetch).mock.calls[0][0]));
+    const parent = new URL(String(vi.mocked(fetch).mock.calls[1][0]));
+    expect(exact.searchParams.get('domain_url')).toBe('https://www.example.com');
+    expect(parent.searchParams.get('domain_url')).toBe('https://example.com');
+    expect(String(parent)).not.toContain('/path');
+  });
+
   it('IP literal은 provider에도 보내지 않고 failure CAS로 lease를 정리한다', async () => {
     const fake = fakeClient({
       admin_claim_discord_favicons: { data: [claim('http://127.0.0.1/admin')], error: null },

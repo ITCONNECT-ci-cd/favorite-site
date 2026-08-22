@@ -4,7 +4,10 @@
  * raw body·timestamp HMAC가 인증이며 Supabase 사용자 세션은 사용하지 않는다. 그래서 루트 proxy matcher가
  * 이 경로를 완전히 제외한다. 이 파일은 body/signature/DB 오류 원문을 log 또는 응답에 싣지 않는다.
  */
+import { after } from 'next/server';
+
 import { ingest, listCategories } from '@/lib/discord-ingest-db';
+import { enrichDiscordIngest } from '@/lib/discord-ingest-enrichment';
 
 import {
   parseDiscordIngestBody,
@@ -14,7 +17,7 @@ import {
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 10;
+export const maxDuration = 20;
 
 const TIMESTAMP_HEADER = 'x-discord-ingest-timestamp';
 const SIGNATURE_HEADER = 'x-discord-ingest-signature';
@@ -58,6 +61,18 @@ export async function POST(request: Request): Promise<Response> {
       categoryId: operation.categoryId,
       messageId: operation.messageId,
     });
+    const bookmarkId = result.bookmarkId;
+    const savedTitle = result.title;
+    if (result.resultCode === 'success' && bookmarkId !== null && savedTitle !== null) {
+      after(() =>
+        enrichDiscordIngest({
+          bookmarkId,
+          url: operation.url,
+          title: savedTitle,
+          description: operation.description,
+        }),
+      );
+    }
     return Response.json(result, { headers: NO_STORE_HEADERS });
   } catch {
     // driver/DB 원문은 SQLSTATE, role/table 또는 접속 정보를 포함할 수 있다. 고정 문구만 남긴다.

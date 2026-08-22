@@ -43,6 +43,10 @@ reclassify-snapshot-*.json
 # 제목·설명·분류 고도화 되돌림 스냅샷 (scripts/enrich.ts --apply 산출물 — 라이브 데이터 덤프)
 enrich-snapshot-*.json
 
+# Discord 파비콘 one-time repair 되돌림 스냅샷
+discord-favicon-snapshot-*.json
+favicon-placeholder-snapshot-*.json
+
 # vercel
 .vercel
 

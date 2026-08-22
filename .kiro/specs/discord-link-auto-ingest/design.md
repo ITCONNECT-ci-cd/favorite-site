@@ -67,7 +67,6 @@
 flowchart LR
   U["사내 Discord 사용자"] --> D["감시 채널"]
   D --> A["외부 AI 에이전트"]
-  A --> W["격리된 Web 도구\n또는 no-fetch fallback"]
   A -->|"HMAC 서명 HTTPS"| I["Next ingest API"]
   I -->|"server-only DSN\nauto-commit query"| P["Supabase Postgres"]
   P --> F["ingest_bookmark\nSECURITY DEFINER"]
@@ -76,12 +75,18 @@ flowchart LR
   F --> R["private receipts"]
   F --> L["private rate ring ≤ 30"]
 
+  I -->|"after(response)"| E["제한 metadata/favicon worker"]
+  E --> W["DNS 검증 + socket pin\nHTML metadata only"]
+  E --> G["고정 favicon provider"]
+  E --> O["Supabase Storage"]
+  E --> P
+
   M["/admin 관리자"] --> X["Next.js Server Action"]
   X --> C["admin claim RPC"]
   C --> V
   X --> S["safe favicon collector"]
-  S --> G["고정 favicon provider"]
-  S --> O["Supabase Storage"]
+  S --> G
+  S --> O
   X --> B
 ```
 
@@ -90,8 +95,9 @@ flowchart LR
 1. **DB 경계**: 에이전트 natural-language 행동과 무관하게 role ACL·함수·constraint가 저장 가능한
    모양과 양을 제한한다.
 2. **앱 경계**: favicon 채우기와 수정은 관리자 session, admin-only RPC, 기존 mutation 검증을 통과한다.
-3. **호스트 경계**: 사용자 URL을 여는 web tool은 DSN을 읽지 못하는 sandbox에서 private/reserved
-   network를 차단한다. 증명할 수 없으면 URL을 열지 않는다.
+3. **호스트 경계**: 에이전트는 URL을 열지 않는다. 앱 서버의 제한 수집기가 모든 DNS 결과를 검사하고
+   검증 주소에 소켓을 pin하며 redirect마다 같은 검사를 반복한다. 이 경계를 통과하지 못하면 host 기반
+   설명 fallback만 저장한다.
 
 ## 5. 자격 증명과 권한 설계
 
@@ -533,6 +539,24 @@ Next.js는 page-level `maxDuration`으로 그 page가 사용하는 Server Action
 문서로 재확인한다. [Next 공식 설명](https://nextjs.org/docs/app/api-reference/file-conventions/route-segment-config),
 [Vercel duration 설명](https://vercel.com/docs/functions/configuring-functions/duration).
 
+### 10.4 성공 응답 뒤 자동 보강
+
+`ingest_bookmark`가 `success`와 bookmark ID를 반환한 경우에만 route가 `after()`를 예약한다. Discord
+응답은 DB 등록 결과로 먼저 끝나며, worker 실패는 ingest 성공을 뒤집지 않는다. worker는 다음 두 경로를
+독립적으로 실행한다.
+
+1. metadata: userinfo·IP·비기본 port·내부 suffix를 DNS 전에 거부한다. 모든 A/AAAA가 공개 대역인지
+   확인한 뒤 실제 HTTP(S) 소켓 lookup을 그 주소에 pin하고, redirect 최대 2회도 같은 검사를 반복한다.
+   HTTPS downgrade, 압축 응답, HTML/XHTML 외 content는 거부하고 body 앞 200KB를 읽으면 소켓을 닫는다. 읽는 값은
+   `og:title`, `<title>`, `og:description`, `meta[name=description]`뿐이며 host/빈 필드만 교체한다.
+2. favicon: 기존 safe provider와 Storage boundary를 재사용한다. 방금 반환된 exact bookmark ID·URL로
+   runtime 전용 claim을 얻고, token CAS finalize가 성공한 경우에만 공개 URL을 연결한다.
+
+runtime role은 여전히 bookmark/provenance table을 직접 읽거나 쓰지 않는다. 네 후처리 함수는
+`discord_favicon_owner`의 SECURITY DEFINER이며 runtime만 EXECUTE할 수 있다. metadata와 favicon 각각의
+실패는 고정 로그만 남기고 서로를 막지 않는다. update/claim은 provenance 생성 후 10분 이내 행만
+받고, finalize는 bookmark ID와 claim token이 포함된 이 프로젝트의 `discord/` Storage URL만 허용한다.
+
 Action 진입부터의 50초 deadline이 먼저 끝나야 하며 platform timeout을 정상 제어 흐름으로 사용하지
 않는다. 배포 preview에서 provider timeout·Storage 지연·10개 claim worst case에도 결과 toast 전에 504가
 나지 않는지 측정한다.
@@ -554,8 +578,8 @@ DSN을 주지 않고 다음 두 HMAC-signed JSON operation만 제공한다.
 - Discord text batching delay는 `0`으로 고정해 서로 다른 inbound snowflake를 한 turn으로 합치지 않는다.
 - API/DB raw exception, HMAC secret, query text를 Discord에 내보내지 않는다.
 - user/site 문자열은 escape하고 `allowed_mentions=[]`로 응답한다.
-- web tool은 별도 sandbox이고 HMAC secret·서명 client process 환경을 볼 수 없어야 한다.
-- 격리 증거가 없으면 network fetch를 끄고 host/빈 설명 fallback을 쓴다.
+- agent web tool은 비활성이고 HMAC secret·서명 client process 환경을 모델이 볼 수 없어야 한다.
+- 메시지에 명시된 설명이 없으면 host/빈 설명을 보내며, 서버의 제한 worker가 성공 응답 뒤 보강한다.
 
 profile-local plugin과 MCP client는 repo test에 포함한다. staging channel에서는 고정 fixture URL과 9개
 결과 mapping, 연속 두 메시지의 서로 다른 receipt message ID를 smoke하고 실행 일시·agent version·prompt
@@ -649,7 +673,8 @@ terminal status만 90일 저장하고, provenance message ID는 bookmark가 존�
 7. staging agent signing client에 HMAC secret을 전달하고 network restriction을 적용한다.
 8. no-fetch fallback으로 staging canary를 실행해 source badge·수정·중복·rate를 확인한다. 이어 agent
    stop → runtime `NOLOGIN` → session 종료 → 복구의 kill-switch drill을 실제 실행하고 기록한다.
-9. web sandbox egress evidence가 있으면 metadata fetch를 켜고 canary를 반복한다.
+9. 앱 서버의 DNS 전수 검사·socket pin·redirect 재검증 테스트와 운영 egress를 확인한 뒤 응답 후
+   metadata/favicon worker canary를 반복한다.
 10. 감시 channel을 한 곳만 활성화하고 첫 24시간 자동 행, retention health를 관리자가 확인한다.
 
 ### rollback

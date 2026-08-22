@@ -10,6 +10,14 @@ const FAVICON_FENCE_MIGRATION_PATH = new URL(
   '../supabase/migrations/0007_fence_favicon_reference_read.sql',
   import.meta.url,
 );
+const ENRICHMENT_MIGRATION_PATH = new URL(
+  '../supabase/migrations/0009_automate_discord_enrichment.sql',
+  import.meta.url,
+);
+const ENRICHMENT_HARDENING_MIGRATION_PATH = new URL(
+  '../supabase/migrations/0010_harden_discord_enrichment.sql',
+  import.meta.url,
+);
 const ADMIN_EMAIL = 'contact@itconnect.dev';
 
 type Mode = 'preflight' | 'integration';
@@ -70,6 +78,8 @@ function codeOf(error: unknown): string | undefined {
 async function staticMigrationGuard(): Promise<void> {
   const source = await readFile(MIGRATION_PATH, 'utf8');
   const faviconFenceSource = await readFile(FAVICON_FENCE_MIGRATION_PATH, 'utf8');
+  const enrichmentSource = await readFile(ENRICHMENT_MIGRATION_PATH, 'utf8');
+  const enrichmentHardeningSource = await readFile(ENRICHMENT_HARDENING_MIGRATION_PATH, 'utf8');
   assert(
     !/create\s+or\s+replace\s+function\s+public\.normalize_bookmark_url_v1/i.test(source),
     'v1 normalizer를 CREATE OR REPLACE로 바꾸면 stored generated 값/index가 조용히 drift합니다.',
@@ -87,6 +97,35 @@ async function staticMigrationGuard(): Promise<void> {
       faviconFenceSource,
     ),
     '0007 favicon authoritative read에 provenance FOR UPDATE fence가 없습니다.',
+  );
+  for (const name of [
+    'discord_ingest_update_metadata',
+    'discord_ingest_claim_favicon',
+    'discord_ingest_finalize_favicon',
+    'discord_ingest_fail_favicon',
+  ]) {
+    assert(
+      new RegExp(`create\\s+function\\s+public\\.${name}`, 'i').test(enrichmentSource),
+      `0009 ${name} 정의가 없습니다.`,
+    );
+  }
+  assert(
+    /revoke\s+execute[\s\S]*?from\s+public,\s*anon,\s*authenticated,\s*service_role/i.test(
+      enrichmentSource,
+    ),
+    '0009 enrichment RPC의 외부 role EXECUTE 회수가 없습니다.',
+  );
+  assert(
+    /provenance\.created_at\s*>=\s*request_time\.claimed_at\s*-\s*pg_catalog\.make_interval\(secs\s*=>\s*600\)/i.test(
+      enrichmentHardeningSource,
+    ),
+    '0010 favicon claim의 신규 행 시간 fence가 없습니다.',
+  );
+  assert(
+    /storage\/v1\/object\/public\/favicons\/discord\/[\s\S]*?p_claim_token::text/i.test(
+      enrichmentHardeningSource,
+    ),
+    '0010 finalize URL이 bookmark/claim token Storage 경로에 묶이지 않았습니다.',
   );
 }
 
@@ -295,8 +334,15 @@ async function checkCatalog(client: Client): Promise<void> {
      order by signature
   `);
   const runtimeExecutables = publicFunctions.rows.filter((fn) => fn.runtime_execute).map((fn) => fn.signature);
+  const expectedRuntimeExecutables = [
+    'discord_ingest_claim_favicon(uuid,text)',
+    'discord_ingest_fail_favicon(uuid,uuid,text)',
+    'discord_ingest_finalize_favicon(uuid,uuid,text,text)',
+    'discord_ingest_update_metadata(uuid,text,text,text,text)',
+    'ingest_bookmark(text,text,text,text,text)',
+  ];
   assert(
-    runtimeExecutables.length === 1 && runtimeExecutables[0] === 'ingest_bookmark(text,text,text,text,text)',
+    JSON.stringify(runtimeExecutables) === JSON.stringify(expectedRuntimeExecutables),
     `runtime 함수 allowlist가 틀렸습니다: ${runtimeExecutables.join(', ') || '(없음)'}`,
   );
 
@@ -310,6 +356,33 @@ async function checkCatalog(client: Client): Promise<void> {
   assert(ingest.owner === 'discord_ingest_owner' && ingest.security_definer, 'ingest 함수 owner/definer가 틀렸습니다.');
   assert(ingest.settings?.includes('search_path=""'), 'ingest 함수 search_path가 빈 값으로 고정되지 않았습니다.');
   assert(ingest.settings?.includes('lock_timeout=1s'), 'ingest 함수 lock_timeout이 1초가 아닙니다.');
+
+  for (const signature of expectedRuntimeExecutables.slice(0, -1)) {
+    const enrichment = publicFunctions.rows.find((fn) => fn.signature === signature);
+    assert(enrichment, `${signature}가 없습니다.`);
+    assert(
+      enrichment.owner === 'discord_favicon_owner' && enrichment.security_definer,
+      `${signature} owner/definer가 틀렸습니다.`,
+    );
+    assert(enrichment.settings?.includes('search_path=""'), `${signature} search_path가 고정되지 않았습니다.`);
+    assert(enrichment.settings?.includes('lock_timeout=1s'), `${signature} lock_timeout이 1초가 아닙니다.`);
+  }
+
+  const enrichmentAcl = await client.query<{ signature: string; role_name: string }>(`
+    with enrichment(signature) as (values
+      ('public.discord_ingest_claim_favicon(uuid,text)'),
+      ('public.discord_ingest_fail_favicon(uuid,uuid,text)'),
+      ('public.discord_ingest_finalize_favicon(uuid,uuid,text,text)'),
+      ('public.discord_ingest_update_metadata(uuid,text,text,text,text)')
+    ), roles(role_name) as (values ('anon'), ('authenticated'), ('service_role'))
+    select signature, role_name
+      from enrichment cross join roles
+     where pg_catalog.has_function_privilege(role_name, signature, 'EXECUTE')
+  `);
+  assert(
+    enrichmentAcl.rowCount === 0,
+    `enrichment RPC가 외부 role에 열렸습니다: ${enrichmentAcl.rows.map((row) => `${row.signature}:${row.role_name}`).join(', ')}`,
+  );
 
   const reorder = publicFunctions.rows.find((fn) => fn.signature === 'admin_reorder_bookmarks(uuid[])');
   assert(reorder && !reorder.security_definer, 'admin_reorder_bookmarks가 SECURITY INVOKER가 아닙니다.');

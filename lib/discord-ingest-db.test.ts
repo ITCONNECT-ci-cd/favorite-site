@@ -42,10 +42,17 @@ afterEach(() => {
 });
 
 describe('discord-ingest-db — 최소 auto-commit adapter', () => {
-  it('runtime API는 category 조회와 ingest 두 함수만 노출한다', async () => {
+  it('runtime API는 고정 ingest/enrichment 함수만 노출한다', async () => {
     const adapter = await import('@/lib/discord-ingest-db');
 
-    expect(Object.keys(adapter).sort()).toEqual(['ingest', 'listCategories']);
+    expect(Object.keys(adapter).sort()).toEqual([
+      'claimDiscordIngestFavicon',
+      'failDiscordIngestFavicon',
+      'finalizeDiscordIngestFavicon',
+      'ingest',
+      'listCategories',
+      'updateDiscordIngestMetadata',
+    ]);
   });
 
   it('category 4개 column을 hard-coded statement 한 번으로 읽고 camelCase로 돌려준다', async () => {
@@ -129,6 +136,92 @@ describe('discord-ingest-db — 최소 auto-commit adapter', () => {
       }),
     ]);
     expect(pg.listeners.map(({ event }) => event)).toContain('error');
+  });
+
+  it('metadata 보정은 exact id·URL과 새 값을 parameter로만 넘긴다', async () => {
+    pg.query.mockResolvedValue({ rows: [{ updated: true }] });
+    const { updateDiscordIngestMetadata } = await import('@/lib/discord-ingest-db');
+    const input = {
+      bookmarkId: '11111111-1111-4111-8111-111111111111',
+      claimedUrl: "https://example.com/?q='; delete from bookmarks; --",
+      expectedTitle: 'example.com',
+      title: 'Example',
+      description: '설명',
+    };
+
+    await expect(updateDiscordIngestMetadata(input)).resolves.toBe(true);
+
+    const query = pg.query.mock.calls[0][0] as Record<string, unknown>;
+    expect(query.text).toContain('public.discord_ingest_update_metadata(');
+    expect(query.text).not.toContain(input.claimedUrl);
+    expect(query.text).not.toContain(';');
+    expect(query.values).toEqual([
+      input.bookmarkId,
+      input.claimedUrl,
+      input.expectedTitle,
+      input.title,
+      input.description,
+    ]);
+  });
+
+  it('favicon claim/finalize/failure를 exact token CAS 함수로만 전달한다', async () => {
+    const bookmarkId = '11111111-1111-4111-8111-111111111111';
+    const claimToken = '22222222-2222-4222-8222-222222222222';
+    const claimedUrl = 'https://example.com/path';
+    pg.query
+      .mockResolvedValueOnce({ rows: [{ claimToken }] })
+      .mockResolvedValueOnce({ rows: [{ updated: true }] })
+      .mockResolvedValueOnce({ rows: [{ updated: false }] });
+    const adapter = await import('@/lib/discord-ingest-db');
+
+    const claim = await adapter.claimDiscordIngestFavicon(bookmarkId, claimedUrl);
+    expect(claim).toEqual({ bookmarkId, claimedUrl, claimToken });
+    await expect(
+      adapter.finalizeDiscordIngestFavicon(claim!, 'https://project.test/icon.png'),
+    ).resolves.toBe(true);
+    await expect(adapter.failDiscordIngestFavicon(claim!)).resolves.toBe(false);
+
+    expect(pg.query.mock.calls.map(([query]) => String(query.text))).toEqual([
+      expect.stringContaining('public.discord_ingest_claim_favicon'),
+      expect.stringContaining('public.discord_ingest_finalize_favicon'),
+      expect.stringContaining('public.discord_ingest_fail_favicon'),
+    ]);
+    expect(pg.query.mock.calls[1][0].values).toEqual([
+      bookmarkId,
+      claimToken,
+      claimedUrl,
+      'https://project.test/icon.png',
+    ]);
+  });
+
+  it('claim 없음은 null이고 잘못된 token/boolean row는 거부한다', async () => {
+    pg.query.mockResolvedValueOnce({ rows: [] });
+    const adapter = await import('@/lib/discord-ingest-db');
+    await expect(
+      adapter.claimDiscordIngestFavicon(
+        '11111111-1111-4111-8111-111111111111',
+        'https://example.com',
+      ),
+    ).resolves.toBeNull();
+
+    pg.query.mockResolvedValueOnce({ rows: [{ claimToken: 'not-a-uuid' }] });
+    await expect(
+      adapter.claimDiscordIngestFavicon(
+        '11111111-1111-4111-8111-111111111111',
+        'https://example.com',
+      ),
+    ).rejects.toThrow('invalid discord favicon claim row');
+
+    pg.query.mockResolvedValueOnce({ rows: [{ updated: 'true' }] });
+    await expect(
+      adapter.updateDiscordIngestMetadata({
+        bookmarkId: '11111111-1111-4111-8111-111111111111',
+        claimedUrl: 'https://example.com',
+        expectedTitle: 'example.com',
+        title: 'Example',
+        description: '설명',
+      }),
+    ).rejects.toThrow('invalid discord enrichment result row');
   });
 
   it.each([
