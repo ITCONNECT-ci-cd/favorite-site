@@ -142,13 +142,17 @@ export function formatTally(uploaded: Record<IconSource, number>): string {
 }
 
 /** 실패 목록을 사람이 읽는 형태로 찍는다(비어 있으면 한 줄로 끝낸다). */
-export function reportFailures(failures: readonly FaviconFailure[], log = console.log): void {
+export function reportFailures(
+  failures: readonly FaviconFailure[],
+  log = console.log,
+  retainedState = 'favicon_url = null 로 남는다',
+): void {
   if (failures.length === 0) {
     log('파비콘 실패: 없음');
     return;
   }
 
-  log(`파비콘 실패 ${failures.length}건 (favicon_url = null 로 남는다):`);
+  log(`파비콘 실패 ${failures.length}건 (${retainedState}):`);
   for (const failure of failures) {
     log(`  - [${failure.legacyId}] ${failure.title} · ${failure.host} — ${failure.reason}`);
   }
