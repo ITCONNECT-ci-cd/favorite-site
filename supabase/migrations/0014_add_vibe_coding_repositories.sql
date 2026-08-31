@@ -7,6 +7,8 @@
 -- sort_order만 바꿔 bookmark id, 클릭 이력, favicon, source, 즐겨찾기 상태를 보존한다.
 -- 대상 URL이 누락됐거나 예상 밖 분류로 이동해 있으면 전체 transaction을 중단한다.
 
+begin;
+
 lock table public.categories in share row exclusive mode;
 lock table public.bookmarks in share row exclusive mode;
 
@@ -292,3 +294,5 @@ begin
   end if;
 end;
 $migration$;
+
+commit;
