@@ -61,24 +61,19 @@ select pg_temp.tap_assert(
 select pg_temp.tap_assert(
   (
     select pg_catalog.count(*) = 1
-      from public.categories as child
-      join public.categories as parent on parent.id = child.parent_id
-     where parent.parent_id is null
-       and parent.name = 'AI 도구 모음'
-       and child.name = '바이브코딩'
+      from public.categories as category
+     where category.name = '바이브코딩'
   ),
   2,
-  'AI 도구 모음 아래 바이브코딩 카테고리가 정확히 하나다'
+  '전체 계층에 바이브코딩 카테고리가 정확히 하나다'
 );
 
 select pg_temp.tap_assert(
   (
     select pg_catalog.count(*) = 0
-      from public.categories as grandchild
-      join public.categories as child on child.id = grandchild.parent_id
-      join public.categories as parent on parent.id = child.parent_id
-     where parent.name = 'AI 도구 모음'
-       and child.name = '바이브코딩'
+      from public.categories as child
+      join public.categories as vibe on vibe.id = child.parent_id
+     where vibe.name = '바이브코딩'
   ),
   3,
   '바이브코딩은 leaf 카테고리다'
@@ -86,20 +81,13 @@ select pg_temp.tap_assert(
 
 select pg_temp.tap_assert(
   (
-    select vibe.sort_order
-      from public.categories as vibe
-      join public.categories as parent on parent.id = vibe.parent_id
-     where parent.name = 'AI 도구 모음'
-       and vibe.name = '바이브코딩'
-  ) = (
-    select coding.sort_order + 1
-      from public.categories as coding
-      join public.categories as parent on parent.id = coding.parent_id
-     where parent.name = 'AI 도구 모음'
-       and coding.name = '코딩·에이전트'
+    select pg_catalog.count(*) = 9
+      from public.bookmarks as bookmark
+      join public.categories as category on category.id = bookmark.category_id
+     where category.name = '바이브코딩'
   ),
   4,
-  '바이브코딩은 코딩·에이전트 바로 다음 순서다'
+  '바이브코딩에는 승인된 bookmark 9개만 있다'
 );
 
 select pg_temp.tap_assert(
@@ -108,9 +96,7 @@ select pg_temp.tap_assert(
       from expected_vibe_repositories as expected
       join public.bookmarks as bookmark on bookmark.url = expected.url
       join public.categories as category on category.id = bookmark.category_id
-      join public.categories as parent on parent.id = category.parent_id
-     where parent.name = 'AI 도구 모음'
-       and category.name = '바이브코딩'
+     where category.name = '바이브코딩'
   ),
   5,
   '승인된 GitHub 저장소 9개가 바이브코딩으로 이동했다'
