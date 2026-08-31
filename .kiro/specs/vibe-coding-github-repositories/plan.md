@@ -1,10 +1,28 @@
 # 바이브코딩 GitHub 저장소 분류·등록 계획
 
-> 상태: **구현 대기**
+> 상태: **운영 배포 완료**
 >
 > 기준일: 2026-08-31 (Asia/Seoul)
 >
 > 범위: 정보구조, 기존 GitHub 링크 재분류, 승인된 신규 저장소 등록, 운영 검증
+
+## 0. 수행 결과
+
+2026-08-31에 기본안을 구현·검증·운영 반영했다.
+
+- `0014_add_vibe_coding_repositories.sql`을 적용해 `AI 도구 모음 > 바이브코딩` leaf를
+  `코딩·에이전트` 바로 다음에 만들었다.
+- 승인된 기존 저장소 9개만 이동했고 `Zeroclaw`, `awesome-gpt-image`,
+  `anti-detect-browser-tools-tech-comparison`은 `오픈소스·자료 모음`에 유지했다.
+- bookmark ID 9개, favicon 9개, manual source, 즐겨찾기 상태, 클릭 합계를 적용 전후 대조했다.
+  전체 bookmark 수는 487개로 유지됐다.
+- 운영 스냅샷(카테고리 59, bookmark 487, click 99)을 PostgreSQL 17 일회용 DB에 복원해 최초 적용,
+  재적용, 승인 조건 9개, 예상 밖 분류와 URL 누락의 fail-closed rollback을 검증했다.
+- Node 22에서 Vitest 86파일·1,962테스트, typecheck, lint, production build를 통과했다.
+- 운영 DB에서 local/remote migration `0001`~`0014` 일치와 SQL 수용 조건 9개를 확인했다.
+- 실제 Production 브라우저에서 데스크톱 사이드바·하위 탭·9개 카드와 390×844 모바일 탐색을 확인했다.
+
+운영 DB backup은 저장소 밖의 권한 0700 디렉터리에 두었고 schema/data 파일은 0600으로 보관한다.
 
 ## 1. 결론
 
