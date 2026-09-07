@@ -6,6 +6,7 @@
     "node": ">=20.12"
   },
   "scripts": {
+    "docker:start": "bash scripts/start-local-services.sh",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
