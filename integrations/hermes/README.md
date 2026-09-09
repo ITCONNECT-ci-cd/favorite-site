@@ -14,6 +14,8 @@ Hermes binds the triggering Discord snowflake to a concurrency-safe session Cont
 
 Metadata is inspected **before classification and saving**. Missing metadata does not prevent saving, and the response explains when human review is needed. A saved duplicate remains unchanged; it is not a reclassification command. Do not promise that `분류 대기` will finish automatically.
 
+Saved descriptions must be nonempty Korean sentences, including when the source metadata is English. Preserve product names but summarize the purpose in Korean. If no reliable description is available, use the Korean unavailable-description notice from the channel prompt. This is an agent output rule; the metadata inspection endpoint still returns the original source language, and the background worker preserves a nonempty description.
+
 ## Install/update
 
 Copy `favorite-message-context` to `$HERMES_HOME/plugins/favorite-message-context`, enable that plugin, add the stdio MCP server with the exact server key `favorite-ingest` using the repository-local `tsx` executable and `scripts/discord-favorite-mcp.ts`, and enable only the three MCP tools for the Discord platform. Hermes sanitizes that key into the runtime registry prefix `mcp__favorite_ingest__`; the plugin matches the exact `mcp__favorite_ingest__favorite_ingest` execution name. Use `favorite-channel-prompt.md` as the prompt for channel `1536239187517247488` and keep the existing user/channel allowlists and `allow_bots: none`.

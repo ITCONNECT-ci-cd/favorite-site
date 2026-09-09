@@ -88,3 +88,18 @@
 
 새 Discord 메시지 전송, 접근 차단 사이트의 자동 재분류, 별도 FIFO 작업의 검증·배포는 수행하지 않았다.
 Gemini 검증 스크립트의 API 형식은 [공식 함수 호출 문서](https://ai.google.dev/gemini-api/docs/generate-content/function-calling)와 기존 Gemini 요청 코드를 참고했다.
+
+## 후속 수정: 한국어 설명 (2026-09-10 08:13 KST)
+
+기존 Jiro 행을 이동할 때 영문 설명을 보존한 누락을 수정했다. `0017_localize_jiro_description.sql`은
+정확한 ID·URL·source·기존 설명을 확인한 뒤 설명만 한국어로 바꾼다. 다른 북마크 필드는 보존했다.
+봇의 6단계 규칙도 한국어 요약을 허용하는 수준에서 **비어 있지 않은 한국어 설명 필수**로 변경했다.
+자료를 읽지 못하면 한국어 확인 필요 문구를 사용한다. 이는 봇 출력 규칙이며 DB 언어 제약은 아니다.
+
+- Ran: `npm run typecheck`, `npx eslint scripts/verify-discord-classification.ts`, `supabase db push --linked --dry-run`, `supabase db push --linked --yes`.
+- Ran: `node --env-file=/Users/itconnect/.hermes/profiles/favorite/.env --import tsx scripts/verify-discord-classification.ts gemini-3.8-flash`, `favorite gateway restart`, `favorite gateway status`.
+- Passed: Jiro 실제 메타데이터·GitHub fixture·정보 없는 fixture 모두 올바른 분류 및 한국어 설명 생성.
+  운영 DB에서 설명 외 필드 보존, 운영 페이지 응답에서 한국어 문구 확인. 운영 프롬프트 일치 및
+  PID 97713의 3개 도구 등록·08:12:40 Discord 연결 확인.
+- Failed: 미해결 검증 실패 없음. 기존 launchd service definition stale 경고는 이번 변경 범위 밖이다.
+- Not Run: 새 Discord 메시지 전송, 전체 테스트·웹앱 재배포(서버·화면 코드 변경 없음).
