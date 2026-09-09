@@ -1,6 +1,6 @@
 # 바이브코딩 분류 정리와 저장 전 사이트 확인
 
-상태: 구현 및 운영 반영 검증 중. 2026-09-10 사용자 요청에 따른 현재 분류 기준이다.
+상태: **운영 DB·API·봇 반영 완료**. 2026-09-10 사용자 요청에 따른 현재 분류 기준이다.
 앞선 classification-review-2026-09-10.md의 Jiro 최상위 분류 제안은 이 문서로 대체한다.
 
 ## 정보 구조와 이동
@@ -59,3 +59,32 @@
   Discord 연결을 확인한다. 별도 작업 중인 FIFO 플러그인 변경은 이번 커밋에 포함하지 않는다.
 
 직접 Discord에 새 메시지를 전송하는 검증은 별도이며 이 작업에서 대신 전송하지 않는다.
+
+## 운영 검증 결과 (2026-09-10 07:58 KST)
+
+- 운영 마이그레이션 `0001`–`0016`이 로컬과 일치한다. 전후 모두 카테고리 60개, 북마크 488개,
+  클릭 129건이다. 전체 북마크의 ID·제목·설명·URL·source·즐겨찾기·favicon 등 보존 필드를 비교해 일치했다.
+- 도구모음 12개, 디자인 13개, 코딩/에이전트 19개를 운영 DB에서 확인했다. Jiro의 실제 category_id는
+  디자인의 기존 ID `357c9ec8-1f7e-4072-a578-28e7007e523e`다.
+- 배포 코드: `c8c372418ec42aa4789fa9b971884e3b99ad61e8`.
+  운영 배포: `dpl_CfFYMq7QVYeuc9fwmz7zmNtkPrQv`.
+- `npm run verify:deploy -- c8c372418ec42aa4789fa9b971884e3b99ad61e8` 통과.
+  첫 CLI 배포에는 Git SHA 환경값이 없어 버전 검사가 실패했다. 격리된 커밋의 동일 소스를
+  정확한 SHA 환경값·배포 메타데이터와 함께 재배포해 수정했다. 원격 빌드의 `npm run build`도 통과했다.
+- `node --env-file=/Users/itconnect/.hermes/profiles/favorite/.env --import tsx scripts/verify-discord-classification.ts gemini-3.8-flash` 통과.
+  운영 API의 Jiro 메타데이터와 현재 운영 모델을 사용해 디자인 선택을 확인했다. GitHub fixture의
+  도구모음 선택과 정보 없는 fixture의 보류도 통과했다. 실제 gateway 도구 호출 전체를 재현한 검증은 아니다.
+- `favorite mcp test favorite-ingest`: 도구 3개 연결·발견 성공.
+- `favorite gateway restart`, `favorite gateway status`: 재시작 후 PID 62458 및 watchdog/MCP 자식 확인.
+  07:55:42에 `favorite_list_categories`, `favorite_inspect_url`, `favorite_ingest` 등록,
+  07:55:46에 Discord 연결 성공을 현재 프로세스 로그에서 확인했다. 다른 프로필은 재시작하지 않았다.
+  CLI의 기존 service definition stale 경고는 남아 있으나 이번 프로세스 시작·연결은 확인됐다.
+- 설정 변경은 해당 채널의 prompt scalar 하나이며, 그 외 파싱된 설정이 같음을 검사했다.
+  운영 프롬프트가 커밋된 파일과 정확히 일치한다.
+- 무서명 `inspect_url` 요청은 HTTP 401, 서명된 loopback URL은 `unavailable`이었다.
+- 운영 바이브코딩 페이지 GET은 HTTP 200이고 하위 분류 3개와 Jiro를 응답에서 확인했다.
+- 브라우저 검증: CUA에 연결된 browser provider가 없고 Chrome native 접근도 타임아웃이어서
+  실제 화면·모바일·관리자 조작 검증은 완료하지 못했다. 서버 HTML 조회와 구분한다.
+
+새 Discord 메시지 전송, 접근 차단 사이트의 자동 재분류, 별도 FIFO 작업의 검증·배포는 수행하지 않았다.
+Gemini 검증 스크립트의 API 형식은 [공식 함수 호출 문서](https://ai.google.dev/gemini-api/docs/generate-content/function-calling)와 기존 Gemini 요청 코드를 참고했다.
