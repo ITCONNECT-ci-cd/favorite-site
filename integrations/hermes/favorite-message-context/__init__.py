@@ -64,3 +64,16 @@ def _force_message_id(
 def register(ctx: Any) -> None:
     ctx.register_hook("pre_llm_call", _inject_message_id)
     ctx.register_middleware("tool_request", _force_message_id)
+    channels = ctx.get_config("queue_channels", []) if hasattr(ctx, "get_config") else []
+    if channels:
+        if not isinstance(channels, list) or not all(
+            isinstance(channel, str) and _DISCORD_SNOWFLAKE.fullmatch(channel)
+            for channel in channels
+        ):
+            raise ValueError("Favorite queue_channels must contain Discord channel ID strings")
+        capacity = ctx.get_config("queue_capacity", 32)
+        if type(capacity) is not int or not 1 <= capacity <= 100:
+            raise ValueError("Favorite queue_capacity must be between 1 and 100")
+        from .serial_queue import register_queue_platform
+
+        register_queue_platform(ctx, channels, capacity)
