@@ -1,19 +1,22 @@
 # Hermes Favorite integration
 
-The `favorite` Hermes profile receives only two model-visible MCP tools:
+The `favorite` Hermes profile receives three model-visible MCP tools:
 
 - `favorite_list_categories`
+- `favorite_inspect_url` (bounded public title/description, no bookmark writes)
 - `favorite_ingest`
 
-The MCP process reads `DISCORD_INGEST_API_URL` and `DISCORD_INGEST_HMAC_SECRET` from the profile secret environment, signs `timestamp + "." + rawBody` with HMAC-SHA-256, and calls the fixed HTTPS ingest endpoint. The secret is never a prompt or tool argument. The agent has no web, browser, file, terminal, code-execution, Discord-admin, or direct database tool.
+The MCP process reads `DISCORD_INGEST_API_URL` and `DISCORD_INGEST_HMAC_SECRET` from the profile secret environment, signs `timestamp + "." + rawBody` with HMAC-SHA-256, and calls the fixed HTTPS ingest endpoint. The secret is never a prompt or tool argument. The agent has no general web, browser, file, terminal, code-execution, Discord-admin, or direct database tool. URL inspection runs through the HMAC-authenticated server and reuses its SSRF-safe metadata collector (six-second deadline, DNS pinning, two redirects, 200 KB HTML limit). Only title/description are returned; page content is untrusted data.
 
-The production category tree must contain the root leaf `분류 대기`. The agent uses it only when the message and hostname do not support a reliable classification, preserving the link for later review instead of forcing it into an unrelated content category.
+The production category tree must contain the root leaf `분류 대기`. The agent uses it only when the message and inspected title/description do not support a reliable classification, preserving the link for later review instead of forcing it into an unrelated content category.
 
 Hermes binds the triggering Discord snowflake to a concurrency-safe session ContextVar before starting the agent. `favorite-message-context` reads only `HERMES_SESSION_MESSAGE_ID` through Hermes' public `gateway.session_context.get_session_env()` API. Its `pre_llm_call` hook injects the ID as ephemeral turn context, and its `tool_request` middleware replaces any model-supplied `favorite_ingest.messageId` with that trusted value immediately before execution. A missing or malformed binding fails MCP schema validation. The plugin does not query session history, read message content, or read credentials.
 
+Metadata is inspected **before classification and saving**. Missing metadata does not prevent saving, and the response explains when human review is needed. A saved duplicate remains unchanged; it is not a reclassification command. Do not promise that `분류 대기` will finish automatically.
+
 ## Install/update
 
-Copy `favorite-message-context` to `$HERMES_HOME/plugins/favorite-message-context`, enable that plugin, add the stdio MCP server with the exact server key `favorite-ingest` using the repository-local `tsx` executable and `scripts/discord-favorite-mcp.ts`, and enable only the two MCP tools for the Discord platform. Hermes sanitizes that key into the runtime registry prefix `mcp__favorite_ingest__`; the plugin matches the exact `mcp__favorite_ingest__favorite_ingest` execution name. Use `favorite-channel-prompt.md` as the prompt for channel `1536239187517247488` and keep the existing user/channel allowlists and `allow_bots: none`.
+Copy `favorite-message-context` to `$HERMES_HOME/plugins/favorite-message-context`, enable that plugin, add the stdio MCP server with the exact server key `favorite-ingest` using the repository-local `tsx` executable and `scripts/discord-favorite-mcp.ts`, and enable only the three MCP tools for the Discord platform. Hermes sanitizes that key into the runtime registry prefix `mcp__favorite_ingest__`; the plugin matches the exact `mcp__favorite_ingest__favorite_ingest` execution name. Use `favorite-channel-prompt.md` as the prompt for channel `1536239187517247488` and keep the existing user/channel allowlists and `allow_bots: none`.
 
 Run this integration on Hermes Agent `0.20.1` or newer. Earlier releases can leave a dead stdio MCP transport parked after a keepalive or child-process failure, so the cached tool names remain visible while calls fail. Current releases supervise the stdio command with `mcp_stdio_watchdog.py` and rebuild an expired transport before retrying the failed call once.
 
@@ -39,9 +42,9 @@ Do not turn on the free-response channel until the production API, runtime datab
 After every Hermes update or Favorite gateway restart, verify all of these layers:
 
 1. `favorite version` reports Hermes Agent `0.20.1` or newer.
-2. `favorite gateway status` reports the Favorite gateway running and its current log shows `registered 2 tool(s)` followed by a successful Discord connection.
+2. `favorite gateway status` reports the Favorite gateway running and its current log shows `registered 3 tool(s)` followed by a successful Discord connection.
 3. The gateway process has an `mcp_stdio_watchdog.py` descendant and that watchdog has the repository-local `tsx scripts/discord-favorite-mcp.ts` child.
-4. `favorite mcp test favorite-ingest` discovers exactly `favorite_list_categories` and `favorite_ingest`.
+4. `favorite mcp test favorite-ingest` discovers exactly `favorite_list_categories`, `favorite_inspect_url`, and `favorite_ingest`.
 5. A signed `favorite_list_categories` call reaches the production endpoint, and an actual URL posted in channel `1536239187517247488` receives either `저장 완료` or the idempotent `이미 저장된 링크입니다` response.
 
 The standalone MCP test does not prove that the long-running gateway still owns a live transport, and a saved tool-name cache does not prove that the child process exists. If the channel reports a save failure while the API checks pass, inspect the current gateway PID, its watchdog/child descendants, and only the log entries after that process started. Update Hermes before restarting the gateway when it is below the minimum version above.

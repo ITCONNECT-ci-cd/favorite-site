@@ -8,9 +8,11 @@ const db = vi.hoisted(() => ({
 }));
 const nextServer = vi.hoisted(() => ({ after: vi.fn() }));
 const enrichment = vi.hoisted(() => ({ enrichDiscordIngest: vi.fn() }));
+const metadata = vi.hoisted(() => ({ collectDiscordLinkMetadata: vi.fn() }));
 
 vi.mock('@/lib/discord-ingest-db', () => db);
 vi.mock('@/lib/discord-ingest-enrichment', () => enrichment);
+vi.mock('@/lib/discord-link-metadata', () => metadata);
 vi.mock('next/server', () => nextServer);
 
 const route = await import('./route');
@@ -27,6 +29,7 @@ beforeEach(() => {
   nextServer.after.mockReset();
   enrichment.enrichDiscordIngest.mockReset();
   enrichment.enrichDiscordIngest.mockResolvedValue(undefined);
+  metadata.collectDiscordLinkMetadata.mockReset();
 });
 
 afterEach(() => {
@@ -44,6 +47,40 @@ describe('POST /api/discord-ingest — route config', () => {
 });
 
 describe('POST /api/discord-ingest — 인증/입력 경계', () => {
+  it('저장 전 메타데이터를 반환하되 DB 쓰기나 후처리를 실행하지 않는다', async () => {
+    metadata.collectDiscordLinkMetadata.mockResolvedValue({
+      title: 'Jiro — Design Prompt Library', description: 'Design prompts for vibe coding tools.',
+    });
+    const response = await route.POST(signedRequest(JSON.stringify({ operation: 'inspect_url', url: 'https://jiro.build/' })));
+    expect(await response.json()).toEqual({
+      status: 'available', title: 'Jiro — Design Prompt Library', description: 'Design prompts for vibe coding tools.',
+    });
+    expect(metadata.collectDiscordLinkMetadata).toHaveBeenCalledWith('https://jiro.build/', { signal: expect.any(AbortSignal) });
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(db.ingest).not.toHaveBeenCalled();
+    expect(db.listCategories).not.toHaveBeenCalled();
+    expect(nextServer.after).not.toHaveBeenCalled();
+  });
+
+  it.each([null, { title: null, description: null }])('수집 실패/빈 페이지는 명시적인 unavailable이고 저장하지 않는다', async (result) => {
+    metadata.collectDiscordLinkMetadata.mockResolvedValue(result);
+    const response = await route.POST(signedRequest('{"operation":"inspect_url","url":"https://example.com/"}'));
+    expect(await response.json()).toEqual({ status: 'unavailable', title: null, description: null });
+    expect(db.ingest).not.toHaveBeenCalled();
+  });
+
+  it('수집 예외의 원문을 노출하지 않고 unavailable로 접는다', async () => {
+    metadata.collectDiscordLinkMetadata.mockRejectedValue(new Error('private network details'));
+    const response = await route.POST(signedRequest('{"operation":"inspect_url","url":"https://example.com/"}'));
+    expect(await response.json()).toEqual({ status: 'unavailable', title: null, description: null });
+  });
+
+  it('잘못된 HMAC이면 메타데이터 네트워크를 호출하지 않는다', async () => {
+    const response = await route.POST(signedRequest('{"operation":"inspect_url","url":"https://jiro.build/"}', { signature: null }));
+    expect(response.status).toBe(401);
+    expect(metadata.collectDiscordLinkMetadata).not.toHaveBeenCalled();
+  });
+
   it('raw body 그대로 서명한 list_categories 요청만 DB로 전달한다', async () => {
     db.listCategories.mockResolvedValue([
       { id: 'cat-1', name: '기타', parentId: null, sortOrder: 0 },

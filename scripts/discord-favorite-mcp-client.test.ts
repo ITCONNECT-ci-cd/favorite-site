@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   FavoriteIngestClientError,
   ingestFavorite,
+  inspectFavoriteUrl,
   listFavoriteCategories,
   signFavoriteIngestBody,
 } from './discord-favorite-mcp-client';
@@ -14,6 +15,32 @@ const NOW_MS = Date.parse('2026-08-10T06:00:00.000Z');
 const TIMESTAMP = String(Math.floor(NOW_MS / 1_000));
 
 describe('discord favorite signing client', () => {
+  it('inspect_url을 서명하고 분류에 필요한 제한된 메타데이터를 읽는다', async () => {
+    const fetchImpl = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      const body = String(init?.body);
+      expect(JSON.parse(body)).toEqual({ operation: 'inspect_url', url: 'https://jiro.build/' });
+      expect(new Headers(init?.headers).get('x-discord-ingest-signature')).toBe(signFavoriteIngestBody(SECRET, TIMESTAMP, body));
+      return Response.json({ status: 'available', title: 'Jiro', description: 'UI design prompts' });
+    });
+    await expect(inspectFavoriteUrl({ url: 'https://jiro.build/' }, { endpoint: ENDPOINT, secret: SECRET, nowMs: NOW_MS, fetchImpl }))
+      .resolves.toEqual({ status: 'available', title: 'Jiro', description: 'UI design prompts' });
+  });
+
+  it('unavailable은 성공 응답이며, 본문/과도한 길이/모순된 상태는 거부한다', async () => {
+    const options = { endpoint: ENDPOINT, secret: SECRET, nowMs: NOW_MS };
+    await expect(inspectFavoriteUrl({ url: 'https://example.com/' }, { ...options,
+      fetchImpl: vi.fn(async () => Response.json({ status: 'unavailable', title: null, description: null })),
+    })).resolves.toMatchObject({ status: 'unavailable' });
+    for (const response of [
+      { status: 'available', title: 'Jiro', description: null, html: '<script>unsafe</script>' },
+      { status: 'available', title: 'x'.repeat(121), description: null },
+      { status: 'available', title: null, description: null },
+      { status: 'unavailable', title: 'Jiro', description: null },
+    ]) await expect(inspectFavoriteUrl({ url: 'https://example.com/' }, { ...options,
+      fetchImpl: vi.fn(async () => Response.json(response)),
+    })).rejects.toBeInstanceOf(FavoriteIngestClientError);
+  });
+
   it('raw JSON body와 timestamp를 정확히 서명해 category를 읽는다', async () => {
     const fetchImpl = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
       const rawBody = String(init?.body);

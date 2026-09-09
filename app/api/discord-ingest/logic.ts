@@ -7,6 +7,7 @@ export const DISCORD_INGEST_MAX_CLOCK_SKEW_SECONDS = 300;
 
 export type DiscordIngestOperation =
   | { operation: 'list_categories' }
+  | { operation: 'inspect_url'; url: string }
   | ({ operation: 'ingest' } & DiscordIngestInput);
 
 export type RawBodyRead =
@@ -58,7 +59,7 @@ export async function readDiscordIngestRawBody(request: Request): Promise<RawBod
   return { ok: true, bytes };
 }
 
-/** raw bytes를 strict UTF-8 JSON으로 읽고 두 operation의 정확한 field allowlist를 강제한다. */
+/** raw bytes를 strict UTF-8 JSON으로 읽고 operation별 정확한 field allowlist를 강제한다. */
 export function parseDiscordIngestBody(bytes: Uint8Array): DiscordIngestOperation | null {
   let raw: unknown;
   try {
@@ -72,6 +73,13 @@ export function parseDiscordIngestBody(bytes: Uint8Array): DiscordIngestOperatio
 
   if (raw.operation === 'list_categories') {
     return hasExactKeys(raw, ['operation']) ? { operation: 'list_categories' } : null;
+  }
+
+  if (raw.operation === 'inspect_url') {
+    return hasExactKeys(raw, ['operation', 'url']) &&
+      typeof raw.url === 'string' && raw.url.length > 0 && raw.url.length <= 2048
+      ? { operation: 'inspect_url', url: raw.url }
+      : null;
   }
 
   if (raw.operation !== 'ingest') return null;

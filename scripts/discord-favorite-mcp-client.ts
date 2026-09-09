@@ -41,6 +41,15 @@ const ingestResponseSchema = z
 
 export const listCategoriesInputSchema = z.object({}).strict();
 
+export const inspectUrlInputSchema = z.object({ url: z.string().min(1).max(2048) }).strict();
+const inspectUrlResponseSchema = z.object({
+  status: z.enum(['available', 'unavailable']),
+  title: z.string().min(1).max(120).nullable(),
+  description: z.string().min(1).max(200).nullable(),
+}).strict().refine((value) =>
+  (value.status === 'available') === (value.title !== null || value.description !== null),
+);
+
 export const ingestInputSchema = z
   .object({
     url: z.string().min(1).max(2048),
@@ -57,6 +66,7 @@ export type FavoriteIngestResult = z.infer<typeof ingestResponseSchema>;
 
 type IngestOperation =
   | { operation: 'list_categories' }
+  | { operation: 'inspect_url'; url: string }
   | ({ operation: 'ingest' } & FavoriteIngestInput);
 
 type RequestOptions = {
@@ -71,6 +81,18 @@ export class FavoriteIngestClientError extends Error {
     super('favorite ingest API is unavailable');
     this.name = 'FavoriteIngestClientError';
   }
+}
+
+export async function inspectFavoriteUrl(
+  input: z.infer<typeof inspectUrlInputSchema>,
+  options: RequestOptions = {},
+): Promise<z.infer<typeof inspectUrlResponseSchema>> {
+  const validated = inspectUrlInputSchema.safeParse(input);
+  if (!validated.success) throw new FavoriteIngestClientError();
+  const body = await requestFavoriteIngest({ operation: 'inspect_url', ...validated.data }, options);
+  const parsed = inspectUrlResponseSchema.safeParse(body);
+  if (!parsed.success) throw new FavoriteIngestClientError();
+  return parsed.data;
 }
 
 export async function listFavoriteCategories(

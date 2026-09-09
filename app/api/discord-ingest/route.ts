@@ -8,6 +8,7 @@ import { after } from 'next/server';
 
 import { ingest, listCategories } from '@/lib/discord-ingest-db';
 import { enrichDiscordIngest } from '@/lib/discord-ingest-enrichment';
+import { collectDiscordLinkMetadata } from '@/lib/discord-link-metadata';
 
 import {
   parseDiscordIngestBody,
@@ -49,6 +50,20 @@ export async function POST(request: Request): Promise<Response> {
   if (operation === null) return jsonError('invalid_request', 400);
 
   try {
+    if (operation.operation === 'inspect_url') {
+      // 저장 전에 분류 근거를 제공한다. 기존 SSRF/DNS pinning/redirect/200 KB 한계를
+      // 그대로 적용하고 HTML 본문·스크립트·쿠키는 모델에 전달하지 않는다.
+      const metadata = await collectDiscordLinkMetadata(operation.url, {
+        signal: AbortSignal.timeout(6_000),
+      }).catch(() => null);
+      const available = metadata !== null && (metadata.title !== null || metadata.description !== null);
+      return Response.json({
+        status: available ? 'available' : 'unavailable',
+        title: metadata?.title ?? null,
+        description: metadata?.description ?? null,
+      }, { headers: NO_STORE_HEADERS });
+    }
+
     if (operation.operation === 'list_categories') {
       const categories = await listCategories();
       return Response.json({ categories }, { headers: NO_STORE_HEADERS });

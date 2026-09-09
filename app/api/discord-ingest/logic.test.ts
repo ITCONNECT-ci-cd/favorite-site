@@ -14,6 +14,18 @@ const encoder = new TextEncoder();
 const NOW_MS = Date.parse('2026-08-10T06:00:00.000Z');
 const NOW_SECONDS = Math.floor(NOW_MS / 1_000);
 
+describe('inspect_url input', () => {
+  it('정확한 operation/url만 허용하고 URL 크기를 제한한다', () => {
+    const valid = { operation: 'inspect_url', url: 'https://jiro.build/' };
+    expect(parseDiscordIngestBody(encoder.encode(JSON.stringify(valid)))).toEqual(valid);
+    for (const input of [
+      { ...valid, headers: { cookie: 'secret' } },
+      { ...valid, url: '' }, { ...valid, url: 'x'.repeat(2049) },
+      { ...valid, url: 123 }, { operation: 'inspect_url' },
+    ]) expect(parseDiscordIngestBody(encoder.encode(JSON.stringify(input)))).toBeNull();
+  });
+});
+
 describe('readDiscordIngestRawBody', () => {
   it('Content-Length가 16 KiB를 넘으면 body를 읽기 전에 거부한다', async () => {
     const headers = new Headers({ 'content-length': String(MAX_DISCORD_INGEST_BODY_BYTES + 1) });
