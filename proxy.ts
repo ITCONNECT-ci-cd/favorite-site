@@ -29,11 +29,13 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   /**
-   * Discord ingest API와 정적 자산을 뺀 전 경로.
+   * Discord ingest API, 정적 연구 페이지와 정적 자산을 뺀 전 경로.
    *
    * `/api/discord-ingest`는 사용자 session이 아니라 raw-body HMAC로 인증한다. 이 경로가 proxy를 타면
    * 크기·서명 검사보다 먼저 Supabase Auth `getUser()` 네트워크 요청이 나가므로 matcher 단계에서
    * 완전히 제외한다(하위 path와 trailing slash도 함께 제외).
+   * `/research/wanted-ai-championship-2026`은 공개 스냅샷만 읽는 페이지다.
+   * Supabase 세션이나 환경변수에 의존하지 않도록 이 경로만 제외한다.
    *
    * matcher 가 없으면 `_next/static` 과 `public/` 의 이미지까지 전부 이 함수를 타는데,
    * 세션 갱신은 Supabase Auth 로 나가는 네트워크 호출이라 파비콘 한 장마다 왕복이 붙는다.
@@ -41,6 +43,6 @@ export const config = {
    * 앞의 두 패턴에 안 걸린다.
    */
   matcher: [
-    '/((?!api/discord-ingest(?:/|$)|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
+    '/((?!api/discord-ingest(?:/|$)|research/wanted-ai-championship-2026(?:/|$)|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
   ],
 };

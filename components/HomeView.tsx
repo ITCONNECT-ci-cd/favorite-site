@@ -201,6 +201,18 @@ export function HomeView({ data, isAdmin }: HomeViewProps) {
   // 섹션 간격은 프로토타입 sectionGap 그대로다 — narrow 20px · 데스크톱 26px (D5).
   return (
     <main className="flex flex-col gap-[20px] min-[820px]:gap-[26px]">
+      <div className="flex flex-col gap-[12px] rounded-[10px] border border-border bg-card px-[16px] py-[14px] min-[650px]:flex-row min-[650px]:items-center min-[650px]:justify-between">
+        <p className="text-[12.5px] leading-[1.6] text-desc">
+          <strong className="mr-[8px] text-ink">AI 아이디어 지형도</strong>
+          원티드 공개 과제 1,391개의 주제와 인기, 서비스 아이디어를 살펴보세요.
+        </p>
+        <Link
+          href="/research/wanted-ai-championship-2026"
+          className="shrink-0 text-[12px] font-semibold text-ink underline underline-offset-[3px]"
+        >
+          분석 페이지 보기 ↗
+        </Link>
+      </div>
       {/* 담긴 것이 하나도 없으면 묶음 셋 대신 안내 한 장만 (EMPTY_FAVS_TEXT 주석). */}
       {favItems.length === 0 ? (
         <section aria-label={FAVORITES_TITLE}>

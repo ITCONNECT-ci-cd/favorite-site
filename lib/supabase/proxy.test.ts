@@ -168,6 +168,18 @@ describe('루트 proxy.ts (Next 16 파일 컨벤션)', () => {
     ).toBe(true);
   });
 
+  it('정적 AI 연구 페이지는 인증 서비스 없이 열리도록 제외하고 다른 연구 경로는 유지한다', () => {
+    expect(
+      unstable_doesMiddlewareMatch({ config, url: 'https://example.com/research/wanted-ai-championship-2026' }),
+    ).toBe(false);
+    expect(
+      unstable_doesMiddlewareMatch({ config, url: 'https://example.com/research/wanted-ai-championship-2026/' }),
+    ).toBe(false);
+    expect(
+      unstable_doesMiddlewareMatch({ config, url: 'https://example.com/research/other' }),
+    ).toBe(true);
+  });
+
   it('matcher 가 일반 경로에는 걸리고 정적 자산은 거른다', () => {
     // Next 는 matcher 를 경로 **전체**에 맞춘다. 문자열 자체에는 앵커가 없으므로
     // 여기서 붙여 줘야 실제 동작과 같아진다(안 붙이면 부분 일치라 전부 통과한다).
@@ -180,6 +192,7 @@ describe('루트 proxy.ts (Next 16 파일 컨벤션)', () => {
 
     expect(pattern.test('/api/discord-ingest')).toBe(false);
     expect(pattern.test('/api/discord-ingest/')).toBe(false);
+    expect(pattern.test('/research/wanted-ai-championship-2026')).toBe(false);
     expect(pattern.test('/_next/static/chunk.js')).toBe(false);
     expect(pattern.test('/_next/image')).toBe(false);
     expect(pattern.test('/logo.png')).toBe(false);
