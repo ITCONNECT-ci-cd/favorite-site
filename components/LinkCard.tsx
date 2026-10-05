@@ -401,7 +401,7 @@ export function LinkCard({
             </span>
             {description !== null && description !== '' && (
               <span
-                className={`mt-[4px] block ${CARD_DESC_CLAMP} overflow-hidden text-[12px] leading-[1.4] text-desc`}
+                className={`mt-[4px] ${CARD_DESC_CLAMP} whitespace-pre-line overflow-hidden text-[12px] leading-[1.4] text-desc`}
               >
                 {description}
               </span>

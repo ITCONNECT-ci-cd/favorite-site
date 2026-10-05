@@ -803,7 +803,7 @@ describe('LinkCard 수치 (DESIGN_SPEC 2-1)', () => {
     }
   });
 
-  it('본문 블록: margin-top auto, 이름 13.5px/600 2줄, 설명 12px 3줄', () => {
+  it('본문 블록: margin-top auto, 이름 13.5px/600 2줄, 설명 12px 2줄 고정', () => {
     renderCard();
 
     expect(bodyLink()).toHaveClass('mt-auto', 'block', 'w-full', 'cursor-pointer');
@@ -818,12 +818,12 @@ describe('LinkCard 수치 (DESIGN_SPEC 2-1)', () => {
       'overflow-hidden',
     );
     expect(screen.getByText('AI 대화·문서 초안')).toHaveClass(
-      'block',
       'text-[12px]',
       'text-desc',
       'leading-[1.4]',
-      // 3줄 — 설명을 "이 서비스가 무엇인가" 한 문장으로 다시 쓰면서 2줄에서 늘렸다.
-      'max-h-[4.2em]',
+      'h-[2.8em]',
+      'line-clamp-2',
+      'whitespace-pre-line',
       'overflow-hidden',
       'mt-[4px]',
     );

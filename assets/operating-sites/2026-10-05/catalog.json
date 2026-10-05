@@ -4,7 +4,7 @@
     "previous_title": "아이티커넥트",
     "title": "ITCONNECT",
     "url": "https://itconnect.dev",
-    "description": "아이티커넥트 대표 사이트",
+    "description": "아이티커넥트의\n대표 사이트",
     "icon": null,
     "sort_order": 0,
     "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/itconnect.dev.png"
@@ -14,7 +14,7 @@
     "previous_title": "최원재 프로필",
     "title": "Profile",
     "url": "https://profile.itconnect.dev/",
-    "description": "아이티커넥트 대표 프로필",
+    "description": "아이티커넥트\n대표 프로필",
     "icon": "profile",
     "sort_order": 1,
     "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-05/profile-3c21b1e846d9.png"
@@ -24,7 +24,7 @@
     "previous_title": "비크리에이터",
     "title": "B-CREATOR",
     "url": "https://b-creator.com/",
-    "description": "AI/AX 교육 및 실습 자료 플랫폼",
+    "description": "AI·AX 교육과 실습\n자료를 모은 플랫폼",
     "icon": null,
     "sort_order": 2,
     "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/440aa09a-764a-4575-81eb-1927e7c86e72.png"
@@ -34,7 +34,7 @@
     "previous_title": "Axio",
     "title": "AX 컨설팅 코파일럿",
     "url": "https://consulting.itconnect.dev/",
-    "description": "병목 업무를 찾아 시스템 구축 설계까지 한번에",
+    "description": "병목 업무 진단부터\n시스템 구축 설계까지",
     "icon": "ax-consulting",
     "sort_order": 3,
     "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-05/ax-consulting-d705ca044faf.png"
@@ -44,7 +44,7 @@
     "previous_title": "HOMEPAGE.WORKS",
     "title": "AX 외주개발 서비스",
     "url": "https://homepage.works/",
-    "description": "3분 만에 AX 외주개발 서비스 견적 산출",
+    "description": "AX 외주개발 견적을\n3분 만에 산출",
     "icon": "ax-development",
     "sort_order": 4,
     "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-05/ax-development-5e911498cdd4.png"
@@ -54,7 +54,7 @@
     "previous_title": "Startora",
     "title": "Startora",
     "url": "https://startora.net/",
-    "description": "AI Agent 기반 경영관리 플랫폼",
+    "description": "AI Agent 기반\n경영관리 플랫폼",
     "icon": null,
     "sort_order": 5,
     "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/2db0fe1f-0576-4a78-94fa-282948aae999.png"
@@ -64,7 +64,7 @@
     "previous_title": "AI 콘텐츠 자동 생성",
     "title": "AI 콘텐츠 제작",
     "url": "https://content.itconnect.dev/",
-    "description": "AI로 콘텐츠 기획 및 제작 자동화 서비스",
+    "description": "AI로 콘텐츠 기획과\n제작을 자동화",
     "icon": "ai-content",
     "sort_order": 6,
     "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-05/ai-content-0864ee173124.png"
@@ -74,7 +74,7 @@
     "previous_title": "LandingMaker",
     "title": "AI 상세페이지 제작",
     "url": "https://landingmaker.biz/",
-    "description": "AI 대화 기반 상세페이지 기획 및 디자인 서비스",
+    "description": "AI 대화로 기획하는\n상세페이지 디자인",
     "icon": "ai-detail-page",
     "sort_order": 7,
     "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-05/ai-detail-page-2412e06e7f1a.png"
@@ -84,7 +84,7 @@
     "previous_title": "AI 사업계획서 작성",
     "title": "AI 사업계획서 제작",
     "url": "https://itconnect.co.kr/",
-    "description": "AI와 프로세스 기반의 사업계획서 작성 및 관리 서비스",
+    "description": "AI와 프로세스 기반\n사업계획서 작성·관리",
     "icon": null,
     "sort_order": 8,
     "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/aae0fe4a-f5b8-4f1a-9aee-186e99a544a4.png"
@@ -94,7 +94,7 @@
     "previous_title": "GrowthLab",
     "title": "유튜브 기획 및 분석",
     "url": "https://keypaper.biz/",
-    "description": "유튜브 데이터를 수집하고 AI가 분석, 기획, 개선점 도출",
+    "description": "유튜브 데이터 분석\n콘텐츠 기획·개선",
     "icon": null,
     "sort_order": 9,
     "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/d3a8148d-fc21-4d77-b75b-bd608edcefd5.jpg"
@@ -104,17 +104,17 @@
     "previous_title": "정부지원사업 자동수집기",
     "title": "정부지원사업 정보 수집",
     "url": "https://gov.itconnect.dev",
-    "description": "우리 회사 맞춤형 정부지원사업 정보 수집 서비스",
-    "icon": null,
+    "description": "우리 회사에 맞는\n정부지원사업 수집",
+    "icon": "gov-notices",
     "sort_order": 10,
-    "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/discord/604b4b69-2635-4cc7-a75b-68ffe926076c/eb950d60-3787-476c-8706-2a29289aa8ba.png"
+    "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-05/gov-notices-dfecaa0546a2.png"
   },
   {
     "id": "5322abbb-b323-4c3c-82c7-a1a55abb4880",
     "previous_title": null,
     "title": "AI 클립 영상 제작",
     "url": "https://clip.itconnect.dev",
-    "description": "콘텐츠 입력시 AI가 숏츠 및 릴스 영상 자동 생성",
+    "description": "콘텐츠를 입력하면\nAI가 숏츠·릴스 제작",
     "icon": "ai-clips",
     "sort_order": 11,
     "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-05/ai-clips-2992cb62a0a7.png"
@@ -124,7 +124,7 @@
     "previous_title": null,
     "title": "광고 데이터 수집 플랫폼",
     "url": "https://ads.itconnect.dev",
-    "description": "여러 플랫폼의 광고 수집",
+    "description": "여러 플랫폼의 광고를\n한곳에 모으는 서비스",
     "icon": "ads-data",
     "sort_order": 12,
     "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-05/ads-data-973caf1bfaf7.png"
@@ -134,7 +134,7 @@
     "previous_title": "AutoVideo Studio",
     "title": "부동산 소개 영상 제작",
     "url": "https://video.itconnect.dev/",
-    "description": "사진을 업로드하면 AI가 분석하고 부동산 소개 영상 제작",
+    "description": "사진을 AI로 분석해\n부동산 소개 영상 제작",
     "icon": "real-estate-video",
     "sort_order": 13,
     "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-05/real-estate-video-f028a7b9b1cd.png"
@@ -144,7 +144,7 @@
     "previous_title": "THE BEIGE",
     "title": "더베이지",
     "url": "https://thebeige.kr/",
-    "description": "24시간 무인 의류 편집 공간, 더베이지 소개 페이지",
+    "description": "24시간 무인 의류\n편집 공간 더베이지",
     "icon": "the-beige",
     "sort_order": 14,
     "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-05/the-beige-15a4e10272bc.png"
@@ -154,7 +154,7 @@
     "previous_title": "AI 정보 매거진",
     "title": "AI 정보 매거진",
     "url": "https://info.itconnect.dev/",
-    "description": "AI 소식, 논문 정보 수집 후 블로그 글 자동 생성",
+    "description": "AI 소식과 논문을 모아\n블로그 글을 자동 생성",
     "icon": "ai-magazine",
     "sort_order": 15,
     "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-05/ai-magazine-60c51721d315.png"
@@ -164,7 +164,7 @@
     "previous_title": null,
     "title": "마케팅 프롬프트 모음",
     "url": "https://ai-mkt-fu.web.app/",
-    "description": "마케팅 업무 AI 활용을 위한 프롬프트 모음집",
+    "description": "마케팅 업무에 활용할\nAI 프롬프트 모음집",
     "icon": "marketing-prompts",
     "sort_order": 16,
     "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-05/marketing-prompts-d061aac7c66b.png"
@@ -174,7 +174,7 @@
     "previous_title": "청년마을 PMS",
     "title": "청년마을 PMS",
     "url": "https://localro-pms.kr/",
-    "description": "청년마을 사업의 실적 보고와 증빙을 관리하는 시스템",
+    "description": "청년마을 사업을 위한\n실적·증빙 관리 시스템",
     "icon": null,
     "sort_order": 17,
     "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/f27803e5-5d96-434d-8458-27ce85291908.png"
@@ -184,7 +184,7 @@
     "previous_title": "공통 AX 키트 생성기",
     "title": "공통 AX 키트 생성기",
     "url": "https://musinsa-contents.itconnect.dev/login",
-    "description": "상품별 마케팅 이미지와 문구를 자동 생성하는 사내 도구",
+    "description": "상품별 마케팅 이미지와\n문구를 자동 생성",
     "icon": "ax-kit",
     "sort_order": 18,
     "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-05/ax-kit-fee9cd6b1cf1.png"
@@ -194,7 +194,7 @@
     "previous_title": "무신사 주문·송장 변환",
     "title": "송장 자동 변환기",
     "url": "https://musinsa-invoice.itconnect.dev/login",
-    "description": "무신사 3PL 주문서와 송장을 자동 변환하는 사내 작업공간",
+    "description": "무신사 3PL 주문서와\n송장을 자동 변환",
     "icon": "invoice-converter",
     "sort_order": 19,
     "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-05/invoice-converter-a5a0b8a71a76.png"
@@ -204,7 +204,7 @@
     "previous_title": "MacroLens",
     "title": "MacroLens",
     "url": "https://moneynlifehacker.com/",
-    "description": "거시 지표와 자산 상관관계를 보는 개인용 주식 분석 도구",
+    "description": "거시 지표와 자산의\n상관관계를 보는 도구",
     "icon": null,
     "sort_order": 20,
     "favicon_url": "data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2264%22%20height%3D%2264%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2215%22%20fill%3D%22%236D28D9%22%2F%3E%3Ctext%20x%3D%2232%22%20y%3D%2234%22%20text-anchor%3D%22middle%22%20dominant-baseline%3D%22middle%22%20fill%3D%22%23fff%22%20font-family%3D%22-apple-system%2CBlinkMacSystemFont%2CArial%2Csans-serif%22%20font-size%3D%2230%22%20font-weight%3D%22700%22%3EM%3C%2Ftext%3E%3C%2Fsvg%3E"
@@ -214,7 +214,7 @@
     "previous_title": "루티카",
     "title": "Rutiqa",
     "url": "https://rutiqa.com/",
-    "description": "운동·식단·영양제를 채팅과 사진으로 기록하는 AI 관리 앱",
+    "description": "운동·식단·영양제를\n채팅과 사진으로 기록",
     "icon": null,
     "sort_order": 21,
     "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/12953c78-12b0-447c-8a36-e2318f32eb3c.png"

@@ -92,6 +92,13 @@
       "source": "/Users/itconnect/.codex/generated_images/01a10a27-d1d6-7b11-a59f-14dab210993e/exec-5b4e97d3-54a4-47b6-92d0-86b820639805.png",
       "file": "invoice-converter.png",
       "sha256": "a5a0b8a71a76d2b7f16bf64972ce4951c29a968ebd5cf372bc127b719d3f2296"
+    },
+    {
+      "slug": "gov-notices",
+      "prompt": "Use case: logo-brand. Asset type: one square favicon for a Korean business government-support information service, readable at 19 to 32 pixels. Subject: a simple government building silhouette with three bold pillars, paired with a single prominent checkmark representing company-matched support opportunities. Style: polished flat geometric symbol, strong filled shapes, crisp edges, minimal details. Composition: one centered unified mark occupying 75 percent of a square, clear margin. Color palette: deep navy and teal on a subtly tinted light background, consistent with a professional AI service directory. No text, letters, wordmark, flags, currency symbols, watermark, border, mockup, or tiny details. Generate a single finished icon.",
+      "source": "/Users/itconnect/.codex/generated_images/01a10a27-d1d6-7b11-a59f-14dab210993e/exec-40a9b15f-217a-4533-bc54-d97e86128af9.png",
+      "file": "gov-notices.png",
+      "sha256": "dfecaa0546a2c93b3300e7bf226bf9ae7ce0dd55ae3bec3b4c60816b305361e0"
     }
   ]
 }
