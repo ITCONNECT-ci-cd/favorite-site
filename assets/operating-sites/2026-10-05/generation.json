@@ -1,0 +1,97 @@
+{
+  "tool": "built-in image_gen",
+  "size": 128,
+  "icons": [
+    {
+      "slug": "profile",
+      "prompt": "Use case: logo-brand. Asset type: one square favicon for a Korean professional service directory, readable at 32 pixels. Subject: Profile: professional representative profile. A single clear head-and-shoulders silhouette inside a circular professional identity badge. Style: polished flat geometric symbol, bold filled shapes, crisp edges, simple uncluttered silhouette. Composition: one centered mark occupying 70 percent of a square, generous clear margin. Background: solid subtly tinted light background. Choose a tasteful distinct restrained color pair suited to the subject. No text, no letters, no wordmarks, no borders, no watermark, no tiny details, no mockup. Generate a single finished icon only.",
+      "source": "/Users/itconnect/.codex/generated_images/01a10a27-d1d6-7b11-a59f-14dab210993e/exec-89a9516e-0af8-4a6e-89a0-1cd78443caec.png",
+      "file": "profile.png",
+      "sha256": "3c21b1e846d95c730044b0f13a85f1524da953a7d1145af954b6c5937b432b20"
+    },
+    {
+      "slug": "ax-consulting",
+      "prompt": "Use case: logo-brand. Asset type: one square favicon for a Korean professional service directory, readable at 32 pixels. Subject: AX consulting copilot: identify bottlenecks and design a business system. A branching flow of three process nodes converging into one clean system node, with one small spark. Style: polished flat geometric symbol, bold filled shapes, crisp edges, simple uncluttered silhouette. Composition: one centered mark occupying 70 percent of a square, generous clear margin. Background: solid subtly tinted light background. Choose a tasteful distinct restrained color pair suited to the subject. No text, no letters, no wordmarks, no borders, no watermark, no tiny details, no mockup. Generate a single finished icon only.",
+      "source": "/Users/itconnect/.codex/generated_images/01a10a27-d1d6-7b11-a59f-14dab210993e/exec-3d71d235-ae3c-4a02-9f4f-b1b5664890c2.png",
+      "file": "ax-consulting.png",
+      "sha256": "d705ca044faf5779ac16eafb050b40268fe474a48967fd7e6bc4693ef9099ba1"
+    },
+    {
+      "slug": "ax-development",
+      "prompt": "Use case: logo-brand. Asset type: one square favicon for a Korean professional service directory, readable at 32 pixels. Subject: AX outsourced development quote service. A simple angle-bracket code symbol integrated with a minimal calculator containing three large square keys. Style: polished flat geometric symbol, bold filled shapes, crisp edges, simple uncluttered silhouette. Composition: one centered mark occupying 70 percent of a square, generous clear margin. Background: solid subtly tinted light background. Choose a tasteful distinct restrained color pair suited to the subject. No text, no letters, no wordmarks, no borders, no watermark, no tiny details, no mockup. Generate a single finished icon only.",
+      "source": "/Users/itconnect/.codex/generated_images/01a10a27-d1d6-7b11-a59f-14dab210993e/exec-a8fd7b36-f109-422d-b12e-1c353efdc519.png",
+      "file": "ax-development.png",
+      "sha256": "5e911498cdd4732d56b84fee37860e071044ab4272b4044ace47d406127915f8"
+    },
+    {
+      "slug": "ai-content",
+      "prompt": "Use case: logo-brand. Asset type: one square favicon for a Korean professional service directory, readable at 32 pixels. Subject: AI content planning and production automation. One clear document page with a bold pen nib and a single small AI sparkle. Style: polished flat geometric symbol, bold filled shapes, crisp edges, simple uncluttered silhouette. Composition: one centered mark occupying 70 percent of a square, generous clear margin. Background: solid subtly tinted light background. Choose a tasteful distinct restrained color pair suited to the subject. No text, no letters, no wordmarks, no borders, no watermark, no tiny details, no mockup. Generate a single finished icon only.",
+      "source": "/Users/itconnect/.codex/generated_images/01a10a27-d1d6-7b11-a59f-14dab210993e/exec-6e48c19f-086f-40b6-8b4e-338f60c4b4ef.png",
+      "file": "ai-content.png",
+      "sha256": "0864ee173124b2d10f23276a1f068a45761aa81583df5fede5eb9fb0e3c73ffa"
+    },
+    {
+      "slug": "ai-detail-page",
+      "prompt": "Use case: logo-brand. Asset type: one square favicon for a Korean professional service directory, readable at 32 pixels. Subject: AI product detail-page planning and design through conversation. A clean webpage outline with two bold content blocks and one simple chat bubble overlapping its lower corner. Style: polished flat geometric symbol, bold filled shapes, crisp edges, simple uncluttered silhouette. Composition: one centered mark occupying 70 percent of a square, generous clear margin. Background: solid subtly tinted light background. Choose a tasteful distinct restrained color pair suited to the subject. No text, no letters, no wordmarks, no borders, no watermark, no tiny details, no mockup. Generate a single finished icon only.",
+      "source": "/Users/itconnect/.codex/generated_images/01a10a27-d1d6-7b11-a59f-14dab210993e/exec-3a1fc37d-5efb-45de-8519-2142b0948b69.png",
+      "file": "ai-detail-page.png",
+      "sha256": "2412e06e7f1a9fbc0844ec93b92db81d7837caf41c59687372c570e6c1e96447"
+    },
+    {
+      "slug": "ai-clips",
+      "prompt": "Use case: logo-brand. Asset type: one square favicon for a Korean professional service directory, readable at 32 pixels. Subject: AI short-form clips and reels generated from content. A bold portrait-format video frame, one play triangle, and one small sparkle. Style: polished flat geometric symbol, bold filled shapes, crisp edges, simple uncluttered silhouette. Composition: one centered mark occupying 70 percent of a square, generous clear margin. Background: solid subtly tinted light background. Choose a tasteful distinct restrained color pair suited to the subject. No text, no letters, no wordmarks, no borders, no watermark, no tiny details, no mockup. Generate a single finished icon only.",
+      "source": "/Users/itconnect/.codex/generated_images/01a10a27-d1d6-7b11-a59f-14dab210993e/exec-c71980f0-6861-404a-9617-adb497b3b3d0.png",
+      "file": "ai-clips.png",
+      "sha256": "2992cb62a0a7fce0a1ded5ab75a6bac504860eac8f821a04d375b6165a749163"
+    },
+    {
+      "slug": "ads-data",
+      "prompt": "Use case: logo-brand. Asset type: one square favicon for a Korean professional service directory, readable at 32 pixels. Subject: Advertising data collection across multiple platforms. A bold megaphone positioned above three simple connected database blocks. Style: polished flat geometric symbol, bold filled shapes, crisp edges, simple uncluttered silhouette. Composition: one centered mark occupying 70 percent of a square, generous clear margin. Background: solid subtly tinted light background. Choose a tasteful distinct restrained color pair suited to the subject. No text, no letters, no wordmarks, no borders, no watermark, no tiny details, no mockup. Generate a single finished icon only.",
+      "source": "/Users/itconnect/.codex/generated_images/01a10a27-d1d6-7b11-a59f-14dab210993e/exec-38494545-9c05-4460-8c2d-009549b21dc5.png",
+      "file": "ads-data.png",
+      "sha256": "973caf1bfaf74e518dc42151d162b49bc5312a33c3961c4a52596ce02c66df76"
+    },
+    {
+      "slug": "real-estate-video",
+      "prompt": "Use case: logo-brand. Asset type: one square favicon for a Korean professional service directory, readable at 32 pixels. Subject: Real estate introduction videos generated from uploaded photographs. A clean house silhouette containing a bold play triangle. Style: polished flat geometric symbol, bold filled shapes, crisp edges, simple uncluttered silhouette. Composition: one centered mark occupying 70 percent of a square, generous clear margin. Background: solid subtly tinted light background. Choose a tasteful distinct restrained color pair suited to the subject. No text, no letters, no wordmarks, no borders, no watermark, no tiny details, no mockup. Generate a single finished icon only.",
+      "source": "/Users/itconnect/.codex/generated_images/01a10a27-d1d6-7b11-a59f-14dab210993e/exec-baab7a14-0eb5-4644-946f-f363611d317c.png",
+      "file": "real-estate-video.png",
+      "sha256": "f028a7b9b1cd43f75f15aa6929c9d80e8b5cdc9b166aa38c51131f7458de0482"
+    },
+    {
+      "slug": "the-beige",
+      "prompt": "Use case: logo-brand. Asset type: one square favicon for a Korean professional service directory, readable at 32 pixels. Subject: The Beige: an unmanned clothing boutique open 24 hours. One elegant clothes hanger framing a simple folded shirt, warm beige and deep brown palette. Style: polished flat geometric symbol, bold filled shapes, crisp edges, simple uncluttered silhouette. Composition: one centered mark occupying 70 percent of a square, generous clear margin. Background: solid subtly tinted light background. Choose a tasteful distinct restrained color pair suited to the subject. No text, no letters, no wordmarks, no borders, no watermark, no tiny details, no mockup. Generate a single finished icon only.",
+      "source": "/Users/itconnect/.codex/generated_images/01a10a27-d1d6-7b11-a59f-14dab210993e/exec-1ea84195-360f-49a9-b6c1-abc0112f460b.png",
+      "file": "the-beige.png",
+      "sha256": "15a4e10272bc2c15838769f990d21b5b2da83de52a5f3c6020a431885e2b4c21"
+    },
+    {
+      "slug": "ai-magazine",
+      "prompt": "Use case: logo-brand. Asset type: one square favicon for a Korean professional service directory, readable at 32 pixels. Subject: AI information magazine: news and research papers turned into blog articles. One open magazine with two clean pages and one bold AI sparkle above its fold. Style: polished flat geometric symbol, bold filled shapes, crisp edges, simple uncluttered silhouette. Composition: one centered mark occupying 70 percent of a square, generous clear margin. Background: solid subtly tinted light background. Choose a tasteful distinct restrained color pair suited to the subject. No text, no letters, no wordmarks, no borders, no watermark, no tiny details, no mockup. Generate a single finished icon only.",
+      "source": "/Users/itconnect/.codex/generated_images/01a10a27-d1d6-7b11-a59f-14dab210993e/exec-50e7679d-258a-4936-b632-6d3f19883be2.png",
+      "file": "ai-magazine.png",
+      "sha256": "60c51721d3152794da667530e17f6b5a73f804ceed0e5071e341332d56dd4315"
+    },
+    {
+      "slug": "marketing-prompts",
+      "prompt": "Use case: logo-brand. Asset type: one square favicon for a Korean professional service directory, readable at 32 pixels. Subject: A collection of reusable AI prompts for marketing work. A bold speech bubble combined with a simple megaphone and one small sparkle. Style: polished flat geometric symbol, bold filled shapes, crisp edges, simple uncluttered silhouette. Composition: one centered mark occupying 70 percent of a square, generous clear margin. Background: solid subtly tinted light background. Choose a tasteful distinct restrained color pair suited to the subject. No text, no letters, no wordmarks, no borders, no watermark, no tiny details, no mockup. Generate a single finished icon only.",
+      "source": "/Users/itconnect/.codex/generated_images/01a10a27-d1d6-7b11-a59f-14dab210993e/exec-b0e96039-2450-41cd-b3df-8b5c1fc3e207.png",
+      "file": "marketing-prompts.png",
+      "sha256": "d061aac7c66bc1e7c856ee6e925f633d75daff5d71eefc25ebddd7fc88b51b85"
+    },
+    {
+      "slug": "ax-kit",
+      "prompt": "Use case: logo-brand. Asset type: one square favicon for a Korean professional service directory, readable at 32 pixels. Subject: A reusable common AX toolkit generator. One compact toolbox with a single large modular cube rising from it, plus one small automation sparkle. Style: polished flat geometric symbol, bold filled shapes, crisp edges, simple uncluttered silhouette. Composition: one centered mark occupying 70 percent of a square, generous clear margin. Background: solid subtly tinted light background. Choose a tasteful distinct restrained color pair suited to the subject. No text, no letters, no wordmarks, no borders, no watermark, no tiny details, no mockup. Generate a single finished icon only.",
+      "source": "/Users/itconnect/.codex/generated_images/01a10a27-d1d6-7b11-a59f-14dab210993e/exec-5a744654-2eb9-44d3-851b-81c3885f6562.png",
+      "file": "ax-kit.png",
+      "sha256": "fee9cd6b1cf13bd086623cc2f8080c8882bfa30f31c16406876197dba4df21dd"
+    },
+    {
+      "slug": "invoice-converter",
+      "prompt": "Use case: logo-brand. Asset type: one square favicon for a Korean professional service directory, readable at 32 pixels. Subject: Automatic shipping invoice conversion. Two simple shipment label documents connected by a bold conversion arrow, with a tiny simple parcel silhouette. Style: polished flat geometric symbol, bold filled shapes, crisp edges, simple uncluttered silhouette. Composition: one centered mark occupying 70 percent of a square, generous clear margin. Background: solid subtly tinted light background. Choose a tasteful distinct restrained color pair suited to the subject. No text, no letters, no wordmarks, no borders, no watermark, no tiny details, no mockup. Generate a single finished icon only.",
+      "source": "/Users/itconnect/.codex/generated_images/01a10a27-d1d6-7b11-a59f-14dab210993e/exec-5b4e97d3-54a4-47b6-92d0-86b820639805.png",
+      "file": "invoice-converter.png",
+      "sha256": "a5a0b8a71a76d2b7f16bf64972ce4951c29a968ebd5cf372bc127b719d3f2296"
+    }
+  ]
+}
