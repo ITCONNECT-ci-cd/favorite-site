@@ -54,24 +54,6 @@
     "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-24/ax-atelier-9e20b440cc71.png"
   },
   {
-    "id": "1b9bd647-aa85-4251-a5f6-f28bd9d76fd3",
-    "slug": "qc-poc-wbs",
-    "title": "작업 품질검수 PoC WBS",
-    "url": "https://ax-facti.web.app/",
-    "pngFile": "qc-poc-wbs.png",
-    "sha256": "918591d7af73",
-    "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-24/qc-poc-wbs-918591d7af73.png"
-  },
-  {
-    "id": "fa7d592c-63ed-4c41-9b1b-8f5edae674ad",
-    "slug": "ud-ax-edu",
-    "title": "AX 교육 사전조사 포털",
-    "url": "https://ud-ax-edu.web.app/",
-    "pngFile": "ud-ax-edu.png",
-    "sha256": "42c021bb395a",
-    "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-24/ud-ax-edu-42c021bb395a.png"
-  },
-  {
     "id": "f2fa56a9-9a1b-4458-859a-a02614366c3a",
     "slug": "underdogs-localro",
     "title": "청년마을 곡물원 발표",
@@ -81,51 +63,6 @@
     "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-24/underdogs-localro-361286b1e326.png"
   },
   {
-    "id": "1d5e3b75-46f7-41ab-9db5-130f6f71c76b",
-    "slug": "musinsa-ot",
-    "title": "무신사 AX OT 포털",
-    "url": "https://musinsa-f7938.web.app/",
-    "pngFile": "musinsa-ot.png",
-    "sha256": "1c3e429c3661",
-    "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-24/musinsa-ot-1c3e429c3661.png"
-  },
-  {
-    "id": "b7175303-7cdb-42ba-b21f-8f631e0e8271",
-    "slug": "box-business",
-    "title": "골판지 브랜드 설계도",
-    "url": "https://box-business.web.app/",
-    "pngFile": "box-business.png",
-    "sha256": "fde669ea7c56",
-    "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-24/box-business-fde669ea7c56.png"
-  },
-  {
-    "id": "88039a94-2bb8-4cf3-b16a-d6ee8c432be2",
-    "slug": "wonju-profile",
-    "title": "원주 기독의료기 프로필",
-    "url": "https://wonju-6e298.web.app/",
-    "pngFile": "wonju-profile.png",
-    "sha256": "b800edd55c84",
-    "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-24/wonju-profile-b800edd55c84.png"
-  },
-  {
-    "id": "3c69f3fc-8fb1-466e-af7c-e02565909f0f",
-    "slug": "glowide-scope",
-    "title": "글로와이드 개발 범위 검토",
-    "url": "https://glowide-c6031.web.app/",
-    "pngFile": "glowide-scope.png",
-    "sha256": "045509f232f5",
-    "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-24/glowide-scope-045509f232f5.png"
-  },
-  {
-    "id": "452248a8-797b-406a-95f3-48f36673f42d",
-    "slug": "istanbul-travel",
-    "title": "이스탄불 여행 계획",
-    "url": "https://istanbul-62490.web.app/",
-    "pngFile": "istanbul-travel.png",
-    "sha256": "c6e69458220c",
-    "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-24/istanbul-travel-c6e69458220c.png"
-  },
-  {
     "id": "01652c6c-33e1-42df-8421-d2e437b027c8",
     "slug": "gokmulwon-final-report",
     "title": "곡물원 AX 최종 리포트",
@@ -133,15 +70,6 @@
     "pngFile": "gokmulwon-final-report.png",
     "sha256": "058ac3bc8ff0",
     "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-24/gokmulwon-final-report-058ac3bc8ff0.png"
-  },
-  {
-    "id": "c1dbab28-4820-4fed-9481-2d14ebbe89ea",
-    "slug": "youth-village-survey",
-    "title": "청년마을 AX 만족도 조사",
-    "url": "https://survey-a36ec.web.app/",
-    "pngFile": "youth-village-survey.png",
-    "sha256": "926b8e67c34c",
-    "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-24/youth-village-survey-926b8e67c34c.png"
   },
   {
     "id": "d4b86bfc-67c1-4cf4-ae71-d1619e7e8662",
