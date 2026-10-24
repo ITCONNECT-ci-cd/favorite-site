@@ -1,0 +1,143 @@
+{
+  "tool": "image-generator (generate_image) + sharp resize",
+  "date": "2026-10-24",
+  "size": 128,
+  "icons": [
+    {
+      "slug": "ai-agentic-dev",
+      "title": "AI 에이전틱 개발 시연",
+      "url": "https://ai-agentic-dev.web.app/",
+      "file": "ai-agentic-dev.png",
+      "sha256": "3af441889996",
+      "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-24/ai-agentic-dev-3af441889996.png"
+    },
+    {
+      "slug": "vibecoding-planning",
+      "title": "AI 코딩 기획, 설계 플랫폼",
+      "url": "https://vibecoding-planning.web.app/",
+      "file": "vibecoding-planning.png",
+      "sha256": "75ea6aeb0f58",
+      "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-24/vibecoding-planning-75ea6aeb0f58.png"
+    },
+    {
+      "slug": "claude-dev-team",
+      "title": "Claude 개발팀 오피스",
+      "url": "https://itconnect-claude-devteam.web.app/",
+      "file": "claude-dev-team.png",
+      "sha256": "45f067eb841f",
+      "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-24/claude-dev-team-45f067eb841f.png"
+    },
+    {
+      "slug": "itconnect-pixel-office",
+      "title": "Grok Bot 픽셀 오피스",
+      "url": "https://itconnect-pixel-office.web.app/",
+      "file": "itconnect-pixel-office.png",
+      "sha256": "ff2ef6fdca63",
+      "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-24/itconnect-pixel-office-ff2ef6fdca63.png"
+    },
+    {
+      "slug": "ai-service-showcase",
+      "title": "AI 서비스 쇼케이스",
+      "url": "https://project-show-e981d.web.app/",
+      "file": "ai-service-showcase.png",
+      "sha256": "351262e00374",
+      "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-24/ai-service-showcase-351262e00374.png"
+    },
+    {
+      "slug": "ax-atelier",
+      "title": "AX 아틀리에 오피스",
+      "url": "https://ai-bot-dots.web.app/",
+      "file": "ax-atelier.png",
+      "sha256": "9e20b440cc71",
+      "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-24/ax-atelier-9e20b440cc71.png"
+    },
+    {
+      "slug": "qc-poc-wbs",
+      "title": "작업 품질검수 PoC WBS",
+      "url": "https://ax-facti.web.app/",
+      "file": "qc-poc-wbs.png",
+      "sha256": "918591d7af73",
+      "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-24/qc-poc-wbs-918591d7af73.png"
+    },
+    {
+      "slug": "ud-ax-edu",
+      "title": "AX 교육 사전조사 포털",
+      "url": "https://ud-ax-edu.web.app/",
+      "file": "ud-ax-edu.png",
+      "sha256": "42c021bb395a",
+      "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-24/ud-ax-edu-42c021bb395a.png"
+    },
+    {
+      "slug": "underdogs-localro",
+      "title": "청년마을 곡물원 발표",
+      "url": "https://underdogs-localro.web.app/",
+      "file": "underdogs-localro.png",
+      "sha256": "361286b1e326",
+      "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-24/underdogs-localro-361286b1e326.png"
+    },
+    {
+      "slug": "musinsa-ot",
+      "title": "무신사 AX OT 포털",
+      "url": "https://musinsa-f7938.web.app/",
+      "file": "musinsa-ot.png",
+      "sha256": "1c3e429c3661",
+      "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-24/musinsa-ot-1c3e429c3661.png"
+    },
+    {
+      "slug": "box-business",
+      "title": "골판지 브랜드 설계도",
+      "url": "https://box-business.web.app/",
+      "file": "box-business.png",
+      "sha256": "fde669ea7c56",
+      "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-24/box-business-fde669ea7c56.png"
+    },
+    {
+      "slug": "wonju-profile",
+      "title": "원주 기독의료기 프로필",
+      "url": "https://wonju-6e298.web.app/",
+      "file": "wonju-profile.png",
+      "sha256": "b800edd55c84",
+      "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-24/wonju-profile-b800edd55c84.png"
+    },
+    {
+      "slug": "glowide-scope",
+      "title": "글로와이드 개발 범위 검토",
+      "url": "https://glowide-c6031.web.app/",
+      "file": "glowide-scope.png",
+      "sha256": "045509f232f5",
+      "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-24/glowide-scope-045509f232f5.png"
+    },
+    {
+      "slug": "istanbul-travel",
+      "title": "이스탄불 여행 계획",
+      "url": "https://istanbul-62490.web.app/",
+      "file": "istanbul-travel.png",
+      "sha256": "c6e69458220c",
+      "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-24/istanbul-travel-c6e69458220c.png"
+    },
+    {
+      "slug": "gokmulwon-final-report",
+      "title": "곡물원 AX 최종 리포트",
+      "url": "https://ax-consulting.web.app/gokmulwon-final-report.html",
+      "file": "gokmulwon-final-report.png",
+      "sha256": "058ac3bc8ff0",
+      "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-24/gokmulwon-final-report-058ac3bc8ff0.png"
+    },
+    {
+      "slug": "youth-village-survey",
+      "title": "청년마을 AX 만족도 조사",
+      "url": "https://survey-a36ec.web.app/",
+      "file": "youth-village-survey.png",
+      "sha256": "926b8e67c34c",
+      "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-24/youth-village-survey-926b8e67c34c.png"
+    },
+    {
+      "slug": "itconnect-monograph",
+      "title": "ITCONNECT Monograph",
+      "url": "https://hub.itconnect.dev/",
+      "file": "itconnect-monograph.png",
+      "sha256": "e1561ad43d3b",
+      "favicon_url": "https://jwpceskhyltegqbwlvav.supabase.co/storage/v1/object/public/favicons/operating/2026-10-24/itconnect-monograph-e1561ad43d3b.png"
+    }
+  ]
+}
