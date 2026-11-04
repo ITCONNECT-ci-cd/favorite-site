@@ -326,8 +326,9 @@ describe('LinkTable — 행의 모습 (프로토타입 390–406행)', () => {
     expect(within(cell).getByTestId('favicon')).toHaveClass('w-[24px]', 'h-[24px]', 'rounded-[6px]');
     expect(within(cell).getByTestId('favicon')).toHaveStyle({ backgroundImage: `url("${ICON_URL}")` });
     expect(titleField('Perplexity')).toHaveClass('text-[13px]', 'font-semibold');
-    // 주소는 `hostOf` 규칙 그대로다 — 카드 하단 줄과 같은 표기(`www.` 만 뗀다).
-    expect(within(cell).getByText('perplexity.ai')).toHaveClass('text-[10.5px]', 'text-muted', 'truncate');
+    const address = within(cell).getByRole('textbox', { name: 'Perplexity 주소' });
+    expect(address).toHaveClass('text-[10.5px]', 'text-muted');
+    expect(address).toHaveValue('https://www.perplexity.ai/');
   });
 
   it('행마다 source badge를 정확히 하나 표시한다', () => {
@@ -353,7 +354,7 @@ describe('LinkTable — 행의 모습 (프로토타입 390–406행)', () => {
   it('host 를 뽑을 수 없는 주소는 입력 그대로 적는다', () => {
     renderTable();
 
-    expect(within(row('ChatGPT')).getByText('chat.openai.com/c/1')).toBeInTheDocument();
+    expect(within(row('ChatGPT')).getByRole('textbox', { name: 'ChatGPT 주소' })).toHaveValue('chat.openai.com/c/1');
   });
 
   it('설명 칸은 240px 를 기준으로 늘어나고 그 아래로는 줄지 않는다', () => {
@@ -927,5 +928,34 @@ describe('LinkTable — 필터·정렬을 따르는 목록', () => {
     await drag('Claude', 'Perplexity');
 
     expect(reorderBookmarks).toHaveBeenCalledWith(['bm-3', 'bm-1', 'bm-2']);
+  });
+});
+
+
+describe('LinkTable — 주소 수정', () => {
+  it('주소만 바꾸며 이름·설명·분류는 보내지 않는다', async () => {
+    vi.mocked(updateBookmark).mockResolvedValue({ ok: true });
+    renderTable();
+    const field = screen.getByRole('textbox', { name: 'Claude 주소' });
+    fireEvent.change(field, { target: { value: ' https://itconnect-agentic-dev.web.app/ ' } });
+    await act(async () => { fireEvent.blur(field); });
+    expect(updateBookmark).toHaveBeenCalledWith('bm-3', { url: 'https://itconnect-agentic-dev.web.app/' });
+  });
+
+  it('주소가 그대로면 저장 요청을 보내지 않는다', async () => {
+    renderTable();
+    await act(async () => { fireEvent.blur(screen.getByRole('textbox', { name: 'Claude 주소' })); });
+    expect(updateBookmark).not.toHaveBeenCalled();
+  });
+
+  it('저장이 거절되면 입력을 유지하고 재시도할 수 있다', async () => {
+    vi.mocked(updateBookmark).mockResolvedValueOnce({ ok: false, error: '같은 주소의 링크가 이미 있습니다.' });
+    renderTable();
+    const field = screen.getByRole('textbox', { name: 'Claude 주소' });
+    fireEvent.change(field, { target: { value: 'https://duplicate.test/' } });
+    await act(async () => { fireEvent.blur(field); });
+    expect(field).toHaveValue('https://duplicate.test/');
+    expect(field).not.toHaveAttribute('readonly');
+    expect(screen.getByRole('status')).toHaveTextContent('같은 주소의 링크가 이미 있습니다.');
   });
 });

@@ -18,7 +18,6 @@ import { toast } from '@/components/Toast';
 import { REQUEST_FAILED } from '@/lib/constants';
 import { reorderBookmarks, updateBookmark, type ActionResult } from '@/lib/mutations';
 import { moveOnto } from '@/lib/reorder';
-import { hostOf } from '@/lib/url';
 
 /**
  * 표가 그리는 링크 한 줄.
@@ -391,6 +390,10 @@ function Row({
   const [titleDraft, setTitleDraft] = useState(link.title);
   const [titleSaved, setTitleSaved] = useState(link.title);
   const [savingTitle, setSavingTitle] = useState(false);
+  const [urlDraft, setUrlDraft] = useState(link.url);
+  const [urlSaved, setUrlSaved] = useState(link.url);
+  const [savingUrl, setSavingUrl] = useState(false);
+  const savingUrlRef = useRef(false);
   /**
    * 고치는 중인 설명. **읽는 시점은 마운트 한 번뿐이다** — 표가 열려 있는 동안 prop 이 새 값으로
    * 바뀌어도(다른 창의 수정이 revalidate 로 내려오는 경우) 여기서 적던 글자를 덮어쓰지 않는다
@@ -475,6 +478,31 @@ function Row({
   function handleTitleSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
     void saveTitle();
+  }
+
+  async function saveUrl(): Promise<void> {
+    if (savingUrlRef.current) return;
+    const clean = urlDraft.trim();
+    if (clean === urlSaved.trim()) return;
+
+    savingUrlRef.current = true;
+    setSavingUrl(true);
+    const result = await run(() => updateBookmark(link.id, { url: clean }), '주소 저장');
+    savingUrlRef.current = false;
+    setSavingUrl(false);
+
+    if (!result.ok) {
+      toast(result.error);
+      return;
+    }
+
+    setUrlSaved(clean);
+    toast(`${link.title} 주소 저장됨`);
+  }
+
+  function handleUrlSubmit(event: FormEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    void saveUrl();
   }
 
   async function saveDescription(): Promise<void> {
@@ -564,7 +592,8 @@ function Row({
           className={FAVICON}
           style={icon === null ? undefined : { backgroundImage: cssUrl(icon) }}
         />
-        <form onSubmit={handleTitleSubmit} className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1">
+        <form onSubmit={handleTitleSubmit}>
           <span className="flex min-w-0 items-center gap-[5px]">
             <input
               aria-label={`${link.title} 제목`}
@@ -580,9 +609,21 @@ function Row({
               {link.source === 'discord' ? '자동' : '직접'}
             </span>
           </span>
-          {/* 주소 표기는 카드 하단 줄과 같은 규칙이다(`hostOf` — 맨 앞 `www.` 만 뗀다). */}
-          <span className="block text-[10.5px] text-muted truncate">{hostOf(link.url)}</span>
         </form>
+        <form onSubmit={handleUrlSubmit}>
+          <input
+            type="url"
+            aria-label={`${link.title} 주소`}
+            aria-busy={savingUrl}
+            readOnly={savingUrl}
+            maxLength={2048}
+            value={urlDraft}
+            onChange={(event) => setUrlDraft(event.target.value)}
+            onBlur={() => void saveUrl()}
+            className="block w-full rounded-[3px] bg-transparent text-[10.5px] text-muted outline-none focus:ring-1 focus:ring-border-strong"
+          />
+        </form>
+        </div>
       </span>
 
       {/* 폼으로 낸다 — 칸에서 Enter 가 곧 저장이다(HTML 암묵적 제출). keydown 으로 직접 듣지
